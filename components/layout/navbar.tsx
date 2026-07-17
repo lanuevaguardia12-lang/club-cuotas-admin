@@ -3,7 +3,9 @@
 import { Menu, Search } from "lucide-react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { Sidebar } from "@/components/layout/sidebar";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -15,6 +17,8 @@ interface NavbarProps {
 }
 
 export function Navbar({ user }: NavbarProps) {
+  const { settings } = useAppSettings();
+
   return (
     <header className="border-border bg-card/95 sticky top-0 z-30 border-b backdrop-blur">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
@@ -30,6 +34,14 @@ export function Navbar({ user }: NavbarProps) {
             <Sidebar user={user} />
           </SheetContent>
         </Sheet>
+
+        <div className="flex min-w-0 items-center gap-2 lg:hidden">
+          <BrandMark
+            className="size-9 rounded-full"
+            alt={`Escudo de ${settings.clubName}`}
+          />
+          <span className="truncate text-sm font-semibold">{settings.clubName}</span>
+        </div>
 
         <div className="border-input bg-background text-muted-foreground hidden min-w-0 flex-1 items-center gap-2 rounded-md border px-3 py-2 text-sm md:flex">
           <Search className="size-4" aria-hidden="true" />

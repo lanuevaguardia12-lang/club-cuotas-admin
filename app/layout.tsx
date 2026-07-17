@@ -7,7 +7,7 @@ import "./globals.css";
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "La Nueva Guardia";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-const primaryColor = process.env.NEXT_PUBLIC_PRIMARY_COLOR ?? "#0f766e";
+const primaryColor = process.env.NEXT_PUBLIC_PRIMARY_COLOR ?? "#012f77";
 const isIndexable = process.env.NEXT_PUBLIC_SITE_INDEXABLE === "true";
 const appDescription =
   "Sistema web para administrar cuotas, jugadores, cobranzas y cash flow de un club deportivo.";
@@ -44,6 +44,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
+      {
+        url: "/brand/escudo-la-nueva-guardia.png",
+        sizes: "1024x918",
+        type: "image/png",
+      },
       { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/icons/favicon-32x32.png", sizes: "32x32", type: "image/png" },
       { url: "/icons/favicon-16x16.png", sizes: "16x16", type: "image/png" },
@@ -67,9 +72,9 @@ export const metadata: Metadata = {
     locale: "es_AR",
     images: [
       {
-        url: "/icons/icon-512.png",
-        width: 512,
-        height: 512,
+        url: "/brand/escudo-la-nueva-guardia.png",
+        width: 1024,
+        height: 918,
         alt: appName,
       },
     ],
@@ -78,7 +83,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: appName,
     description: appDescription,
-    images: ["/icons/icon-512.png"],
+    images: ["/brand/escudo-la-nueva-guardia.png"],
   },
   robots: {
     index: isIndexable,

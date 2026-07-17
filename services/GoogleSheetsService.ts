@@ -1338,7 +1338,8 @@ function mapClubRowsToFees({
     }
 
     const player = playersByName.get(normalizedName);
-    const playerId = player?.id ?? createClubPlayerId(rawName) ?? `player-${rowIndex + 1}`;
+    const playerId =
+      player?.id ?? createClubPlayerId(rawName) ?? `player-${rowIndex + 1}`;
     const playerFees: FeeRecord[] = [];
 
     for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
@@ -1396,7 +1397,9 @@ function mapClubFeesToIncomeTransactions(
     });
 }
 
-function mapClubExpenseRowsToTransactions(rows: unknown[][]): CashFlowTransactionRecord[] {
+function mapClubExpenseRowsToTransactions(
+  rows: unknown[][],
+): CashFlowTransactionRecord[] {
   const transactions: CashFlowTransactionRecord[] = [];
 
   rowsToRecords(rows).forEach((record, index) => {

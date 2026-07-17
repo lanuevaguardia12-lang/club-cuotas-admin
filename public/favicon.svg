@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="La Nueva Guardia">
-  <rect width="64" height="64" rx="14" fill="#0f766e" />
+  <rect width="64" height="64" rx="14" fill="#012f77" />
   <path d="M21 17h22v30H21z" fill="#ffffff" />
   <path
     d="M27 25h12M27 33h12M27 41h6"
     fill="none"
-    stroke="#0f766e"
+    stroke="#012f77"
     stroke-linecap="round"
     stroke-width="4"
   />
-  <circle cx="43" cy="43" r="8" fill="#2563eb" />
+  <circle cx="43" cy="43" r="8" fill="#0094dc" />
   <path
     d="M40 43h6M43 40v6"
     fill="none"

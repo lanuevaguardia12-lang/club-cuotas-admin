@@ -20,9 +20,9 @@ interface CashFlowChartsProps {
 }
 
 const chartColors = {
-  income: "#0f766e",
-  expenses: "#dc2626",
-  balance: "#2563eb",
+  income: "#012f77",
+  expenses: "#c10202",
+  balance: "#0094dc",
 };
 
 export function CashFlowCharts({ charts }: CashFlowChartsProps) {

@@ -137,7 +137,7 @@ function drawPdfRow(
 
     document
       .rect(x, y, columnWidth, rowHeight)
-      .fillAndStroke(isHeader ? "#0f766e" : "#ffffff", "#d8dee8");
+      .fillAndStroke(isHeader ? "#012f77" : "#ffffff", "#d8dee8");
     document
       .fillColor(isHeader ? "#ffffff" : "#111827")
       .fontSize(isHeader ? 8 : 7)

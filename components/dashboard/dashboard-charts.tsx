@@ -31,13 +31,13 @@ type MonthlyMode = "income" | "fees";
 type AnnualMode = "income" | "fees";
 
 const chartColors = {
-  income: "#0f766e",
-  paid: "#2563eb",
-  pending: "#d97706",
-  overdue: "#dc2626",
+  income: "#012f77",
+  paid: "#0094dc",
+  pending: "#f4ce0f",
+  overdue: "#c10202",
   newPlayers: "#16a34a",
-  droppedPlayers: "#ea580c",
-  activePlayers: "#0284c7",
+  droppedPlayers: "#c10202",
+  activePlayers: "#0094dc",
 };
 
 const statusColors = [chartColors.income, chartColors.pending, chartColors.overdue];

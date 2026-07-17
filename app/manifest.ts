@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "La Nueva Guardia";
-const primaryColor = process.env.NEXT_PUBLIC_PRIMARY_COLOR ?? "#0f766e";
+const primaryColor = process.env.NEXT_PUBLIC_PRIMARY_COLOR ?? "#012f77";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -17,6 +17,11 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait-primary",
     categories: ["business", "finance", "sports"],
     icons: [
+      {
+        src: "/brand/escudo-la-nueva-guardia.png",
+        sizes: "1024x918",
+        type: "image/png",
+      },
       {
         src: "/icons/icon-192.png",
         sizes: "192x192",

@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">La Nueva Guardia</title>
   <desc id="desc">Icono del sistema de administracion de cuotas del club.</desc>
-  <rect width="512" height="512" rx="112" fill="#0f766e" />
+  <rect width="512" height="512" rx="112" fill="#012f77" />
   <path
     d="M148 152c0-22.091 17.909-40 40-40h136c22.091 0 40 17.909 40 40v208c0 22.091-17.909 40-40 40H188c-22.091 0-40-17.909-40-40V152Z"
     fill="#ffffff"
@@ -10,11 +10,11 @@
   <path
     d="M196 176h120M196 232h120M196 288h64"
     fill="none"
-    stroke="#0f766e"
+    stroke="#012f77"
     stroke-linecap="round"
     stroke-width="28"
   />
-  <circle cx="332" cy="324" r="52" fill="#2563eb" />
+  <circle cx="332" cy="324" r="52" fill="#0094dc" />
   <path
     d="M310 324h44M332 302v44"
     fill="none"

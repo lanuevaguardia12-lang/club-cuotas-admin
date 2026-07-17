@@ -47,7 +47,7 @@ export function Sidebar({ className, user }: SidebarProps) {
       <div className="border-border flex h-16 items-center gap-3 border-b px-5">
         {settings.logoUrl ? (
           <div
-            className="border-border bg-muted size-9 rounded-md border bg-cover bg-center"
+            className="border-border bg-card size-9 rounded-md border bg-contain bg-center bg-no-repeat"
             role="img"
             aria-label={`Logo de ${settings.clubName}`}
             style={{

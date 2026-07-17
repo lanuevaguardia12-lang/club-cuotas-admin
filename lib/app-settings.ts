@@ -1,15 +1,18 @@
 import type { AppSettings, UpdateAppSettingsInput } from "@/types/settings";
+import { BRAND_LOGO_URL, BRAND_PRIMARY_COLOR } from "@/lib/brand";
 
 export const DEFAULT_CLUB_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "La Nueva Guardia";
+export const DEFAULT_PRIMARY_COLOR = BRAND_PRIMARY_COLOR;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   clubName: DEFAULT_CLUB_NAME,
-  logoUrl: "",
+  logoUrl: process.env.NEXT_PUBLIC_LOGO_URL ?? BRAND_LOGO_URL,
   whatsAppMessageTemplate:
     process.env.NEXT_PUBLIC_REMINDER_TEMPLATE ??
     "Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6",
   monthlyFee: parsePositiveNumber(process.env.NEXT_PUBLIC_DEFAULT_MONTHLY_FEE),
-  primaryColor: normalizeHexColor(process.env.NEXT_PUBLIC_PRIMARY_COLOR) ?? "#0f766e",
+  primaryColor:
+    normalizeHexColor(process.env.NEXT_PUBLIC_PRIMARY_COLOR) ?? DEFAULT_PRIMARY_COLOR,
   darkMode: false,
 };
 
@@ -30,7 +33,7 @@ export function normalizeAppSettings(
 ): AppSettings {
   return {
     clubName: normalizeTextValue(input.clubName) || DEFAULT_APP_SETTINGS.clubName,
-    logoUrl: normalizeTextValue(input.logoUrl),
+    logoUrl: normalizeTextValue(input.logoUrl) || DEFAULT_APP_SETTINGS.logoUrl,
     whatsAppMessageTemplate:
       normalizeTextValue(input.whatsAppMessageTemplate) ||
       DEFAULT_APP_SETTINGS.whatsAppMessageTemplate,

@@ -26,6 +26,18 @@ PostgreSQL sin modificar la interfaz.
 - Vercel
 - PWA con manifest, service worker, iconos y favicons
 
+## Identidad visual
+
+- Logo institucional: `public/brand/escudo-la-nueva-guardia.png`.
+- Color primario: `#012F77`.
+- Color secundario: `#0094DC`.
+- Color de alerta: `#C10202`.
+- Color destacado: `#F4CE0F`.
+
+El escudo se usa como logo por defecto en la interfaz, metadata social, favicon
+y PWA. Si la hoja `Configuracion` no define `logo_url`, la aplicacion usa este
+logo institucional como fallback.
+
 ## Estructura
 
 ```text
@@ -60,6 +72,7 @@ hooks/
 lib/
   auth/
 public/
+  brand/
   favicon.svg
   icons/
   sw.js
@@ -75,7 +88,6 @@ utils/
   workflows/
     ci.yml
     vercel.yml
-middleware.ts
 ```
 
 ## Funcionalidades incluidas
@@ -89,7 +101,7 @@ middleware.ts
 - Credenciales tomadas desde variables de entorno.
 - JWT firmado con `AUTH_SECRET`.
 - Cookie de sesion `httpOnly`, `sameSite=lax` y `secure` en produccion.
-- Middleware de proteccion con redireccion a `/login`.
+- Proteccion server-side de rutas privadas con redireccion a `/login`.
 - Roles `Administrador`, `Tesorero` y `Profesor` con permisos RBAC.
 - Capa `UserStore` preparada para multiples usuarios por `AUTH_USERS_JSON`.
 - Dashboard avanzado consumiendo datos desde `IDataService`.
@@ -158,7 +170,7 @@ NEXT_PUBLIC_SITE_INDEXABLE=false
 NEXT_PUBLIC_PWA_ENABLED=true
 NEXT_PUBLIC_REMINDER_TEMPLATE="Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6"
 NEXT_PUBLIC_DEFAULT_MONTHLY_FEE=0
-NEXT_PUBLIC_PRIMARY_COLOR="#0f766e"
+NEXT_PUBLIC_PRIMARY_COLOR="#012f77"
 DATA_SOURCE="google-sheets"
 
 AUTH_SECRET="replace-with-a-long-random-secret"
@@ -240,7 +252,7 @@ Flujo:
    `ADMIN_PASSWORD`.
 3. Si las credenciales son correctas, se crea un JWT.
 4. El JWT se guarda en `dashboard_session`.
-5. `middleware.ts` protege todas las rutas privadas.
+5. El layout server-side protege todas las rutas privadas.
 6. Si no hay sesion valida, redirige a `/login?redirectTo=...`.
 
 Roles soportados:
@@ -269,7 +281,7 @@ Archivos principales:
 
 - `app/login/page.tsx`
 - `app/login/actions.ts`
-- `middleware.ts`
+- `app/(dashboard)/layout.tsx`
 - `lib/auth/jwt.ts`
 - `lib/auth/session.ts`
 - `services/auth/user-store.ts`
@@ -376,14 +388,14 @@ Hoja `CashFlow`:
 
 Hoja `Configuracion`:
 
-| clave                     | valor                                                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| club_name                 | La Nueva Guardia                                                                                            |
-| logo_url                  | https://example.com/logo.png                                                                                |
+| clave                     | valor                                                                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| club_name                 | La Nueva Guardia                                                                                                                                               |
+| logo_url                  | https://example.com/logo.png                                                                                                                                   |
 | whatsapp_message_template | Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6 |
-| monthly_fee               | 25000                                                                                                       |
-| primary_color             | #0f766e                                                                                                     |
-| dark_mode                 | false                                                                                                       |
+| monthly_fee               | 25000                                                                                                                                                          |
+| primary_color             | #012f77                                                                                                                                                        |
+| dark_mode                 | false                                                                                                                                                          |
 
 Hoja `Auditoria`:
 
