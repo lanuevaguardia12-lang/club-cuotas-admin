@@ -11,6 +11,8 @@ import { CashFlowContent } from "@/components/cash-flow/cash-flow-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDataService } from "@/services/data-service";
 
+export const dynamic = "force-dynamic";
+
 const metricIcons = {
   income: ArrowDownCircle,
   expenses: ArrowUpCircle,

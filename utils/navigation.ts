@@ -14,6 +14,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "cash-flow:read",
   },
   {
+    label: "Calculador de cuota",
+    href: "/fee-calculator",
+    icon: "feeCalculator",
+    permission: "fee-calculator:manage",
+  },
+  {
     label: "Pagos",
     href: "/payments",
     icon: "payments",

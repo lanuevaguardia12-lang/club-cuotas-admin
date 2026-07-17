@@ -39,6 +39,17 @@ import type {
 } from "@/types/settings";
 import type { ExportColumn, ExportData, ExportDataset, ExportRow } from "@/types/export";
 import type {
+  FeeCalculatorActual,
+  FeeCalculatorCost,
+  FeeCalculatorCostType,
+  FeeCalculatorData,
+  FeeMatchDetail,
+  FeePlayerCalculation,
+  FeeRefundPolicyRule,
+  UpdateFeeCalculatorActualInput,
+  UpsertFeeCalculatorCostInput,
+} from "@/types/fee-calculator";
+import type {
   AppLogEntry,
   AppLogLevel,
   AppNotification,
@@ -73,6 +84,11 @@ interface GoogleSheetsConfig {
   notificationsRange: string;
   remindersRange: string;
   paymentsRange: string;
+  feeCalculatorCostsRange: string;
+  feeCalculatorActualsRange: string;
+  matchesSpreadsheetId?: string;
+  matchesRange: string;
+  refundPolicyRange: string;
   cacheTtlSeconds: number;
 }
 
@@ -113,6 +129,20 @@ interface CashFlowTransactionRecord {
   amount: number;
 }
 
+interface MatchRecord {
+  id: string;
+  date: string;
+  period: string;
+  rival: string;
+  players: string[];
+}
+
+interface PlayerExpenseCredit {
+  playerName: string;
+  period: string;
+  amount: number;
+}
+
 interface DashboardRecords {
   players: PlayerRecord[];
   fees: FeeRecord[];
@@ -128,6 +158,10 @@ const DEFAULT_LOGS_RANGE = "Logs!A:Z";
 const DEFAULT_NOTIFICATIONS_RANGE = "Notificaciones!A:Z";
 const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
+const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
+const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
+const DEFAULT_MATCHES_RANGE = "Partidos jugados formulario!A:Z";
+const DEFAULT_REFUND_POLICY_RANGE = "Politica devoluciones!A:C";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 const CLUB_PLAYERS_RANGE = "Listado jugadores!A:Z";
@@ -191,6 +225,31 @@ const paymentHeaders = [
   "raw_event_type",
 ];
 
+const feeCalculatorCostHeaders = [
+  "id",
+  "nombre",
+  "tipo",
+  "vigencia_desde",
+  "vigencia_hasta",
+  "monto",
+  "repite_mensual",
+  "dividir_entre",
+  "cantidad_estimada",
+  "notas",
+  "activo",
+  "creado_en",
+  "actualizado_en",
+];
+
+const feeCalculatorActualHeaders = [
+  "id",
+  "costo_id",
+  "periodo",
+  "cantidad_real",
+  "notas",
+  "actualizado_en",
+];
+
 export class GoogleSheetsService implements IDataService {
   private readonly config: GoogleSheetsConfig;
 
@@ -229,6 +288,27 @@ export class GoogleSheetsService implements IDataService {
         config.paymentsRange ??
         process.env.GOOGLE_SHEETS_PAYMENTS_RANGE ??
         DEFAULT_PAYMENTS_RANGE,
+      feeCalculatorCostsRange:
+        config.feeCalculatorCostsRange ??
+        process.env.GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE ??
+        DEFAULT_FEE_CALCULATOR_COSTS_RANGE,
+      feeCalculatorActualsRange:
+        config.feeCalculatorActualsRange ??
+        process.env.GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE ??
+        DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE,
+      matchesSpreadsheetId:
+        config.matchesSpreadsheetId ??
+        process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID ??
+        config.spreadsheetId ??
+        process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      matchesRange:
+        config.matchesRange ??
+        process.env.GOOGLE_SHEETS_MATCHES_RANGE ??
+        DEFAULT_MATCHES_RANGE,
+      refundPolicyRange:
+        config.refundPolicyRange ??
+        process.env.GOOGLE_SHEETS_REFUND_POLICY_RANGE ??
+        DEFAULT_REFUND_POLICY_RANGE,
       cacheTtlSeconds:
         config.cacheTtlSeconds ??
         parseCacheTtl(process.env.GOOGLE_SHEETS_CACHE_TTL_SECONDS),
@@ -365,6 +445,296 @@ export class GoogleSheetsService implements IDataService {
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
     }
+  }
+
+  async getFeeCalculatorData(period = getCurrentPeriod()): Promise<FeeCalculatorData> {
+    const cachedAt = new Date().toISOString();
+
+    try {
+      this.assertConfigured();
+      assertValidPeriod(period);
+
+      const {
+        players,
+        fees,
+        costsRows,
+        actualsRows,
+        refundPolicyRows,
+        matchRows,
+        expenseRows,
+      } = await this.readFeeCalculatorRows();
+      const costs = mapRowsToFeeCalculatorCosts(costsRows);
+      const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
+      const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
+      const matches = mapRowsToMatches(matchRows);
+      const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
+
+      return buildFeeCalculatorData({
+        period,
+        players,
+        fees,
+        costs,
+        actuals,
+        refundPolicy,
+        matches,
+        expenseCredits,
+        status: players.length === 0 && costs.length === 0 ? "empty" : "ready",
+        message:
+          players.length === 0 && costs.length === 0
+            ? "Google Sheets conectado, sin costos del calculador cargados."
+            : "Calculador de cuota obtenido desde Google Sheets.",
+        cachedAt,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+      });
+    } catch (error) {
+      const serviceError = normalizeGoogleSheetsError(error);
+
+      return buildFeeCalculatorData({
+        period,
+        players: [],
+        fees: [],
+        costs: [],
+        actuals: [],
+        refundPolicy: getDefaultRefundPolicy(),
+        matches: [],
+        expenseCredits: [],
+        status: "error",
+        message: serviceError.message,
+        cachedAt,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+      });
+    }
+  }
+
+  async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
+    this.assertConfigured();
+
+    const cost = normalizeFeeCalculatorCostInput(input);
+    const rows = await this.readOptionalValues(this.config.feeCalculatorCostsRange);
+    const now = new Date().toISOString();
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
+
+    await this.ensureSheetForRange(this.config.feeCalculatorCostsRange);
+
+    if (rows.length === 0) {
+      const id = cost.id || createId("cost");
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${sheetPrefix}!A:M`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            feeCalculatorCostHeaders,
+            buildFeeCalculatorCostWritableRow(feeCalculatorCostHeaders, {
+              ...cost,
+              id,
+              active: true,
+              createdAt: now,
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+      invalidateFeeCalculatorCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    const headers = normalizeWritableHeaders(headerRow, feeCalculatorCostHeaders);
+    const idIndex = findHeaderIndex(headers, ["id", "costo_id"]);
+    const targetId = cost.id || createId("cost");
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === targetId)
+        : -1;
+
+    if (targetRowIndex >= 0) {
+      const existing = mapRowsToFeeCalculatorCosts([
+        headers,
+        dataRows[targetRowIndex],
+      ])[0];
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            buildFeeCalculatorCostWritableRow(headers, {
+              ...cost,
+              id: targetId,
+              active: existing?.active ?? true,
+              createdAt: existing?.createdAt || now,
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: this.config.spreadsheetId,
+        range: this.config.feeCalculatorCostsRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [
+            buildFeeCalculatorCostWritableRow(headers, {
+              ...cost,
+              id: targetId,
+              active: true,
+              createdAt: now,
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    }
+
+    invalidateFeeCalculatorCache();
+  }
+
+  async deleteFeeCalculatorCost(costId: string): Promise<void> {
+    this.assertConfigured();
+
+    const values = await this.readValues(this.config.feeCalculatorCostsRange);
+
+    if (values.length === 0) {
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = values;
+    const headers = headerRow.map((header) => normalizeHeader(String(header)));
+    const idIndex = findHeaderIndex(headers, ["id", "costo_id"]);
+    const activeIndex = findHeaderIndex(headers, ["activo", "active"]);
+    const updatedAtIndex = findHeaderIndex(headers, [
+      "actualizado_en",
+      "updated_at",
+      "updated",
+    ]);
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === costId)
+        : -1;
+
+    if (targetRowIndex < 0 || activeIndex < 0) {
+      return;
+    }
+
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
+    const spreadsheetRow = targetRowIndex + 2;
+    const data = [
+      {
+        range: `${sheetPrefix}!${toColumnName(activeIndex)}${spreadsheetRow}`,
+        values: [["false"]],
+      },
+    ];
+
+    if (updatedAtIndex >= 0) {
+      data.push({
+        range: `${sheetPrefix}!${toColumnName(updatedAtIndex)}${spreadsheetRow}`,
+        values: [[new Date().toISOString()]],
+      });
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: this.config.spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data,
+      },
+    });
+    invalidateFeeCalculatorCache();
+  }
+
+  async updateFeeCalculatorActual(input: UpdateFeeCalculatorActualInput): Promise<void> {
+    this.assertConfigured();
+    assertValidPeriod(input.period);
+
+    const actual = normalizeFeeCalculatorActualInput(input);
+    const rows = await this.readOptionalValues(this.config.feeCalculatorActualsRange);
+    const now = new Date().toISOString();
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
+
+    await this.ensureSheetForRange(this.config.feeCalculatorActualsRange);
+
+    if (rows.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${sheetPrefix}!A:F`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            feeCalculatorActualHeaders,
+            buildFeeCalculatorActualWritableRow(feeCalculatorActualHeaders, {
+              ...actual,
+              id: createId("actual"),
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+      invalidateFeeCalculatorCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    const headers = normalizeWritableHeaders(headerRow, feeCalculatorActualHeaders);
+    const costIdIndex = findHeaderIndex(headers, ["costo_id", "cost_id"]);
+    const periodIndex = findHeaderIndex(headers, ["periodo", "period", "mes"]);
+    const targetRowIndex =
+      costIdIndex >= 0 && periodIndex >= 0
+        ? dataRows.findIndex(
+            (row) =>
+              String(row[costIdIndex] ?? "").trim() === actual.costId &&
+              normalizePeriod(String(row[periodIndex] ?? "").trim()) === actual.period,
+          )
+        : -1;
+
+    if (targetRowIndex >= 0) {
+      const existing = mapRowsToFeeCalculatorActuals([
+        headers,
+        dataRows[targetRowIndex],
+      ])[0];
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.config.spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            buildFeeCalculatorActualWritableRow(headers, {
+              ...actual,
+              id: existing?.id || createId("actual"),
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: this.config.spreadsheetId,
+        range: this.config.feeCalculatorActualsRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [
+            buildFeeCalculatorActualWritableRow(headers, {
+              ...actual,
+              id: createId("actual"),
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    }
+
+    invalidateFeeCalculatorCache();
   }
 
   async getExportData(dataset: ExportDataset): Promise<ExportData> {
@@ -887,10 +1257,76 @@ export class GoogleSheetsService implements IDataService {
     )();
   }
 
+  private async readFeeCalculatorRows() {
+    const spreadsheetId = this.config.spreadsheetId;
+    const matchesSpreadsheetId = this.config.matchesSpreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const [{ players, fees }, calculatorRows] = await Promise.all([
+      this.readDashboardRecords(),
+      unstable_cache(
+        async () => ({
+          costsRows: await this.readOptionalValues(this.config.feeCalculatorCostsRange),
+          actualsRows: await this.readOptionalValues(
+            this.config.feeCalculatorActualsRange,
+          ),
+          refundPolicyRows: await this.readOptionalValues(this.config.refundPolicyRange),
+          matchRows: matchesSpreadsheetId
+            ? await this.readOptionalValuesFromSpreadsheet(
+                matchesSpreadsheetId,
+                this.config.matchesRange,
+              )
+            : [],
+          expenseRows: await this.readOptionalValues(CLUB_EXPENSES_RANGE),
+        }),
+        [
+          "google-sheets-fee-calculator",
+          spreadsheetId,
+          matchesSpreadsheetId ?? "",
+          this.config.feeCalculatorCostsRange,
+          this.config.feeCalculatorActualsRange,
+          this.config.refundPolicyRange,
+          this.config.matchesRange,
+          CLUB_EXPENSES_RANGE,
+        ],
+        {
+          revalidate: this.config.cacheTtlSeconds,
+          tags: ["google-sheets", "google-sheets:fee-calculator"],
+        },
+      )(),
+    ]);
+
+    return {
+      players,
+      fees,
+      ...calculatorRows,
+    };
+  }
+
   private async readValues(range: string) {
+    return this.readValuesFromSpreadsheet(this.config.spreadsheetId, range);
+  }
+
+  private async readValuesFromSpreadsheet(
+    spreadsheetId: string | undefined,
+    range: string,
+  ) {
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
     const sheets = this.createSheetsClient();
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: this.config.spreadsheetId,
+      spreadsheetId,
       range,
     });
 
@@ -903,6 +1339,45 @@ export class GoogleSheetsService implements IDataService {
     } catch {
       return [];
     }
+  }
+
+  private async readOptionalValuesFromSpreadsheet(spreadsheetId: string, range: string) {
+    try {
+      return await this.readValuesFromSpreadsheet(spreadsheetId, range);
+    } catch {
+      return [];
+    }
+  }
+
+  private async ensureSheetForRange(range: string) {
+    const title = unquoteSheetTitle(getSheetPrefix(range));
+    const sheets = this.createSheetsClient();
+    const metadata = await sheets.spreadsheets.get({
+      spreadsheetId: this.config.spreadsheetId,
+      fields: "sheets.properties.title",
+    });
+    const exists = metadata.data.sheets?.some(
+      (sheet) => sheet.properties?.title === title,
+    );
+
+    if (exists) {
+      return;
+    }
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: this.config.spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title,
+              },
+            },
+          },
+        ],
+      },
+    });
   }
 
   private createSheetsClient(): sheets_v4.Sheets {
@@ -1476,6 +1951,382 @@ function mapClubPaymentsByPlayerPeriod(rows: unknown[][]) {
   }
 
   return payments;
+}
+
+function mapRowsToFeeCalculatorCosts(rows: unknown[][]): FeeCalculatorCost[] {
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const startPeriod =
+        normalizePeriod(
+          pick(record, ["vigencia_desde", "desde", "periodo_desde", "start_period"]),
+        ) ?? getCurrentPeriod();
+      const endPeriod =
+        normalizePeriod(
+          pick(record, ["vigencia_hasta", "hasta", "periodo_hasta", "end_period"]),
+        ) ?? startPeriod;
+      const name =
+        pick(record, ["nombre", "name", "costo", "concepto"]) || `Costo ${index + 1}`;
+
+      return {
+        id: pick(record, ["id", "costo_id", "cost_id"]) || `cost-${index + 1}`,
+        name,
+        type: normalizeFeeCalculatorCostType(pick(record, ["tipo", "type"])),
+        startPeriod,
+        endPeriod: endPeriod < startPeriod ? startPeriod : endPeriod,
+        amount: Math.max(
+          parseMoney(pick(record, ["monto", "importe", "amount", "valor"])),
+          0,
+        ),
+        repeatsMonthly: parseLooseBoolean(
+          pick(record, ["repite_mensual", "repite", "mensual", "repeats_monthly"]),
+          true,
+        ),
+        splitBetween: Math.max(
+          Math.round(
+            parseMoney(
+              pick(record, ["dividir_entre", "personas", "split_between", "jugadores"]),
+            ),
+          ),
+          1,
+        ),
+        forecastUnits: Math.max(
+          parseMoney(
+            pick(record, [
+              "cantidad_estimada",
+              "canchas_estimadas",
+              "forecast_units",
+              "cantidad",
+            ]),
+          ) || 1,
+          0,
+        ),
+        notes: pick(record, ["notas", "notes", "observaciones", "detalle"]),
+        active: parseLooseBoolean(pick(record, ["activo", "active"]), true),
+        createdAt:
+          parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
+          new Date().toISOString(),
+        updatedAt:
+          parseDateTime(
+            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+          ) ?? new Date().toISOString(),
+      } satisfies FeeCalculatorCost;
+    })
+    .filter((cost) => cost.active)
+    .sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
+function mapRowsToFeeCalculatorActuals(rows: unknown[][]): FeeCalculatorActual[] {
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const period =
+        normalizePeriod(pick(record, ["periodo", "period", "mes"])) ?? getCurrentPeriod();
+      const costId = pick(record, ["costo_id", "cost_id", "id_costo"]);
+
+      if (!costId) {
+        return null;
+      }
+
+      return {
+        id: pick(record, ["id", "real_id", "actual_id"]) || `actual-${index + 1}`,
+        costId,
+        period,
+        actualUnits: Math.max(
+          parseMoney(
+            pick(record, ["cantidad_real", "canchas_reales", "actual_units", "cantidad"]),
+          ),
+          0,
+        ),
+        notes: pick(record, ["notas", "notes", "observaciones"]),
+        updatedAt:
+          parseDateTime(
+            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+          ) ?? new Date().toISOString(),
+      } satisfies FeeCalculatorActual;
+    })
+    .filter((actual): actual is FeeCalculatorActual => Boolean(actual));
+}
+
+function mapRowsToRefundPolicy(rows: unknown[][]): FeeRefundPolicyRule[] {
+  const rules = rowsToRecords(rows)
+    .map((record) => {
+      const fromPercent = parsePercentValue(pick(record, ["desde", "from"]));
+      const toPercent = parsePercentValue(pick(record, ["hasta", "to"]));
+      const refundPercent = parsePercentValue(
+        pick(record, ["devolucion", "devolucion_", "refund", "porcentaje"]),
+      );
+
+      if (
+        !Number.isFinite(fromPercent) ||
+        !Number.isFinite(toPercent) ||
+        !Number.isFinite(refundPercent)
+      ) {
+        return null;
+      }
+
+      return {
+        fromPercent,
+        toPercent,
+        refundPercent,
+      } satisfies FeeRefundPolicyRule;
+    })
+    .filter((rule): rule is FeeRefundPolicyRule => Boolean(rule))
+    .sort((left, right) => left.fromPercent - right.fromPercent);
+
+  return rules.length > 0 ? rules : getDefaultRefundPolicy();
+}
+
+function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
+      const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
+      const rawPlayers = pick(record, [
+        "jugadores_que_ingresaron",
+        "jugadores",
+        "players",
+        "ingresaron",
+      ]);
+      const players = splitPlayerNames(rawPlayers);
+
+      if (!date || players.length === 0) {
+        return null;
+      }
+
+      return {
+        id: pick(record, ["id", "partido_id", "match_id"]) || `match-${index + 1}`,
+        date,
+        period: getPeriodFromDate(date) ?? getCurrentPeriod(),
+        rival,
+        players,
+      } satisfies MatchRecord;
+    })
+    .filter((match): match is MatchRecord => Boolean(match))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mapClubExpenseRowsToPlayerCredits(rows: unknown[][]): PlayerExpenseCredit[] {
+  return rowsToRecords(rows)
+    .map((record) => {
+      const playerName = pick(record, [
+        "pagado_por",
+        "jugador",
+        "nombre",
+        "player",
+        "paid_by",
+      ]);
+      const amount = Math.abs(
+        parseMoney(pick(record, ["monto", "importe", "amount", "valor"])),
+      );
+      const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
+
+      if (!playerName || amount === 0 || !date) {
+        return null;
+      }
+
+      return {
+        playerName,
+        amount,
+        period: getPeriodFromDate(date) ?? getCurrentPeriod(),
+      };
+    })
+    .filter(
+      (
+        credit,
+      ): credit is PlayerExpenseCredit & {
+        period: string;
+      } => Boolean(credit),
+    );
+}
+
+function buildFeeCalculatorData({
+  period,
+  players,
+  fees,
+  costs,
+  actuals,
+  refundPolicy,
+  matches,
+  expenseCredits,
+  status,
+  message,
+  cachedAt,
+  revalidateSeconds,
+}: {
+  period: string;
+  players: PlayerRecord[];
+  fees: FeeRecord[];
+  costs: FeeCalculatorCost[];
+  actuals: FeeCalculatorActual[];
+  refundPolicy: FeeRefundPolicyRule[];
+  matches: MatchRecord[];
+  expenseCredits: Array<PlayerExpenseCredit & { period: string }>;
+  status: FeeCalculatorData["source"]["status"];
+  message: string;
+  cachedAt: string;
+  revalidateSeconds: number;
+}): FeeCalculatorData {
+  const previousPeriod = getPreviousPeriod(period);
+  const activePlayers = players.filter((player) => !isDroppedPlayer(player));
+  const activeCosts = costs.filter((cost) => cost.active);
+  const plannedCurrentQuota = calculateBaseQuotaForPeriod(
+    activeCosts,
+    actuals,
+    period,
+    "forecast",
+  );
+  const previousPlannedQuota = calculateBaseQuotaForPeriod(
+    activeCosts,
+    actuals,
+    previousPeriod,
+    "forecast",
+  );
+  const previousActualQuota = calculateBaseQuotaForPeriod(
+    activeCosts,
+    actuals,
+    previousPeriod,
+    "actual",
+  );
+  const previousCostVariance = previousActualQuota - previousPlannedQuota;
+  const totalMatchesPreviousPeriod = matches.filter(
+    (match) => match.period === previousPeriod,
+  ).length;
+  const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
+  const calculations = activePlayers.map((player) =>
+    buildPlayerFeeCalculation({
+      player,
+      fees,
+      period,
+      previousPeriod,
+      baseQuota,
+      plannedCurrentQuota,
+      previousBaseQuota:
+        previousPlannedQuota || getPlayerFeeAmount(fees, player.id, previousPeriod),
+      previousCostVariance,
+      matches,
+      refundPolicy,
+      expenseCredits,
+      totalMatchesPreviousPeriod,
+    }),
+  );
+
+  return {
+    period,
+    previousPeriod,
+    costs,
+    actuals,
+    refundPolicy,
+    playerCalculations: calculations,
+    matchSummaries: calculations.map((calculation) => ({
+      playerId: calculation.playerId,
+      playerName: calculation.playerName,
+      period: previousPeriod,
+      playedMatches: calculation.playedMatches,
+      totalMatches: calculation.totalMatches,
+      attendanceRate: calculation.attendanceRate,
+      matches: calculation.matches,
+    })),
+    summary: {
+      period,
+      previousPeriod,
+      plannedCurrentQuota,
+      previousBaseQuota: previousPlannedQuota,
+      previousCostVariance,
+      baseQuota,
+      activeCosts: activeCosts.length,
+      players: activePlayers.length,
+      totalMatchesPreviousPeriod,
+    },
+    emptyState: {
+      title: status === "ready" ? "Calculador de cuota" : "Calculador sin costos",
+      description:
+        status === "ready"
+          ? "Cuotas calculadas con costos, asistencia, devoluciones y gastos."
+          : "Cargá los costos mensuales para calcular la cuota base y la cuota por jugador.",
+    },
+    source: {
+      provider: "google-sheets",
+      status,
+      message,
+      cachedAt,
+      revalidateSeconds,
+    },
+  };
+}
+
+function buildPlayerFeeCalculation({
+  player,
+  fees,
+  period,
+  previousPeriod,
+  baseQuota,
+  plannedCurrentQuota,
+  previousBaseQuota,
+  previousCostVariance,
+  matches,
+  refundPolicy,
+  expenseCredits,
+  totalMatchesPreviousPeriod,
+}: {
+  player: PlayerRecord;
+  fees: FeeRecord[];
+  period: string;
+  previousPeriod: string;
+  baseQuota: number;
+  plannedCurrentQuota: number;
+  previousBaseQuota: number;
+  previousCostVariance: number;
+  matches: MatchRecord[];
+  refundPolicy: FeeRefundPolicyRule[];
+  expenseCredits: Array<PlayerExpenseCredit & { period: string }>;
+  totalMatchesPreviousPeriod: number;
+}): FeePlayerCalculation {
+  const normalizedPlayerName = normalizeClubPlayerName(player.name);
+  const playerMatches = matches
+    .filter(
+      (match) =>
+        match.period === previousPeriod &&
+        match.players.some(
+          (name) => normalizeClubPlayerName(name) === normalizedPlayerName,
+        ),
+    )
+    .map<FeeMatchDetail>((match) => ({
+      date: match.date,
+      rival: match.rival,
+    }));
+  const playedMatches = playerMatches.length;
+  const attendanceRate =
+    totalMatchesPreviousPeriod > 0 ? playedMatches / totalMatchesPreviousPeriod : 0;
+  const refundPercent = findRefundPercent(refundPolicy, attendanceRate * 100);
+  const refundBase =
+    previousBaseQuota || getPlayerFeeAmount(fees, player.id, previousPeriod);
+  const refundAmount = refundBase * (refundPercent / 100);
+  const expenseCredit = expenseCredits
+    .filter(
+      (credit) =>
+        credit.period === previousPeriod &&
+        normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
+    )
+    .reduce((total, credit) => total + credit.amount, 0);
+  const finalQuota = Math.max(baseQuota - refundAmount - expenseCredit, 0);
+
+  return {
+    playerId: player.id,
+    playerName: player.name,
+    currentPeriod: period,
+    previousPeriod,
+    baseQuota,
+    plannedCurrentQuota,
+    previousBaseQuota: refundBase,
+    previousCostVariance,
+    refundPercent,
+    refundAmount,
+    expenseCredit,
+    finalQuota,
+    attendanceRate,
+    playedMatches,
+    totalMatches: totalMatchesPreviousPeriod,
+    matches: playerMatches,
+  };
 }
 
 function mapRowsToAppSettings(rows: unknown[][]): AppSettings {
@@ -2696,6 +3547,247 @@ function normalizeClubPhone(value: string) {
   return withoutLeadingZero;
 }
 
+function normalizeFeeCalculatorCostType(value: string): FeeCalculatorCostType {
+  const type = normalizeText(value);
+
+  if (["cancha", "canchas", "court", "jornada", "jornadas"].includes(type)) {
+    return "court";
+  }
+
+  if (["fijo", "fixed", "mensual"].includes(type)) {
+    return "fixed";
+  }
+
+  return "custom";
+}
+
+function normalizeFeeCalculatorCostInput(
+  input: UpsertFeeCalculatorCostInput,
+): Omit<FeeCalculatorCost, "active" | "createdAt" | "updatedAt"> {
+  const startPeriod = normalizePeriod(input.startPeriod);
+  const endPeriod = normalizePeriod(input.endPeriod);
+
+  if (!startPeriod || !endPeriod) {
+    throw new DataServiceError(
+      "La vigencia del costo debe tener formato AAAA-MM.",
+      "CONFIGURATION_ERROR",
+    );
+  }
+
+  return {
+    id: input.id?.trim() ?? "",
+    name: input.name.trim(),
+    type: input.type,
+    startPeriod,
+    endPeriod: endPeriod < startPeriod ? startPeriod : endPeriod,
+    amount: Math.max(Number(input.amount), 0),
+    repeatsMonthly: Boolean(input.repeatsMonthly),
+    splitBetween: Math.max(Math.round(Number(input.splitBetween)), 1),
+    forecastUnits: Math.max(Number(input.forecastUnits), 0),
+    notes: input.notes?.trim() ?? "",
+  };
+}
+
+function normalizeFeeCalculatorActualInput(
+  input: UpdateFeeCalculatorActualInput,
+): Omit<FeeCalculatorActual, "id" | "updatedAt"> {
+  return {
+    costId: input.costId.trim(),
+    period: input.period,
+    actualUnits: Math.max(Number(input.actualUnits), 0),
+    notes: input.notes?.trim() ?? "",
+  };
+}
+
+function buildFeeCalculatorCostWritableRow(headers: string[], cost: FeeCalculatorCost) {
+  const values: Record<string, string | number> = {
+    id: cost.id,
+    costo_id: cost.id,
+    nombre: cost.name,
+    name: cost.name,
+    costo: cost.name,
+    tipo: cost.type,
+    type: cost.type,
+    vigencia_desde: cost.startPeriod,
+    desde: cost.startPeriod,
+    start_period: cost.startPeriod,
+    vigencia_hasta: cost.endPeriod,
+    hasta: cost.endPeriod,
+    end_period: cost.endPeriod,
+    monto: cost.amount,
+    importe: cost.amount,
+    amount: cost.amount,
+    valor: cost.amount,
+    repite_mensual: cost.repeatsMonthly ? "true" : "false",
+    repite: cost.repeatsMonthly ? "true" : "false",
+    repeats_monthly: cost.repeatsMonthly ? "true" : "false",
+    dividir_entre: cost.splitBetween,
+    personas: cost.splitBetween,
+    split_between: cost.splitBetween,
+    cantidad_estimada: cost.forecastUnits,
+    canchas_estimadas: cost.forecastUnits,
+    forecast_units: cost.forecastUnits,
+    notas: cost.notes,
+    notes: cost.notes,
+    observaciones: cost.notes,
+    activo: cost.active ? "true" : "false",
+    active: cost.active ? "true" : "false",
+    creado_en: cost.createdAt,
+    created_at: cost.createdAt,
+    actualizado_en: cost.updatedAt,
+    updated_at: cost.updatedAt,
+  };
+
+  return headers.map((header) => values[header] ?? "");
+}
+
+function buildFeeCalculatorActualWritableRow(
+  headers: string[],
+  actual: FeeCalculatorActual,
+) {
+  const values: Record<string, string | number> = {
+    id: actual.id,
+    real_id: actual.id,
+    actual_id: actual.id,
+    costo_id: actual.costId,
+    cost_id: actual.costId,
+    id_costo: actual.costId,
+    periodo: actual.period,
+    period: actual.period,
+    mes: actual.period,
+    cantidad_real: actual.actualUnits,
+    canchas_reales: actual.actualUnits,
+    actual_units: actual.actualUnits,
+    cantidad: actual.actualUnits,
+    notas: actual.notes,
+    notes: actual.notes,
+    observaciones: actual.notes,
+    actualizado_en: actual.updatedAt,
+    updated_at: actual.updatedAt,
+  };
+
+  return headers.map((header) => values[header] ?? "");
+}
+
+function normalizeWritableHeaders(row: unknown[], fallback: string[]) {
+  const headers = row.map((header) => normalizeHeader(String(header)));
+
+  return headers.some(Boolean) ? headers : fallback;
+}
+
+function splitPlayerNames(value: string) {
+  return value
+    .split(/[,;\n]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function parseLooseBoolean(value: string, fallback = false) {
+  if (!value) {
+    return fallback;
+  }
+
+  const normalized = normalizeText(value);
+
+  if (["1", "true", "si", "sí", "yes", "activo", "active", "x"].includes(normalized)) {
+    return true;
+  }
+
+  if (
+    ["0", "false", "no", "inactivo", "inactive", "baja", "deleted"].includes(normalized)
+  ) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function parsePercentValue(value: string) {
+  if (!value) {
+    return Number.NaN;
+  }
+
+  return parseMoney(value.replace("%", ""));
+}
+
+function getDefaultRefundPolicy(): FeeRefundPolicyRule[] {
+  return [
+    { fromPercent: 0, toPercent: 0, refundPercent: 38 },
+    { fromPercent: 0.01, toPercent: 50, refundPercent: 23 },
+    { fromPercent: 50.01, toPercent: 100, refundPercent: 0 },
+  ];
+}
+
+function findRefundPercent(rules: FeeRefundPolicyRule[], attendancePercent: number) {
+  const rule = rules.find(
+    (candidate) =>
+      attendancePercent >= candidate.fromPercent &&
+      attendancePercent <= candidate.toPercent,
+  );
+
+  return rule?.refundPercent ?? 0;
+}
+
+function calculateBaseQuotaForPeriod(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+  mode: "forecast" | "actual",
+) {
+  return costs
+    .filter((cost) => isCostActiveForPeriod(cost, period))
+    .reduce((total, cost) => total + calculateCostShare(cost, actuals, period, mode), 0);
+}
+
+function calculateCostShare(
+  cost: FeeCalculatorCost,
+  actuals: FeeCalculatorActual[],
+  period: string,
+  mode: "forecast" | "actual",
+) {
+  const actualUnits = actuals.find(
+    (actual) => actual.costId === cost.id && actual.period === period,
+  )?.actualUnits;
+  const units =
+    mode === "actual" && typeof actualUnits === "number"
+      ? actualUnits
+      : cost.type === "court"
+        ? cost.forecastUnits
+        : 1;
+  const total = cost.type === "court" ? cost.amount * units : cost.amount;
+
+  return total / Math.max(cost.splitBetween, 1);
+}
+
+function isCostActiveForPeriod(cost: FeeCalculatorCost, period: string) {
+  if (!cost.active) {
+    return false;
+  }
+
+  if (cost.repeatsMonthly) {
+    return period >= cost.startPeriod && period <= cost.endPeriod;
+  }
+
+  return period === cost.startPeriod;
+}
+
+function getPlayerFeeAmount(fees: FeeRecord[], playerId: string, period: string) {
+  return (
+    fees.find((fee) => fee.playerId === playerId && fee.period === period)?.amount ?? 0
+  );
+}
+
+function getPreviousPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+
+  return getCurrentPeriod(date);
+}
+
+function unquoteSheetTitle(title: string) {
+  return title.replace(/^'|'$/g, "");
+}
+
 function getClubSheetYear(rows: unknown[][]) {
   const value = rows
     .slice(0, 2)
@@ -3378,4 +4470,9 @@ function invalidateSettingsCache() {
 function invalidatePremiumCache() {
   revalidateTag("google-sheets");
   revalidateTag("google-sheets:premium");
+}
+
+function invalidateFeeCalculatorCache() {
+  revalidateTag("google-sheets");
+  revalidateTag("google-sheets:fee-calculator");
 }

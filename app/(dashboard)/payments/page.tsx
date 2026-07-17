@@ -10,6 +10,8 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 import type { PaymentStatus } from "@/types/premium";
 
+export const dynamic = "force-dynamic";
+
 export default async function PaymentsPage() {
   const user = await getCurrentUser();
 

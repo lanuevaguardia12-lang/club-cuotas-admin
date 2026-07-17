@@ -5,6 +5,8 @@ import { LOGIN_PATH } from "@/lib/auth/constants";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardLayout({
   children,
 }: Readonly<{

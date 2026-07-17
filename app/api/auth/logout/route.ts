@@ -5,6 +5,8 @@ import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
+export const dynamic = "force-dynamic";
+
 export async function POST() {
   const user = await getCurrentUser();
   const response = NextResponse.json({ ok: true });

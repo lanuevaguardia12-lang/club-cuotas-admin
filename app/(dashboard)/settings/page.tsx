@@ -1,6 +1,8 @@
 import { ClubSettingsPanel } from "@/components/settings/club-settings-panel";
 import { getDataService } from "@/services/data-service";
 
+export const dynamic = "force-dynamic";
+
 export default async function SettingsPage() {
   const settingsData = await getDataService().getAppSettings();
 

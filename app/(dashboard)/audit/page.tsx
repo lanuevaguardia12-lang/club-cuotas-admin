@@ -8,6 +8,8 @@ import { hasPermission, roleLabels } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
+export const dynamic = "force-dynamic";
+
 export default async function AuditPage() {
   const user = await getCurrentUser();
 

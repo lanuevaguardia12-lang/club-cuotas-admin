@@ -5,6 +5,7 @@ import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type { CashFlowData, DashboardData, PlayerProfile } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
+import type { FeeCalculatorData } from "@/types/fee-calculator";
 import type { PremiumData } from "@/types/premium";
 import type { AppSettingsData } from "@/types/settings";
 
@@ -158,6 +159,66 @@ export class DatabaseService implements IDataService {
     };
   }
 
+  async getFeeCalculatorData(
+    period = new Date().toISOString().slice(0, 7),
+  ): Promise<FeeCalculatorData> {
+    const previousPeriod = getPreviousPeriod(period);
+
+    return {
+      period,
+      previousPeriod,
+      costs: [],
+      actuals: [],
+      refundPolicy: [],
+      playerCalculations: [],
+      matchSummaries: [],
+      summary: {
+        period,
+        previousPeriod,
+        plannedCurrentQuota: 0,
+        previousBaseQuota: 0,
+        previousCostVariance: 0,
+        baseQuota: 0,
+        activeCosts: 0,
+        players: 0,
+        totalMatchesPreviousPeriod: 0,
+      },
+      emptyState: {
+        title: "Calculador pendiente",
+        description:
+          "El contrato IDataService ya esta listo para implementar el calculador en PostgreSQL.",
+      },
+      source: {
+        provider: "postgresql",
+        status: "error",
+        message: "DatabaseService todavia no esta implementado.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  async upsertFeeCalculatorCost(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async deleteFeeCalculatorCost(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async updateFeeCalculatorActual(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async getExportData(dataset: ExportDataset): Promise<ExportData> {
     const titles: Record<ExportDataset, string> = {
       "cash-flow": "Cash Flow",
@@ -258,4 +319,11 @@ export class DatabaseService implements IDataService {
       "UNSUPPORTED_DATA_SOURCE",
     );
   }
+}
+
+function getPreviousPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }

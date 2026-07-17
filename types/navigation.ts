@@ -3,6 +3,7 @@ import type { Permission } from "@/lib/auth/roles";
 export type NavigationIcon =
   | "dashboard"
   | "cashFlow"
+  | "feeCalculator"
   | "users"
   | "reports"
   | "settings"

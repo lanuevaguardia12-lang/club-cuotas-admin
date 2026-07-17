@@ -2,6 +2,7 @@
 
 import {
   Bell,
+  Calculator,
   CreditCard,
   FileKey2,
   BarChart3,
@@ -28,6 +29,7 @@ const iconMap = {
   api: FileKey2,
   audit: ShieldCheck,
   dashboard: LayoutDashboard,
+  feeCalculator: Calculator,
   cashFlow: WalletCards,
   notifications: Bell,
   payments: CreditCard,

@@ -14,6 +14,8 @@ import { DashboardContent } from "@/components/dashboard/dashboard-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDataService } from "@/services/data-service";
 
+export const dynamic = "force-dynamic";
+
 const metricIcons = {
   "total-players": UsersRound,
   "delinquency-rate": Percent,

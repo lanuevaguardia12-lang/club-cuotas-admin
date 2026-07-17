@@ -44,6 +44,7 @@ logo institucional como fallback.
 app/
   (dashboard)/
     cash-flow/
+    fee-calculator/
     layout.tsx
     page.tsx
     players/
@@ -63,6 +64,7 @@ app/
 components/
   auth/
   cash-flow/
+  fee-calculator/
   layout/
   providers/
   reminders/
@@ -108,6 +110,8 @@ utils/
 - Indicadores de jugadores, morosidad, ingresos, comparativa anual, altas y bajas.
 - Graficos interactivos con Recharts.
 - Seccion Cash Flow con ingresos, gastos, balance, saldo y graficos.
+- Seccion Calculador de cuota con costos por vigencia, costos fijos, canchas
+  reales, politica de devoluciones, partidos jugados y cuota final por jugador.
 - Exportacion de jugadores, cuotas, ingresos y cash flow.
 - Formatos de exportacion: Excel, CSV y PDF.
 - Tabla profesional de jugadores con TanStack Table.
@@ -202,6 +206,11 @@ GOOGLE_SHEETS_LOGS_RANGE="Logs!A:Z"
 GOOGLE_SHEETS_NOTIFICATIONS_RANGE="Notificaciones!A:Z"
 GOOGLE_SHEETS_REMINDERS_RANGE="Recordatorios!A:Z"
 GOOGLE_SHEETS_PAYMENTS_RANGE="Pagos!A:Z"
+GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE="CalculadoraCostos!A:Z"
+GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE="CalculadoraReales!A:Z"
+GOOGLE_SHEETS_REFUND_POLICY_RANGE="Politica devoluciones!A:C"
+GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
+GOOGLE_SHEETS_MATCHES_RANGE="Partidos jugados formulario!A:Z"
 GOOGLE_SHEETS_CACHE_TTL_SECONDS=300
 ```
 
@@ -336,6 +345,11 @@ Rangos por defecto:
 - `Notificaciones!A:Z`
 - `Recordatorios!A:Z`
 - `Pagos!A:Z`
+- `CalculadoraCostos!A:Z`
+- `CalculadoraReales!A:Z`
+- `Politica devoluciones!A:C`
+- `Partidos jugados formulario!A:Z` en el Sheet definido por
+  `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`
 
 ### Planilla operativa La Nueva Guardia
 
@@ -349,6 +363,7 @@ carga manual. Si no existen las hojas normalizadas `Jugadores`, `Cuotas` y
 - `Cuota final por jugador!A:Z`: matriz anual con el importe calculado por mes.
 - `Respuestas de formulario!A:Z`: pagos cargados desde el formulario.
 - `Gastos nueva guardia!A:Z`: gastos del club para Cash Flow.
+- `Politica devoluciones!A:C`: rangos de asistencia y porcentaje a devolver.
 
 En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
 
@@ -359,6 +374,8 @@ En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
   WhatsApp Argentina (`549...`).
 - Los ingresos de Cash Flow salen de cuotas pagadas y los gastos de
   `Gastos nueva guardia`.
+- El calculador resta al jugador los gastos que haya pagado en el mes anterior,
+  matcheando la columna `Pagado por` contra el nombre del jugador.
 - Si no existe `Configuracion`, la app usa configuracion por defecto y no rompe
   la pantalla.
 
@@ -428,6 +445,25 @@ Hoja `Pagos`:
 | ------- | ------------ | ----------- | --------- | ----------- | ------- | ------ | -------- | ------- | ------------ | -------------------- | -------------------- | ---------------- |
 | PAY-001 | mercado-pago | 123456      | JUG-001   | Juan Perez  | 2026-07 | 25000  | ARS      | pending | https://...  | 2026-07-16T12:00:00Z | 2026-07-16T12:00:00Z | checkout.created |
 
+Hoja `CalculadoraCostos`:
+
+| id     | nombre | tipo  | vigencia_desde | vigencia_hasta | monto | repite_mensual | dividir_entre | cantidad_estimada | notas | activo |
+| ------ | ------ | ----- | -------------- | -------------- | ----- | -------------- | ------------- | ----------------- | ----- | ------ |
+| cost-1 | Cancha | court | 2026-07        | 2026-12        | 50000 | true           | 20            | 4                 |       | true   |
+| cost-2 | DT     | fixed | 2026-07        | 2026-12        | 23000 | true           | 20            | 1                 |       | true   |
+
+Hoja `CalculadoraReales`:
+
+| id       | costo_id | periodo | cantidad_real | notas | actualizado_en       |
+| -------- | -------- | ------- | ------------- | ----- | -------------------- |
+| real-001 | cost-1   | 2026-07 | 5             |       | 2026-07-17T12:00:00Z |
+
+Hoja externa `Partidos jugados formulario`:
+
+| Marca temporal    | Rival       | Fecha    | Jugadores que ingresaron |
+| ----------------- | ----------- | -------- | ------------------------ |
+| 7/6/2026 16:25:19 | Green Ville | 6/6/2026 | Juan Perez, Pedro Gomez  |
+
 Encabezados equivalentes soportados:
 
 - Jugadores: `id`, `jugador_id`, `id_jugador`, `player_id`, `nombre`, `name`,
@@ -451,6 +487,36 @@ Encabezados equivalentes soportados:
 - Premium: las hojas `Auditoria`, `Logs`, `Notificaciones`, `Recordatorios` y
   `Pagos` soportan los encabezados mostrados arriba y aliases equivalentes en
   espanol/ingles para las columnas principales.
+
+### Calculador de cuota
+
+La pantalla `/fee-calculator` calcula la cuota final por jugador con esta regla:
+
+```text
+cuota final =
+  cuota base del mes actual
+  - devolucion por asistencia del mes anterior
+  - gastos pagados por el jugador en el mes anterior
+```
+
+La cuota base del mes actual se arma con los costos vigentes en
+`CalculadoraCostos`. Para costos de tipo `court`, el campo `monto` representa el
+costo por jornada y `cantidad_estimada` representa las canchas pronosticadas.
+En `CalculadoraReales` se carga la cantidad real del mes anterior; la diferencia
+contra lo estimado se suma o resta en la cuota del mes siguiente.
+
+La devolucion se calcula con `Politica devoluciones`:
+
+| Desde  | Hasta | Devolucion |
+| ------ | ----- | ---------- |
+| 0%     | 0%    | 38%        |
+| 0.01%  | 50%   | 23%        |
+| 50.01% | 100%  | 0%         |
+
+Los partidos salen del Sheet configurado en
+`GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`, hoja `Partidos jugados formulario`. La
+app cuenta partidos por mes, por jugador, y permite desplegar los rivales desde
+la tabla de cálculo.
 
 Estados de cuota soportados:
 
@@ -732,7 +798,8 @@ El proyecto incluye configuracion productiva en `next.config.ts`:
 - `poweredByHeader` desactivado.
 - Compresion habilitada.
 - Source maps de produccion desactivados.
-- `optimizePackageImports` para `lucide-react` y `recharts`.
+- `googleapis` se mantiene como paquete externo del servidor para builds mas
+  estables en Vercel.
 - Headers de seguridad basicos.
 - Cache largo para iconos y favicons.
 

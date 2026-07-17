@@ -9,9 +9,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
   productionBrowserSourceMaps: false,
-  experimental: {
-    optimizePackageImports: ["lucide-react", "recharts"],
-  },
+  serverExternalPackages: ["googleapis"],
   turbopack: {
     root: projectRoot,
   },

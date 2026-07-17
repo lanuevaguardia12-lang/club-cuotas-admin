@@ -22,6 +22,8 @@ import type {
   PlayerYearMonth,
 } from "@/types/dashboard";
 
+export const dynamic = "force-dynamic";
+
 interface PlayerPageProps {
   params: Promise<{
     playerId: string;

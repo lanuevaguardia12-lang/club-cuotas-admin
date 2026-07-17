@@ -6,6 +6,11 @@ import type {
 } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
 import type {
+  FeeCalculatorData,
+  UpdateFeeCalculatorActualInput,
+  UpsertFeeCalculatorCostInput,
+} from "@/types/fee-calculator";
+import type {
   CreateAuditEventInput,
   CreateNotificationInput,
   CreateReminderJobInput,
@@ -19,6 +24,10 @@ export interface IDataService {
   updateAppSettings(input: UpdateAppSettingsInput): Promise<void>;
   getDashboardData(): Promise<DashboardData>;
   getCashFlowData(): Promise<CashFlowData>;
+  getFeeCalculatorData(period?: string): Promise<FeeCalculatorData>;
+  upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void>;
+  deleteFeeCalculatorCost(costId: string): Promise<void>;
+  updateFeeCalculatorActual(input: UpdateFeeCalculatorActualInput): Promise<void>;
   getExportData(dataset: ExportDataset): Promise<ExportData>;
   getPlayerProfile(playerId: string, year?: number): Promise<PlayerProfile | null>;
   updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput): Promise<void>;
