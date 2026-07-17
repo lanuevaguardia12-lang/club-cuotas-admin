@@ -325,6 +325,34 @@ Rangos por defecto:
 - `Recordatorios!A:Z`
 - `Pagos!A:Z`
 
+### Planilla operativa La Nueva Guardia
+
+La aplicacion tambien soporta la planilla operativa actual del club sin duplicar
+carga manual. Si no existen las hojas normalizadas `Jugadores`, `Cuotas` y
+`CashFlow`, `GoogleSheetsService` intenta leer automaticamente estas hojas:
+
+- `Listado jugadores!A:Z`: nombres, telefonos y emails.
+- `Seguimiento!A:Z`: matriz anual con estados `Pago`, `Pagó`,
+  `Enviar recordatorio` y `No se cobra`.
+- `Cuota final por jugador!A:Z`: matriz anual con el importe calculado por mes.
+- `Respuestas de formulario!A:Z`: pagos cargados desde el formulario.
+- `Gastos nueva guardia!A:Z`: gastos del club para Cash Flow.
+
+En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
+
+- La app arma los jugadores desde `Listado jugadores`.
+- Las cuotas se calculan combinando `Seguimiento`, `Cuota final por jugador` y
+  `Respuestas de formulario`.
+- Los telefonos locales como `1154012398` se normalizan internamente a formato
+  WhatsApp Argentina (`549...`).
+- Los ingresos de Cash Flow salen de cuotas pagadas y los gastos de
+  `Gastos nueva guardia`.
+- Si no existe `Configuracion`, la app usa configuracion por defecto y no rompe
+  la pantalla.
+
+Para usar este modo solo hay que configurar el `GOOGLE_SHEETS_SPREADSHEET_ID`
+de la planilla operativa y compartirla con el Service Account como editor.
+
 Hoja `Jugadores`:
 
 | id      | nombre          | categoria | telefono       | cuota | observaciones |

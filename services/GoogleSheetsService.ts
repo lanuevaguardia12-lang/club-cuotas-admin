@@ -113,6 +113,12 @@ interface CashFlowTransactionRecord {
   amount: number;
 }
 
+interface DashboardRecords {
+  players: PlayerRecord[];
+  fees: FeeRecord[];
+  message: string;
+}
+
 const DEFAULT_PLAYERS_RANGE = "Jugadores!A:Z";
 const DEFAULT_FEES_RANGE = "Cuotas!A:Z";
 const DEFAULT_CASH_FLOW_RANGE = "CashFlow!A:Z";
@@ -123,6 +129,12 @@ const DEFAULT_NOTIFICATIONS_RANGE = "Notificaciones!A:Z";
 const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
+
+const CLUB_PLAYERS_RANGE = "Listado jugadores!A:Z";
+const CLUB_TRACKING_RANGE = "Seguimiento!A:Z";
+const CLUB_FINAL_FEE_RANGE = "Cuota final por jugador!A:Z";
+const CLUB_FORM_RESPONSES_RANGE = "Respuestas de formulario!A:Z";
+const CLUB_EXPENSES_RANGE = "Gastos nueva guardia!A:Z";
 
 const auditHeaders = [
   "id",
@@ -246,6 +258,23 @@ export class GoogleSheetsService implements IDataService {
       };
     } catch (error) {
       const serviceError = normalizeGoogleSheetsError(error);
+      const isOptionalSettingsError =
+        serviceError.code === "GOOGLE_SHEETS_ERROR" ||
+        serviceError.code === "CONFIGURATION_ERROR";
+
+      if (isOptionalSettingsError) {
+        return {
+          settings: DEFAULT_APP_SETTINGS,
+          source: {
+            provider: "google-sheets",
+            status: "ready",
+            message:
+              "Google Sheets conectado. Se usa configuracion por defecto porque no existe la hoja Configuracion.",
+            cachedAt,
+            revalidateSeconds: this.config.cacheTtlSeconds,
+          },
+        };
+      }
 
       return {
         settings: DEFAULT_APP_SETTINGS,
@@ -284,9 +313,7 @@ export class GoogleSheetsService implements IDataService {
 
     try {
       this.assertConfigured();
-      const { playersRows, feesRows } = await this.readCachedDashboardRows();
-      const players = mapRowsToPlayers(playersRows);
-      const fees = mapRowsToFees(feesRows);
+      const { players, fees, message } = await this.readDashboardRecords();
 
       return buildDashboardData({
         players,
@@ -295,7 +322,7 @@ export class GoogleSheetsService implements IDataService {
         message:
           players.length === 0 && fees.length === 0
             ? "Google Sheets conectado, sin jugadores ni cuotas cargadas."
-            : "Datos obtenidos desde Google Sheets.",
+            : message,
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
@@ -316,8 +343,7 @@ export class GoogleSheetsService implements IDataService {
 
     try {
       this.assertConfigured();
-      const rows = await this.readCachedCashFlowRows();
-      const transactions = mapRowsToCashFlowTransactions(rows);
+      const transactions = await this.readCashFlowTransactions();
 
       return buildCashFlowData({
         transactions,
@@ -345,13 +371,10 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     if (dataset === "cash-flow") {
-      const rows = await this.readCachedCashFlowRows();
-      return buildCashFlowExport(mapRowsToCashFlowTransactions(rows));
+      return buildCashFlowExport(await this.readCashFlowTransactions());
     }
 
-    const { playersRows, feesRows } = await this.readCachedDashboardRows();
-    const players = mapRowsToPlayers(playersRows);
-    const fees = mapRowsToFees(feesRows);
+    const { players, fees } = await this.readDashboardRecords();
 
     if (dataset === "players") {
       return buildPlayersExport(players);
@@ -367,9 +390,7 @@ export class GoogleSheetsService implements IDataService {
   async getPlayerProfile(playerId: string, year = new Date().getFullYear()) {
     try {
       this.assertConfigured();
-      const { playersRows, feesRows } = await this.readCachedDashboardRows();
-      const players = mapRowsToPlayers(playersRows);
-      const fees = mapRowsToFees(feesRows);
+      const { players, fees } = await this.readDashboardRecords();
       const player =
         players.find((candidate) => candidate.id === playerId) ??
         buildPlayerFromFees(playerId, fees);
@@ -788,6 +809,72 @@ export class GoogleSheetsService implements IDataService {
     )();
   }
 
+  private async readCachedClubDashboardRows() {
+    const spreadsheetId = this.config.spreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    return unstable_cache(
+      async () => ({
+        playersRows: await this.readValues(CLUB_PLAYERS_RANGE),
+        trackingRows: await this.readValues(CLUB_TRACKING_RANGE),
+        finalFeeRows: await this.readValues(CLUB_FINAL_FEE_RANGE),
+        formResponseRows: await this.readOptionalValues(CLUB_FORM_RESPONSES_RANGE),
+      }),
+      [
+        "google-sheets-club-dashboard",
+        spreadsheetId,
+        CLUB_PLAYERS_RANGE,
+        CLUB_TRACKING_RANGE,
+        CLUB_FINAL_FEE_RANGE,
+        CLUB_FORM_RESPONSES_RANGE,
+      ],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:dashboard"],
+      },
+    )();
+  }
+
+  private async readCachedClubFinancialRows() {
+    const spreadsheetId = this.config.spreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    return unstable_cache(
+      async () => ({
+        playersRows: await this.readValues(CLUB_PLAYERS_RANGE),
+        trackingRows: await this.readValues(CLUB_TRACKING_RANGE),
+        finalFeeRows: await this.readValues(CLUB_FINAL_FEE_RANGE),
+        formResponseRows: await this.readOptionalValues(CLUB_FORM_RESPONSES_RANGE),
+        expenseRows: await this.readOptionalValues(CLUB_EXPENSES_RANGE),
+      }),
+      [
+        "google-sheets-club-financial",
+        spreadsheetId,
+        CLUB_PLAYERS_RANGE,
+        CLUB_TRACKING_RANGE,
+        CLUB_FINAL_FEE_RANGE,
+        CLUB_FORM_RESPONSES_RANGE,
+        CLUB_EXPENSES_RANGE,
+      ],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:cash-flow"],
+      },
+    )();
+  }
+
   private async readValues(range: string) {
     const sheets = this.createSheetsClient();
     const response = await sheets.spreadsheets.values.get({
@@ -796,6 +883,14 @@ export class GoogleSheetsService implements IDataService {
     });
 
     return response.data.values ?? [];
+  }
+
+  private async readOptionalValues(range: string) {
+    try {
+      return await this.readValues(range);
+    } catch {
+      return [];
+    }
   }
 
   private createSheetsClient(): sheets_v4.Sheets {
@@ -931,6 +1026,66 @@ export class GoogleSheetsService implements IDataService {
 
     return settings.monthlyFee;
   }
+
+  private async readDashboardRecords(): Promise<DashboardRecords> {
+    try {
+      const { playersRows, feesRows } = await this.readCachedDashboardRows();
+      const players = mapRowsToPlayers(playersRows);
+      const fees = mapRowsToFees(feesRows);
+
+      return {
+        players,
+        fees,
+        message: "Datos obtenidos desde Google Sheets.",
+      };
+    } catch (error) {
+      if (!shouldUseClubSheetLayout(error)) {
+        throw error;
+      }
+
+      const { playersRows, trackingRows, finalFeeRows, formResponseRows } =
+        await this.readCachedClubDashboardRows();
+      const players = mapClubRowsToPlayers(playersRows);
+      const fees = mapClubRowsToFees({
+        players,
+        trackingRows,
+        finalFeeRows,
+        formResponseRows,
+      });
+
+      return {
+        players,
+        fees,
+        message: "Datos obtenidos desde la planilla operativa del club.",
+      };
+    }
+  }
+
+  private async readCashFlowTransactions(): Promise<CashFlowTransactionRecord[]> {
+    try {
+      const rows = await this.readCachedCashFlowRows();
+      return mapRowsToCashFlowTransactions(rows);
+    } catch (error) {
+      if (!shouldUseClubSheetLayout(error)) {
+        throw error;
+      }
+
+      const { playersRows, trackingRows, finalFeeRows, formResponseRows, expenseRows } =
+        await this.readCachedClubFinancialRows();
+      const players = mapClubRowsToPlayers(playersRows);
+      const fees = mapClubRowsToFees({
+        players,
+        trackingRows,
+        finalFeeRows,
+        formResponseRows,
+      });
+
+      return [
+        ...mapClubFeesToIncomeTransactions(players, fees),
+        ...mapClubExpenseRowsToTransactions(expenseRows),
+      ];
+    }
+  }
 }
 
 function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
@@ -1065,6 +1220,204 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
     .filter((transaction): transaction is CashFlowTransactionRecord =>
       Boolean(transaction),
     );
+}
+
+function mapClubRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
+  const seenIds = new Set<string>();
+
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const name = pick(record, ["nombre", "name", "jugador", "player"]).trim();
+
+      if (!name) {
+        return null;
+      }
+
+      const baseId = createClubPlayerId(name) || `player-${index + 1}`;
+      const id = createUniqueClubPlayerId(baseId, seenIds);
+
+      return {
+        id,
+        name: name.trim(),
+        category:
+          pick(record, ["categoria", "category", "division", "equipo"]) || "Plantel",
+        phone: normalizeClubPhone(
+          pick(record, ["telefono", "phone", "whatsapp", "celular"]),
+        ),
+        monthlyFee: parseMoney(
+          pick(record, ["cuota", "monto_mensual", "monthly_fee", "importe"]),
+        ),
+        observations: pick(record, ["observaciones", "observacion", "notas", "notes"]),
+        status: "activo",
+      } satisfies PlayerRecord;
+    })
+    .filter((player): player is PlayerRecord => Boolean(player));
+}
+
+function mapClubRowsToFees({
+  players,
+  trackingRows,
+  finalFeeRows,
+  formResponseRows,
+}: {
+  players: PlayerRecord[];
+  trackingRows: unknown[][];
+  finalFeeRows: unknown[][];
+  formResponseRows: unknown[][];
+}): FeeRecord[] {
+  const year = getClubSheetYear(trackingRows);
+  const today = new Date();
+  const playersByName = new Map(
+    players.map((player) => [normalizeClubPlayerName(player.name), player]),
+  );
+  const amountsByPlayerPeriod = mapClubFinalFeeAmounts(finalFeeRows, year);
+  const paymentsByPlayerPeriod = mapClubPaymentsByPlayerPeriod(formResponseRows);
+  const rows = trackingRows.slice(2);
+
+  return rows.flatMap((row, rowIndex) => {
+    const rawName = String(row[0] ?? "").trim();
+    const normalizedName = normalizeClubPlayerName(rawName);
+
+    if (!normalizedName) {
+      return [];
+    }
+
+    const player = playersByName.get(normalizedName);
+    const playerId = player?.id ?? createClubPlayerId(rawName) ?? `player-${rowIndex + 1}`;
+    const playerFees: FeeRecord[] = [];
+
+    for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+      const rawStatus = String(row[monthIndex + 1] ?? "").trim();
+
+      if (!isChargeableClubStatus(rawStatus)) {
+        continue;
+      }
+
+      const period = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+      const dueDate = `${period}-10`;
+      const amount =
+        amountsByPlayerPeriod.get(`${normalizedName}:${period}`) ??
+        player?.monthlyFee ??
+        0;
+      const paidAt = paymentsByPlayerPeriod.get(`${normalizedName}:${period}`);
+      const status = isClubPaidStatus(rawStatus)
+        ? "paid"
+        : normalizeFeeStatus("pendiente", dueDate, today);
+
+      playerFees.push({
+        id: `fee-${playerId}-${period}`,
+        playerId,
+        period,
+        amount,
+        status,
+        dueDate,
+        paidAt,
+      });
+    }
+
+    return playerFees;
+  });
+}
+
+function mapClubFeesToIncomeTransactions(
+  players: PlayerRecord[],
+  fees: FeeRecord[],
+): CashFlowTransactionRecord[] {
+  const playersById = new Map(players.map((player) => [player.id, player]));
+
+  return fees
+    .filter((fee) => fee.status === "paid" && fee.amount > 0)
+    .map((fee) => {
+      const player = playersById.get(fee.playerId);
+
+      return {
+        id: `income-${fee.id}`,
+        date: fee.paidAt,
+        period: fee.period,
+        type: "income",
+        concept: `Cuota ${player?.name ?? fee.playerId}`,
+        amount: fee.amount,
+      };
+    });
+}
+
+function mapClubExpenseRowsToTransactions(rows: unknown[][]): CashFlowTransactionRecord[] {
+  const transactions: CashFlowTransactionRecord[] = [];
+
+  rowsToRecords(rows).forEach((record, index) => {
+    const amount = Math.abs(parseMoney(pick(record, ["monto", "importe", "amount"])));
+
+    if (amount === 0) {
+      return;
+    }
+
+    const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
+
+    transactions.push({
+      id: pick(record, ["id", "movimiento_id"]) || `expense-${index + 1}`,
+      date,
+      period: getPeriodFromDate(date) ?? getCurrentPeriod(),
+      type: "expense",
+      concept:
+        pick(record, ["concepto", "descripcion", "detalle", "category"]) ||
+        "Gasto del club",
+      amount,
+    });
+  });
+
+  return transactions;
+}
+
+function mapClubFinalFeeAmounts(rows: unknown[][], fallbackYear: number) {
+  const year = getClubSheetYear(rows) || fallbackYear;
+  const amounts = new Map<string, number>();
+
+  for (const row of rows.slice(2)) {
+    const normalizedName = normalizeClubPlayerName(String(row[0] ?? ""));
+
+    if (!normalizedName) {
+      continue;
+    }
+
+    for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+      const period = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+      const amount = parseMoney(String(row[monthIndex + 1] ?? ""));
+
+      if (amount > 0) {
+        amounts.set(`${normalizedName}:${period}`, amount);
+      }
+    }
+  }
+
+  return amounts;
+}
+
+function mapClubPaymentsByPlayerPeriod(rows: unknown[][]) {
+  const payments = new Map<string, string>();
+
+  for (const record of rowsToRecords(rows)) {
+    const name = pick(record, [
+      "nombren_del_jugador",
+      "nombre_del_jugador",
+      "nombre_jugador",
+      "jugador",
+      "nombre",
+    ]);
+    const year = Number(pick(record, ["ano", "anio", "year"]));
+    const month = monthNameToNumber(pick(record, ["mes", "month"]));
+    const paidAt =
+      parseClubDateTime(pick(record, ["marca_temporal", "timestamp", "fecha"])) ??
+      getTodayIsoDate();
+
+    if (!name || !Number.isFinite(year) || !month) {
+      continue;
+    }
+
+    const period = `${year}-${String(month).padStart(2, "0")}`;
+    payments.set(`${normalizeClubPlayerName(name)}:${period}`, paidAt);
+  }
+
+  return payments;
 }
 
 function mapRowsToAppSettings(rows: unknown[][]): AppSettings {
@@ -2222,12 +2575,138 @@ function pick(record: SheetRecord, keys: string[]) {
   return "";
 }
 
+function shouldUseClubSheetLayout(error: unknown) {
+  return !(error instanceof DataServiceError && error.code === "CONFIGURATION_ERROR");
+}
+
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function normalizeClubPlayerName(value: string) {
+  return normalizeText(value).replace(/\s+/g, " ");
+}
+
+function createClubPlayerId(name: string) {
+  const normalized = normalizeClubPlayerName(name);
+
+  if (!normalized) {
+    return "";
+  }
+
+  return normalizeHeader(normalized).replace(/_/g, "-");
+}
+
+function createUniqueClubPlayerId(baseId: string, seenIds: Set<string>) {
+  let id = baseId;
+  let suffix = 2;
+
+  while (seenIds.has(id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  seenIds.add(id);
+  return id;
+}
+
+function normalizeClubPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+
+  if (!digits) {
+    return "-";
+  }
+
+  if (digits.startsWith("549") || digits.startsWith("54")) {
+    return digits;
+  }
+
+  const withoutLeadingZero = digits.replace(/^0+/, "");
+
+  if (withoutLeadingZero.startsWith("11") && withoutLeadingZero.length === 10) {
+    return `549${withoutLeadingZero}`;
+  }
+
+  if (withoutLeadingZero.length === 8) {
+    return `54911${withoutLeadingZero}`;
+  }
+
+  return withoutLeadingZero;
+}
+
+function getClubSheetYear(rows: unknown[][]) {
+  const value = rows
+    .slice(0, 2)
+    .flat()
+    .map((cell) => String(cell ?? ""))
+    .find((cell) => /\b20\d{2}\b/.test(cell));
+  const match = value?.match(/\b(20\d{2})\b/);
+
+  return match ? Number(match[1]) : new Date().getFullYear();
+}
+
+function isClubPaidStatus(value: string) {
+  const status = normalizeText(value);
+
+  return ["pago", "pagada", "pagado", "paid"].includes(status);
+}
+
+function isChargeableClubStatus(value: string) {
+  const status = normalizeText(value);
+
+  if (!status || status.includes("no se cobra") || status.includes("no se jugo")) {
+    return false;
+  }
+
+  if (status.includes("value")) {
+    return false;
+  }
+
+  return isClubPaidStatus(value) || status.includes("recordatorio");
+}
+
+function monthNameToNumber(value: string) {
+  const month = normalizeText(value);
+  const months = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+  ];
+  const index = months.findIndex((candidate) => month.startsWith(candidate));
+
+  return index >= 0 ? index + 1 : undefined;
+}
+
+function parseClubDateTime(value: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = value
+    .trim()
+    .match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/);
+
+  if (match) {
+    const [, day, month, rawYear] = match;
+    const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  return parseDate(value);
 }
 
 function normalizeFeeStatus(
