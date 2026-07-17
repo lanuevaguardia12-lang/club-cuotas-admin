@@ -7,7 +7,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   logoUrl: "",
   whatsAppMessageTemplate:
     process.env.NEXT_PUBLIC_REMINDER_TEMPLATE ??
-    "Hola {nombre}.\n\nTe recordamos que la cuota del mes actual figura pendiente.\n\nMuchas gracias.\n\n{club}.",
+    "Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6",
   monthlyFee: parsePositiveNumber(process.env.NEXT_PUBLIC_DEFAULT_MONTHLY_FEE),
   primaryColor: normalizeHexColor(process.env.NEXT_PUBLIC_PRIMARY_COLOR) ?? "#0f766e",
   darkMode: false,

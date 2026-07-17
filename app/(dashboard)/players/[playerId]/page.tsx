@@ -68,6 +68,8 @@ export default async function PlayerPage({ params, searchParams }: PlayerPagePro
   }
 
   const encodedPlayerId = encodeURIComponent(profile.id);
+  const currentPeriod = getCurrentPeriod();
+  const currentMonth = profile.months.find((month) => month.period === currentPeriod);
 
   return (
     <main className="grid gap-6">
@@ -98,6 +100,7 @@ export default async function PlayerPage({ params, searchParams }: PlayerPagePro
           <ReminderButton
             playerName={profile.name}
             phone={profile.phone}
+            feeAmount={currentMonth?.amount ?? "-"}
             size="default"
           />
         </div>
@@ -287,6 +290,10 @@ function parseYear(value?: string) {
   }
 
   return parsed;
+}
+
+function getCurrentPeriod(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function safeDecodeURIComponent(value: string) {

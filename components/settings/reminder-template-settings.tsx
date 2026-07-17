@@ -63,8 +63,8 @@ export function ReminderTemplateSettings() {
         <h2 className="text-lg font-semibold">Plantilla de recordatorio</h2>
         <p className="text-muted-foreground mt-1 text-sm">
           Se usa para generar el mensaje de WhatsApp desde la tabla y la ficha del
-          jugador. Variables disponibles: <code>{"{nombre}"}</code> y{" "}
-          <code>{"{mes}"}</code>.
+          jugador. Variables disponibles: <code>{"{nombre}"}</code>,{" "}
+          <code>{"{mes}"}</code> y <code>{"{monto}"}</code>.
         </p>
       </div>
 

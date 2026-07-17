@@ -153,7 +153,7 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
           />
           <p className="text-muted-foreground text-xs">
             Variables: <code>{"{nombre}"}</code>, <code>{"{mes}"}</code>,{" "}
-            <code>{"{club}"}</code>.
+            <code>{"{monto}"}</code>, <code>{"{club}"}</code>.
           </p>
         </Field>
 

@@ -14,6 +14,7 @@ const reminderSchema = z.object({
   playerName: z.string().trim().min(1),
   phone: z.string().trim().min(1),
   period: z.string().regex(/^\d{4}-\d{2}$/),
+  feeAmount: z.string().trim().optional(),
   paymentStatus: z.enum(["paid", "debt", "pending"]).default("pending"),
   scheduledFor: z.string().datetime().optional(),
   message: z.string().trim().optional(),
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
     buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
       clubName: settingsData.settings.clubName,
       currentMonth: getCurrentMonthLabel(),
+      feeAmount: parsed.data.feeAmount ?? "-",
       playerName: parsed.data.playerName,
     });
 

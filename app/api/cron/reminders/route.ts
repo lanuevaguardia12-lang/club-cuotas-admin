@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
       message: buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
         clubName: settingsData.settings.clubName,
         currentMonth: getCurrentMonthLabel(),
+        feeAmount: player.fee,
         playerName: player.name,
       }),
     });

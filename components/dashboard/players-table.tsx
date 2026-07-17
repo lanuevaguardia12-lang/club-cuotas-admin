@@ -376,7 +376,11 @@ function RowActions({ player }: { player: PlayerTableRow }) {
           Cobrar
         </Link>
       </Button>
-      <ReminderButton playerName={player.name} phone={player.phone} />
+      <ReminderButton
+        playerName={player.name}
+        phone={player.phone}
+        feeAmount={player.fee}
+      />
     </div>
   );
 }

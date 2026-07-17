@@ -156,7 +156,7 @@ NEXT_PUBLIC_APP_NAME="La Nueva Guardia"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 NEXT_PUBLIC_SITE_INDEXABLE=false
 NEXT_PUBLIC_PWA_ENABLED=true
-NEXT_PUBLIC_REMINDER_TEMPLATE="Hola {nombre}.\n\nTe recordamos que la cuota del mes actual figura pendiente.\n\nMuchas gracias.\n\n{club}."
+NEXT_PUBLIC_REMINDER_TEMPLATE="Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6"
 NEXT_PUBLIC_DEFAULT_MONTHLY_FEE=0
 NEXT_PUBLIC_PRIMARY_COLOR="#0f766e"
 DATA_SOURCE="google-sheets"
@@ -380,7 +380,7 @@ Hoja `Configuracion`:
 | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | club_name                 | La Nueva Guardia                                                                                            |
 | logo_url                  | https://example.com/logo.png                                                                                |
-| whatsapp_message_template | Hola {nombre}.\n\nTe recordamos que la cuota del mes actual figura pendiente.\n\nMuchas gracias.\n\n{club}. |
+| whatsapp_message_template | Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6 |
 | monthly_fee               | 25000                                                                                                       |
 | primary_color             | #0f766e                                                                                                     |
 | dark_mode                 | false                                                                                                       |
@@ -570,13 +570,9 @@ se genera con la plantilla configurada en `Configuración`.
 Plantilla predeterminada:
 
 ```text
-Hola {nombre}.
-
-Te recordamos que la cuota del mes actual figura pendiente.
-
-Muchas gracias.
-
-{club}.
+Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.
+El monto es {monto}.
+Y completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6
 ```
 
 Variables disponibles:

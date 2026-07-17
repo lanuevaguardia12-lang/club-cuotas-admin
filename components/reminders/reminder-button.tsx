@@ -13,6 +13,7 @@ import {
 interface ReminderButtonProps {
   playerName: string;
   phone: string;
+  feeAmount?: string;
   size?: "sm" | "default";
   variant?: "default" | "outline" | "ghost";
 }
@@ -20,6 +21,7 @@ interface ReminderButtonProps {
 export function ReminderButton({
   playerName,
   phone,
+  feeAmount = "-",
   size = "sm",
   variant = "outline",
 }: ReminderButtonProps) {
@@ -32,6 +34,7 @@ export function ReminderButton({
       clubName: settings.clubName,
       playerName,
       currentMonth: getCurrentMonthLabel(),
+      feeAmount,
     });
     const url = `https://wa.me/${sanitizedPhone}?text=${encodeURIComponent(message)}`;
 
