@@ -465,7 +465,6 @@ export class GoogleSheetsService implements IDataService {
 
       const {
         players,
-        fees,
         costsRows,
         actualsRows,
         refundPolicyRows,
@@ -481,7 +480,6 @@ export class GoogleSheetsService implements IDataService {
       return buildFeeCalculatorData({
         period,
         players,
-        fees,
         costs,
         actuals,
         refundPolicy,
@@ -501,7 +499,6 @@ export class GoogleSheetsService implements IDataService {
       return buildFeeCalculatorData({
         period,
         players: [],
-        fees: [],
         costs: [],
         actuals: [],
         refundPolicy: getDefaultRefundPolicy(),
@@ -2168,7 +2165,6 @@ function mapClubExpenseRowsToPlayerCredits(rows: unknown[][]): PlayerExpenseCred
 function buildFeeCalculatorData({
   period,
   players,
-  fees,
   costs,
   actuals,
   refundPolicy,
@@ -2181,7 +2177,6 @@ function buildFeeCalculatorData({
 }: {
   period: string;
   players: PlayerRecord[];
-  fees: FeeRecord[];
   costs: FeeCalculatorCost[];
   actuals: FeeCalculatorActual[];
   refundPolicy: FeeRefundPolicyRule[];
@@ -2193,13 +2188,18 @@ function buildFeeCalculatorData({
   revalidateSeconds: number;
 }): FeeCalculatorData {
   const previousPeriod = getPreviousPeriod(period);
+  const periodBeforePrevious = getPreviousPeriod(previousPeriod);
   const activePlayers = players.filter((player) => !isDroppedPlayer(player));
   const activeCosts = costs.filter((cost) => cost.active);
-  const effectiveActuals = mergeInferredFeeCalculatorActuals(
-    activeCosts,
+  const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
+    (mergedActuals, actualPeriod) =>
+      mergeInferredFeeCalculatorActuals(
+        activeCosts,
+        mergedActuals,
+        matches,
+        actualPeriod,
+      ),
     actuals,
-    matches,
-    previousPeriod,
   );
   const plannedCurrentQuota = calculateBaseQuotaForPeriod(
     activeCosts,
@@ -2219,6 +2219,11 @@ function buildFeeCalculatorData({
     previousPeriod,
     "actual",
   );
+  const previousPeriodBaseQuota = calculateAppBaseQuotaForPeriod(
+    activeCosts,
+    effectiveActuals,
+    previousPeriod,
+  );
   const previousCostVariance = previousActualQuota - previousPlannedQuota;
   const previousPeriodMatches = matches.filter(
     (match) => match.period === previousPeriod,
@@ -2232,13 +2237,11 @@ function buildFeeCalculatorData({
   const calculations = activePlayers.map((player) =>
     buildPlayerFeeCalculation({
       player,
-      fees,
       period,
       previousPeriod,
       baseQuota,
       plannedCurrentQuota,
-      previousBaseQuota:
-        previousPlannedQuota || getPlayerFeeAmount(fees, player.id, previousPeriod),
+      previousBaseQuota: previousPeriodBaseQuota,
       previousCostVariance,
       matches,
       refundPolicy,
@@ -2267,7 +2270,7 @@ function buildFeeCalculatorData({
       period,
       previousPeriod,
       plannedCurrentQuota,
-      previousBaseQuota: previousPlannedQuota,
+      previousBaseQuota: previousPeriodBaseQuota,
       previousCostVariance,
       baseQuota,
       activeCosts: activeCosts.length,
@@ -2295,7 +2298,6 @@ function buildFeeCalculatorData({
 
 function buildPlayerFeeCalculation({
   player,
-  fees,
   period,
   previousPeriod,
   baseQuota,
@@ -2308,7 +2310,6 @@ function buildPlayerFeeCalculation({
   totalMatchesPreviousPeriod,
 }: {
   player: PlayerRecord;
-  fees: FeeRecord[];
   period: string;
   previousPeriod: string;
   baseQuota: number;
@@ -2337,9 +2338,7 @@ function buildPlayerFeeCalculation({
   const attendanceRate =
     totalMatchesPreviousPeriod > 0 ? playedMatches / totalMatchesPreviousPeriod : 0;
   const refundPercent = findRefundPercent(refundPolicy, attendanceRate * 100);
-  const refundBase =
-    previousBaseQuota || getPlayerFeeAmount(fees, player.id, previousPeriod);
-  const refundAmount = refundBase * (refundPercent / 100);
+  const refundAmount = previousBaseQuota * (refundPercent / 100);
   const expenseCredit = expenseCredits
     .filter(
       (credit) =>
@@ -2356,7 +2355,7 @@ function buildPlayerFeeCalculation({
     previousPeriod,
     baseQuota,
     plannedCurrentQuota,
-    previousBaseQuota: refundBase,
+    previousBaseQuota,
     previousCostVariance,
     refundPercent,
     refundAmount,
@@ -3782,6 +3781,29 @@ function findRefundPercent(rules: FeeRefundPolicyRule[], attendancePercent: numb
   return rule?.refundPercent ?? 0;
 }
 
+function calculateAppBaseQuotaForPeriod(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+) {
+  const previousPeriod = getPreviousPeriod(period);
+  const plannedQuota = calculateBaseQuotaForPeriod(costs, actuals, period, "forecast");
+  const previousPlannedQuota = calculateBaseQuotaForPeriod(
+    costs,
+    actuals,
+    previousPeriod,
+    "forecast",
+  );
+  const previousActualQuota = calculateBaseQuotaForPeriod(
+    costs,
+    actuals,
+    previousPeriod,
+    "actual",
+  );
+
+  return Math.max(plannedQuota + previousActualQuota - previousPlannedQuota, 0);
+}
+
 function calculateBaseQuotaForPeriod(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
@@ -3883,12 +3905,6 @@ function isCostActiveForPeriod(cost: FeeCalculatorCost, period: string) {
   }
 
   return period === cost.startPeriod;
-}
-
-function getPlayerFeeAmount(fees: FeeRecord[], playerId: string, period: string) {
-  return (
-    fees.find((fee) => fee.playerId === playerId && fee.period === period)?.amount ?? 0
-  );
 }
 
 function getPreviousPeriod(period: string) {

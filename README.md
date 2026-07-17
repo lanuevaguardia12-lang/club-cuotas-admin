@@ -495,7 +495,7 @@ La pantalla `/fee-calculator` calcula la cuota final por jugador con esta regla:
 ```text
 cuota final =
   cuota base del mes actual
-  - devolucion por asistencia del mes anterior
+  - devolucion por asistencia del mes anterior sobre la cuota base anterior
   - gastos pagados por el jugador en el mes anterior
 ```
 
@@ -516,6 +516,10 @@ anterior; si existe una correccion manual, tiene prioridad sobre el calculo
 automatico. La diferencia contra lo estimado se suma o resta en la cuota del mes
 siguiente.
 
+La devolucion ya no toma la cuota base desde el Sheet viejo de cuotas. La app
+calcula la cuota base del mes anterior con la misma estructura de costos y usa
+ese valor como base de devolucion.
+
 La devolucion se calcula con `Politica devoluciones`:
 
 | Desde  | Hasta | Devolucion |
@@ -527,7 +531,9 @@ La devolucion se calcula con `Politica devoluciones`:
 Los partidos salen del Sheet configurado en
 `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`, hoja `Partidos jugados formulario`. La
 app cuenta partidos por mes, por jugador, y permite desplegar los rivales desde
-la tabla de cálculo.
+la tabla de cálculo. En el calculador se muestra un panel de asistencia mensual
+con partidos del mes, partidos asistidos, porcentaje de asistencia y porcentaje
+de devolucion aplicado.
 
 Estados de cuota soportados:
 

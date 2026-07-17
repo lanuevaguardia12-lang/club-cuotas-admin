@@ -510,6 +510,8 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
         <ActualUnitsPanel data={data} costs={trackedActualCosts} />
       ) : null}
 
+      <AttendanceBreakdown data={data} rows={sortedCalculations} />
+
       <PlayerCalculationsTable rows={sortedCalculations} />
     </section>
   );
@@ -780,6 +782,97 @@ function ActualUnitsForm({
   );
 }
 
+function AttendanceBreakdown({
+  data,
+  rows,
+}: {
+  data: FeeCalculatorData;
+  rows: FeePlayerCalculation[];
+}) {
+  return (
+    <section className="grid gap-3">
+      <div>
+        <h2 className="text-lg font-semibold">
+          Asistencia de {formatPeriod(data.previousPeriod)}
+        </h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {data.summary.totalMatchesPreviousPeriod} partidos jugados en el mes. Este
+          porcentaje define la devolución sobre la cuota base calculada por la app para{" "}
+          {formatPeriod(data.previousPeriod)}.
+        </p>
+      </div>
+
+      <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-sm">
+            <thead className="bg-muted/60">
+              <tr className="border-border border-b">
+                <TableHead>Jugador</TableHead>
+                <TableHead>Partidos del mes</TableHead>
+                <TableHead>Asistió</TableHead>
+                <TableHead>Asistencia</TableHead>
+                <TableHead>Devolución</TableHead>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.playerId} className="border-border border-b last:border-b-0">
+                  <td className="px-4 py-3 font-medium">{row.playerName}</td>
+                  <td className="px-4 py-3">{row.totalMatches}</td>
+                  <td className="px-4 py-3">
+                    <MatchDetails row={row} compact />
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={row.refundPercent > 0 ? "warning" : "success"}>
+                      {formatPercent(row.attendanceRate)}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>{formatPercent(row.refundPercent / 100)}</div>
+                    <p className="text-muted-foreground text-xs">
+                      sobre {formatCurrency(row.previousBaseQuota)}
+                    </p>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:hidden">
+        {rows.map((row) => (
+          <Card key={row.playerId}>
+            <CardContent className="grid gap-4 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold">{row.playerName}</h3>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    {row.playedMatches}/{row.totalMatches} partidos
+                  </p>
+                </div>
+                <Badge variant={row.refundPercent > 0 ? "warning" : "success"}>
+                  {formatPercent(row.attendanceRate)}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <Info label="Partidos del mes" value={String(row.totalMatches)} />
+                <Info label="Asistió" value={String(row.playedMatches)} />
+                <Info label="Devolución" value={formatPercent(row.refundPercent / 100)} />
+                <Info
+                  label="Base devolución"
+                  value={formatCurrency(row.previousBaseQuota)}
+                />
+              </div>
+              <MatchDetails row={row} compact />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
   return (
     <section className="grid gap-3">
@@ -856,16 +949,24 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
   );
 }
 
-function MatchDetails({ row }: { row: FeePlayerCalculation }) {
+function MatchDetails({
+  compact = false,
+  row,
+}: {
+  compact?: boolean;
+  row: FeePlayerCalculation;
+}) {
   return (
     <details className="group">
       <summary className="text-primary inline-flex cursor-pointer list-none items-center gap-2 font-medium">
         <span>
-          {row.playedMatches}/{row.totalMatches}
+          {compact ? row.playedMatches : `${row.playedMatches}/${row.totalMatches}`}
         </span>
-        <span className="text-muted-foreground text-xs">
-          {formatPercent(row.attendanceRate)}
-        </span>
+        {compact ? null : (
+          <span className="text-muted-foreground text-xs">
+            {formatPercent(row.attendanceRate)}
+          </span>
+        )}
       </summary>
       <div className="border-border bg-background mt-2 grid gap-1 rounded-md border p-2">
         {row.matches.length > 0 ? (
