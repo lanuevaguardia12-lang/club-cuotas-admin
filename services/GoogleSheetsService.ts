@@ -409,7 +409,19 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
     assertValidPeriod(input.period);
 
-    const values = await this.readValues(this.config.feesRange);
+    let values: unknown[][];
+
+    try {
+      values = await this.readValues(this.config.feesRange);
+    } catch (error) {
+      if (shouldUseClubSheetLayout(error)) {
+        await this.updateClubSheetFeeStatus(input);
+        return;
+      }
+
+      throw error;
+    }
+
     const targetStatus = input.status === "paid" ? "pagada" : "pendiente";
     const paidAt = input.status === "paid" ? getTodayIsoDate() : "";
     const sheetPrefix = getSheetPrefix(this.config.feesRange);
@@ -1085,6 +1097,49 @@ export class GoogleSheetsService implements IDataService {
         ...mapClubExpenseRowsToTransactions(expenseRows),
       ];
     }
+  }
+
+  private async updateClubSheetFeeStatus(input: UpdatePlayerFeeStatusInput) {
+    if (input.status !== "paid") {
+      throw new DataServiceError(
+        "La planilla operativa calcula los impagos desde el formulario. Para desmarcar un pago, corregi la respuesta en Google Sheets.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const { players } = await this.readDashboardRecords();
+    const player = players.find((candidate) => candidate.id === input.playerId);
+
+    if (!player) {
+      throw new DataServiceError(
+        "No se encontro el jugador en Listado jugadores.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    await this.appendRowsWithHeaders(
+      CLUB_FORM_RESPONSES_RANGE,
+      [
+        "Marca temporal ",
+        "Nombren del jugador ",
+        "Año ",
+        "Mes ",
+        "Comprobante de pago ",
+        "Dirección de correo electrónico ",
+        "Columna 1 ",
+      ],
+      [
+        formatClubFormTimestamp(new Date()),
+        player.name,
+        input.period.slice(0, 4),
+        formatClubMonthName(input.period),
+        "Carga manual desde app",
+        "",
+        "Marcado desde la app",
+      ],
+    );
+
+    invalidateDashboardCache();
   }
 }
 
@@ -2866,6 +2921,23 @@ function formatFullMonthLabel(period: string) {
   return new Intl.DateTimeFormat("es-AR", {
     month: "long",
   }).format(date);
+}
+
+function formatClubMonthName(period: string) {
+  const label = formatFullMonthLabel(period);
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function formatClubFormTimestamp(date: Date) {
+  const day = String(date.getDate());
+  const month = String(date.getMonth() + 1);
+  const year = String(date.getFullYear());
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
 function formatInteger(value: number) {
