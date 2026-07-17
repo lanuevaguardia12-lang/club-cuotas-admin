@@ -1,6 +1,6 @@
 import type { DataSourceState } from "@/types/dashboard";
 
-export type FeeCalculatorCostType = "fixed" | "court" | "custom";
+export type FeeCalculatorCostType = "fixed" | "court" | "coach" | "custom";
 
 export interface FeeCalculatorCost {
   id: string;
@@ -77,6 +77,8 @@ export interface FeeCalculatorSummary {
   activeCosts: number;
   players: number;
   totalMatchesPreviousPeriod: number;
+  totalLocalMatchesPreviousPeriod: number;
+  coachHoursPreviousPeriod: number;
 }
 
 export interface FeeCalculatorData {

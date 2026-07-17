@@ -142,6 +142,8 @@ interface MatchRecord {
   period: string;
   rival: string;
   players: string[];
+  venue: string;
+  coachAttended: boolean;
 }
 
 interface PlayerExpenseCredit {
@@ -2087,6 +2089,22 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
     .map((record, index) => {
       const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
       const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
+      const venue = pick(record, [
+        "local_visitante",
+        "local_o_visitante",
+        "condicion",
+        "sede",
+        "venue",
+      ]);
+      const coachAttended = parseLooseBoolean(
+        pick(record, [
+          "asistio_joaco",
+          "asistio_joaco_",
+          "asistencia_joaco",
+          "joaco",
+          "dt",
+        ]),
+      );
       const rawPlayers = pick(record, [
         "jugadores_que_ingresaron",
         "jugadores",
@@ -2105,6 +2123,8 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
         period: getPeriodFromDate(date) ?? getCurrentPeriod(),
         rival,
         players,
+        venue,
+        coachAttended,
       } satisfies MatchRecord;
     })
     .filter((match): match is MatchRecord => Boolean(match))
@@ -2175,28 +2195,39 @@ function buildFeeCalculatorData({
   const previousPeriod = getPreviousPeriod(period);
   const activePlayers = players.filter((player) => !isDroppedPlayer(player));
   const activeCosts = costs.filter((cost) => cost.active);
-  const plannedCurrentQuota = calculateBaseQuotaForPeriod(
+  const effectiveActuals = mergeInferredFeeCalculatorActuals(
     activeCosts,
     actuals,
+    matches,
+    previousPeriod,
+  );
+  const plannedCurrentQuota = calculateBaseQuotaForPeriod(
+    activeCosts,
+    effectiveActuals,
     period,
     "forecast",
   );
   const previousPlannedQuota = calculateBaseQuotaForPeriod(
     activeCosts,
-    actuals,
+    effectiveActuals,
     previousPeriod,
     "forecast",
   );
   const previousActualQuota = calculateBaseQuotaForPeriod(
     activeCosts,
-    actuals,
+    effectiveActuals,
     previousPeriod,
     "actual",
   );
   const previousCostVariance = previousActualQuota - previousPlannedQuota;
-  const totalMatchesPreviousPeriod = matches.filter(
+  const previousPeriodMatches = matches.filter(
     (match) => match.period === previousPeriod,
-  ).length;
+  );
+  const totalMatchesPreviousPeriod = previousPeriodMatches.length;
+  const totalLocalMatchesPreviousPeriod =
+    previousPeriodMatches.filter(isLocalMatch).length;
+  const coachHoursPreviousPeriod =
+    previousPeriodMatches.filter((match) => match.coachAttended).length * 3;
   const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
   const calculations = activePlayers.map((player) =>
     buildPlayerFeeCalculation({
@@ -2220,7 +2251,7 @@ function buildFeeCalculatorData({
     period,
     previousPeriod,
     costs,
-    actuals,
+    actuals: effectiveActuals,
     refundPolicy,
     playerCalculations: calculations,
     matchSummaries: calculations.map((calculation) => ({
@@ -2242,6 +2273,8 @@ function buildFeeCalculatorData({
       activeCosts: activeCosts.length,
       players: activePlayers.length,
       totalMatchesPreviousPeriod,
+      totalLocalMatchesPreviousPeriod,
+      coachHoursPreviousPeriod,
     },
     emptyState: {
       title: status === "ready" ? "Calculador de cuota" : "Calculador sin costos",
@@ -3561,6 +3594,20 @@ function normalizeFeeCalculatorCostType(value: string): FeeCalculatorCostType {
     return "court";
   }
 
+  if (
+    [
+      "director tecnico",
+      "dt",
+      "profesor",
+      "coach",
+      "entrenador",
+      "hora_dt",
+      "horas_dt",
+    ].includes(type)
+  ) {
+    return "coach";
+  }
+
   if (["fijo", "fixed", "mensual"].includes(type)) {
     return "fixed";
   }
@@ -3758,12 +3805,72 @@ function calculateCostShare(
   const units =
     mode === "actual" && typeof actualUnits === "number"
       ? actualUnits
-      : cost.type === "court"
-        ? cost.forecastUnits
-        : 1;
-  const total = cost.type === "court" ? cost.amount * units : cost.amount;
+      : cost.forecastUnits;
+  const total = cost.amount * units;
 
   return total / Math.max(cost.splitBetween, 1);
+}
+
+function mergeInferredFeeCalculatorActuals(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  matches: MatchRecord[],
+  period: string,
+) {
+  const merged = [...actuals];
+  const existingKeys = new Set(
+    actuals.map((actual) => `${actual.costId}:${actual.period}`),
+  );
+
+  costs.forEach((cost) => {
+    const key = `${cost.id}:${period}`;
+
+    if (existingKeys.has(key)) {
+      return;
+    }
+
+    const inferredUnits = inferActualUnitsForCost(cost, matches, period);
+
+    if (typeof inferredUnits !== "number") {
+      return;
+    }
+
+    merged.push({
+      id: `auto-${cost.id}-${period}`,
+      costId: cost.id,
+      period,
+      actualUnits: inferredUnits,
+      notes:
+        cost.type === "coach"
+          ? "Autocalculado desde Asistió joaco? x 3 horas."
+          : "Autocalculado desde partidos Local.",
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  return merged;
+}
+
+function inferActualUnitsForCost(
+  cost: FeeCalculatorCost,
+  matches: MatchRecord[],
+  period: string,
+) {
+  const periodMatches = matches.filter((match) => match.period === period);
+
+  if (cost.type === "court") {
+    return periodMatches.filter(isLocalMatch).length;
+  }
+
+  if (cost.type === "coach") {
+    return periodMatches.filter((match) => match.coachAttended).length * 3;
+  }
+
+  return undefined;
+}
+
+function isLocalMatch(match: MatchRecord) {
+  return normalizeText(match.venue) === "local";
 }
 
 function isCostActiveForPeriod(cost: FeeCalculatorCost, period: string) {

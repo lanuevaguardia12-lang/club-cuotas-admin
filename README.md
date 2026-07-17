@@ -500,10 +500,21 @@ cuota final =
 ```
 
 La cuota base del mes actual se arma con los costos vigentes en
-`CalculadoraCostos`. Para costos de tipo `court`, el campo `monto` representa el
-costo por jornada y `cantidad_estimada` representa las canchas pronosticadas.
-En `CalculadoraReales` se carga la cantidad real del mes anterior; la diferencia
-contra lo estimado se suma o resta en la cuota del mes siguiente.
+`CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo
+divide por `dividir_entre`.
+
+Los tipos especiales autocompletan la cantidad real del mes anterior:
+
+- `court`: `monto` es costo por jornada. La cantidad real se cuenta desde
+  `Partidos jugados formulario`, columna `Local / Visitante`, tomando solo
+  partidos `Local`.
+- `coach`: `monto` es costo por hora. La cantidad real se calcula desde
+  `Asistió joaco?`; cada `Si` suma 3 horas.
+
+En `CalculadoraReales` se puede corregir manualmente la cantidad real del mes
+anterior; si existe una correccion manual, tiene prioridad sobre el calculo
+automatico. La diferencia contra lo estimado se suma o resta en la cuota del mes
+siguiente.
 
 La devolucion se calcula con `Politica devoluciones`:
 

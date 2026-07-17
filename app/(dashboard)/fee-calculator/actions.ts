@@ -13,7 +13,7 @@ const periodSchema = z.string().regex(/^\d{4}-\d{2}$/);
 const costSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(2).max(120),
-  type: z.enum(["fixed", "court", "custom"]),
+  type: z.enum(["fixed", "court", "coach", "custom"]),
   startPeriod: periodSchema,
   endPeriod: periodSchema,
   amount: z.coerce.number().min(0),

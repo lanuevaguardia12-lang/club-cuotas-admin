@@ -182,6 +182,8 @@ export class DatabaseService implements IDataService {
         activeCosts: 0,
         players: 0,
         totalMatchesPreviousPeriod: 0,
+        totalLocalMatchesPreviousPeriod: 0,
+        coachHoursPreviousPeriod: 0,
       },
       emptyState: {
         title: "Calculador pendiente",

@@ -4,11 +4,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CalendarDays,
   CircleDollarSign,
+  Copy,
   ListChecks,
+  Pencil,
   Plus,
   RotateCcw,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -38,7 +41,7 @@ const costSchema = z
   .object({
     id: z.string().optional(),
     name: z.string().trim().min(2, "Ingresá un nombre.").max(120),
-    type: z.enum(["fixed", "court", "custom"]),
+    type: z.enum(["fixed", "court", "coach", "custom"]),
     startPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes de inicio."),
     endPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes de fin."),
     amount: z.number().min(0, "El monto no puede ser negativo."),
@@ -55,27 +58,52 @@ const costSchema = z
 type CostFormValues = z.infer<typeof costSchema>;
 
 const typeLabels: Record<FeeCalculatorCostType, string> = {
+  coach: "Director técnico",
   court: "Cancha",
   custom: "Variable",
   fixed: "Fijo",
 };
 
+type CostTemplate =
+  | "court"
+  | "coach"
+  | "carnet"
+  | "balls"
+  | "water"
+  | "cashExtra"
+  | "oldRecovery"
+  | "rounding"
+  | "custom";
+
 export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
   const router = useRouter();
   const [savingMessage, setSavingMessage] = useState("");
+  const [editingCostName, setEditingCostName] = useState("");
+  const [repeatMonths, setRepeatMonths] = useState<string[]>([]);
+  const [repeatMessage, setRepeatMessage] = useState("");
+  const [isRepeating, setIsRepeating] = useState(false);
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
     register,
     reset,
-    setValue,
     watch,
   } = useForm<CostFormValues>({
     resolver: zodResolver(costSchema),
     defaultValues: getDefaultCostValues(data),
   });
   const selectedType = watch("type");
-  const courtCosts = data.costs.filter((cost) => cost.type === "court");
+  const trackedActualCosts = data.costs.filter((cost) =>
+    ["court", "coach"].includes(cost.type),
+  );
+  const repeatableCosts = useMemo(
+    () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
+    [data.costs, data.period],
+  );
+  const repeatablePeriods = useMemo(
+    () => getRepeatablePeriods(data.period),
+    [data.period],
+  );
   const sortedCalculations = useMemo(
     () =>
       [...data.playerCalculations].sort((left, right) =>
@@ -88,50 +116,146 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
     setSavingMessage("");
     await saveFeeCalculatorCost(values);
     reset(getDefaultCostValues(data));
-    setSavingMessage("Costo guardado");
+    setEditingCostName("");
+    setSavingMessage(values.id ? "Costo actualizado" : "Costo guardado");
     router.refresh();
     window.setTimeout(() => setSavingMessage(""), 2200);
   }
 
-  function applyTemplate(template: "court" | "coach" | "water" | "custom") {
+  function applyTemplate(template: CostTemplate) {
     const splitBetween = data.summary.players || 1;
+    const baseValues = {
+      ...getDefaultCostValues(data),
+      splitBetween,
+    };
 
     if (template === "court") {
-      setValue("name", "Cancha");
-      setValue("type", "court");
-      setValue("amount", 0);
-      setValue("forecastUnits", Math.max(data.summary.totalMatchesPreviousPeriod, 1));
-      setValue("splitBetween", splitBetween);
-      setValue("repeatsMonthly", true);
-      setValue("notes", "Costo por jornada. Cargar canchas reales mes a mes.");
+      reset({
+        ...baseValues,
+        name: "Cancha",
+        type: "court",
+        forecastUnits: Math.max(data.summary.totalLocalMatchesPreviousPeriod, 1),
+        notes: "Costo por jornada. Las canchas reales se calculan desde partidos Local.",
+      });
+      setEditingCostName("");
       return;
     }
 
     if (template === "coach") {
-      setValue("name", "DT / Profesor");
-      setValue("type", "fixed");
-      setValue("amount", 0);
-      setValue("forecastUnits", 1);
-      setValue("splitBetween", splitBetween);
-      setValue("repeatsMonthly", true);
+      reset({
+        ...baseValues,
+        name: "Director técnico",
+        type: "coach",
+        amount: 20000,
+        forecastUnits: 12,
+        notes:
+          "Monto por hora. Las horas reales se calculan con Asistió joaco? x 3 horas.",
+      });
+      setEditingCostName("");
+      return;
+    }
+
+    if (template === "carnet") {
+      reset({ ...baseValues, name: "Carnet", type: "fixed" });
+      setEditingCostName("");
+      return;
+    }
+
+    if (template === "balls") {
+      reset({ ...baseValues, name: "Pelotas", type: "fixed" });
+      setEditingCostName("");
       return;
     }
 
     if (template === "water") {
-      setValue("name", "Aguas");
-      setValue("type", "fixed");
-      setValue("amount", 0);
-      setValue("forecastUnits", 1);
-      setValue("splitBetween", splitBetween);
-      setValue("repeatsMonthly", true);
+      reset({ ...baseValues, name: "Aguas", type: "fixed" });
+      setEditingCostName("");
       return;
     }
 
-    setValue("name", "Otro gasto");
-    setValue("type", "custom");
-    setValue("amount", 0);
-    setValue("forecastUnits", 1);
-    setValue("splitBetween", splitBetween);
+    if (template === "cashExtra") {
+      reset({ ...baseValues, name: "Adicional Caja", type: "fixed" });
+      setEditingCostName("");
+      return;
+    }
+
+    if (template === "oldRecovery") {
+      reset({ ...baseValues, name: "Recupero de gastos viejos", type: "fixed" });
+      setEditingCostName("");
+      return;
+    }
+
+    if (template === "rounding") {
+      reset({ ...baseValues, name: "Redondeo", type: "custom" });
+      setEditingCostName("");
+      return;
+    }
+
+    reset({ ...baseValues, name: "Otro gasto", type: "custom" });
+    setEditingCostName("");
+  }
+
+  function handleEditCost(cost: FeeCalculatorCost) {
+    reset({
+      id: cost.id,
+      name: cost.name,
+      type: cost.type,
+      startPeriod: cost.startPeriod,
+      endPeriod: cost.endPeriod,
+      amount: cost.amount,
+      repeatsMonthly: cost.repeatsMonthly,
+      splitBetween: cost.splitBetween,
+      forecastUnits: cost.forecastUnits,
+      notes: cost.notes,
+    });
+    setEditingCostName(cost.name);
+    document
+      .getElementById("fee-cost-form")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function cancelEdit() {
+    reset(getDefaultCostValues(data));
+    setEditingCostName("");
+  }
+
+  function toggleRepeatMonth(period: string) {
+    setRepeatMonths((current) =>
+      current.includes(period)
+        ? current.filter((item) => item !== period)
+        : [...current, period],
+    );
+  }
+
+  async function handleRepeatStructure() {
+    if (repeatMonths.length === 0 || repeatableCosts.length === 0) {
+      return;
+    }
+
+    setIsRepeating(true);
+    setRepeatMessage("");
+
+    for (const period of repeatMonths) {
+      for (const cost of repeatableCosts) {
+        await saveFeeCalculatorCost({
+          name: cost.name,
+          type: cost.type,
+          startPeriod: period,
+          endPeriod: period,
+          amount: cost.amount,
+          repeatsMonthly: false,
+          splitBetween: cost.splitBetween,
+          forecastUnits: cost.forecastUnits,
+          notes: cost.notes,
+        });
+      }
+    }
+
+    setIsRepeating(false);
+    setRepeatMessage("Estructura repetida");
+    setRepeatMonths([]);
+    router.refresh();
+    window.setTimeout(() => setRepeatMessage(""), 2500);
   }
 
   function handlePeriodChange(period: string) {
@@ -163,7 +287,7 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
           icon={ListChecks}
           label="Partidos"
           value={String(data.summary.totalMatchesPreviousPeriod)}
-          detail={`Jugados en ${formatPeriod(data.previousPeriod)}`}
+          detail={`${data.summary.totalLocalMatchesPreviousPeriod} locales · ${formatNumber(data.summary.coachHoursPreviousPeriod)} h DT`}
         />
       </div>
 
@@ -194,12 +318,40 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
             <div className="mt-3 flex flex-wrap gap-2">
               <TemplateButton label="Cancha" onClick={() => applyTemplate("court")} />
               <TemplateButton label="DT" onClick={() => applyTemplate("coach")} />
+              <TemplateButton label="Carnet" onClick={() => applyTemplate("carnet")} />
+              <TemplateButton label="Pelotas" onClick={() => applyTemplate("balls")} />
               <TemplateButton label="Aguas" onClick={() => applyTemplate("water")} />
+              <TemplateButton
+                label="Adicional Caja"
+                onClick={() => applyTemplate("cashExtra")}
+              />
+              <TemplateButton
+                label="Recupero"
+                onClick={() => applyTemplate("oldRecovery")}
+              />
+              <TemplateButton
+                label="Redondeo"
+                onClick={() => applyTemplate("rounding")}
+              />
               <TemplateButton label="Otro" onClick={() => applyTemplate("custom")} />
             </div>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-4" onSubmit={handleSubmit(handleSaveCost)}>
+            <form
+              id="fee-cost-form"
+              className="grid gap-4"
+              onSubmit={handleSubmit(handleSaveCost)}
+            >
+              <input type="hidden" {...register("id")} />
+              {editingCostName ? (
+                <div className="border-primary/30 bg-primary/10 text-primary flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                  <span>Editando {editingCostName}</span>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelEdit}>
+                    <X />
+                    Cancelar
+                  </Button>
+                </div>
+              ) : null}
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Nombre del costo" error={errors.name?.message}>
                   <input
@@ -215,12 +367,19 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
                   >
                     <option value="fixed">Fijo</option>
                     <option value="court">Cancha</option>
+                    <option value="coach">Director técnico</option>
                     <option value="custom">Variable</option>
                   </select>
                 </Field>
 
                 <Field
-                  label={selectedType === "court" ? "Costo por jornada" : "Monto"}
+                  label={
+                    selectedType === "court"
+                      ? "Costo por jornada"
+                      : selectedType === "coach"
+                        ? "Costo por hora"
+                        : "Monto unitario"
+                  }
                   error={errors.amount?.message}
                 >
                   <input
@@ -262,7 +421,9 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
                   label={
                     selectedType === "court"
                       ? "Canchas pronosticadas"
-                      : "Cantidad estimada"
+                      : selectedType === "coach"
+                        ? "Horas previstas"
+                        : "Cantidad estimada"
                   }
                   error={errors.forecastUnits?.message}
                 >
@@ -295,8 +456,8 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Button type="submit" disabled={isSubmitting}>
-                  <Plus />
-                  Guardar costo
+                  {editingCostName ? <Save /> : <Plus />}
+                  {editingCostName ? "Actualizar costo" : "Guardar costo"}
                 </Button>
                 {savingMessage ? (
                   <span className="text-primary text-sm font-medium">
@@ -332,10 +493,21 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
         </Card>
       </div>
 
-      <CostList data={data} />
+      <CostList data={data} onEditCost={handleEditCost} />
 
-      {courtCosts.length > 0 ? (
-        <ActualCourtsPanel data={data} costs={courtCosts} />
+      <RepeatStructurePanel
+        costsCount={repeatableCosts.length}
+        data={data}
+        isRepeating={isRepeating}
+        message={repeatMessage}
+        onRepeat={handleRepeatStructure}
+        onToggleMonth={toggleRepeatMonth}
+        periods={repeatablePeriods}
+        selectedPeriods={repeatMonths}
+      />
+
+      {trackedActualCosts.length > 0 ? (
+        <ActualUnitsPanel data={data} costs={trackedActualCosts} />
       ) : null}
 
       <PlayerCalculationsTable rows={sortedCalculations} />
@@ -343,7 +515,13 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
   );
 }
 
-function CostList({ data }: { data: FeeCalculatorData }) {
+function CostList({
+  data,
+  onEditCost,
+}: {
+  data: FeeCalculatorData;
+  onEditCost: (cost: FeeCalculatorCost) => void;
+}) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState("");
 
@@ -387,31 +565,44 @@ function CostList({ data }: { data: FeeCalculatorData }) {
                     {cost.repeatsMonthly ? "mensual" : "una vez"}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Eliminar ${cost.name}`}
-                  disabled={deletingId === cost.id}
-                  onClick={() => handleDelete(cost.id)}
-                >
-                  <Trash2 />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Editar ${cost.name}`}
+                    onClick={() => onEditCost(cost)}
+                  >
+                    <Pencil />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Eliminar ${cost.name}`}
+                    disabled={deletingId === cost.id}
+                    onClick={() => handleDelete(cost.id)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <Info label="Monto" value={formatCurrency(cost.amount)} />
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+                <Info label="Monto unitario" value={formatCurrency(cost.amount)} />
                 <Info label="Divide" value={String(cost.splitBetween)} />
                 <Info
-                  label={cost.type === "court" ? "Estimadas" : "Cantidad"}
+                  label={getUnitLabel(cost.type)}
                   value={formatNumber(cost.forecastUnits)}
+                />
+                <Info
+                  label="Total"
+                  value={formatCurrency(cost.amount * cost.forecastUnits)}
                 />
                 <Info
                   label="Cuota/persona"
                   value={formatCurrency(
-                    (cost.type === "court"
-                      ? cost.amount * cost.forecastUnits
-                      : cost.amount) / Math.max(cost.splitBetween, 1),
+                    (cost.amount * cost.forecastUnits) / Math.max(cost.splitBetween, 1),
                   )}
                 />
               </div>
@@ -426,7 +617,77 @@ function CostList({ data }: { data: FeeCalculatorData }) {
   );
 }
 
-function ActualCourtsPanel({
+function RepeatStructurePanel({
+  costsCount,
+  data,
+  isRepeating,
+  message,
+  onRepeat,
+  onToggleMonth,
+  periods,
+  selectedPeriods,
+}: {
+  costsCount: number;
+  data: FeeCalculatorData;
+  isRepeating: boolean;
+  message: string;
+  onRepeat: () => void;
+  onToggleMonth: (period: string) => void;
+  periods: string[];
+  selectedPeriods: string[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Repetir estructura</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          Copia los costos activos de {formatPeriod(data.period)} como costos
+          independientes en los meses elegidos.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          {periods.map((period) => {
+            const checked = selectedPeriods.includes(period);
+
+            return (
+              <button
+                key={period}
+                type="button"
+                onClick={() => onToggleMonth(period)}
+                className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                  checked
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background hover:bg-muted"
+                }`}
+              >
+                {formatShortPeriod(period)}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button
+            type="button"
+            disabled={isRepeating || selectedPeriods.length === 0 || costsCount === 0}
+            onClick={onRepeat}
+          >
+            <Copy />
+            Repetir en meses seleccionados
+          </Button>
+          <span className="text-muted-foreground text-sm">
+            {costsCount} costos activos para copiar.
+          </span>
+          {message ? (
+            <span className="text-primary text-sm font-medium">{message}</span>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActualUnitsPanel({
   costs,
   data,
 }: {
@@ -436,10 +697,10 @@ function ActualCourtsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Canchas reales</CardTitle>
+        <CardTitle>Cantidades reales</CardTitle>
         <p className="text-muted-foreground text-sm">
-          Editá lo real de {formatPeriod(data.previousPeriod)}. La diferencia contra lo
-          pronosticado ajusta la cuota de {formatPeriod(data.period)}.
+          Se autocompletan desde el formulario para {formatPeriod(data.previousPeriod)}.
+          Podés editarlas si necesitás corregirlas.
         </p>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2">
@@ -489,11 +750,11 @@ function ActualUnitsForm({
       <div>
         <p className="font-medium">{cost.name}</p>
         <p className="text-muted-foreground mt-1 text-xs">
-          Pronosticadas: {formatNumber(cost.forecastUnits)}
+          {getForecastLabel(cost.type)}: {formatNumber(cost.forecastUnits)}
         </p>
       </div>
       <label className="grid gap-2">
-        <span className="text-sm font-medium">Canchas reales</span>
+        <span className="text-sm font-medium">{getActualLabel(cost.type)}</span>
         <input
           type="number"
           min={0}
@@ -707,6 +968,61 @@ function getDefaultCostValues(data: FeeCalculatorData): CostFormValues {
   };
 }
 
+function isCostActiveInPeriod(cost: FeeCalculatorCost, period: string) {
+  if (cost.repeatsMonthly) {
+    return period >= cost.startPeriod && period <= cost.endPeriod;
+  }
+
+  return period === cost.startPeriod;
+}
+
+function getRepeatablePeriods(period: string) {
+  return Array.from({ length: 11 }, (_, index) => addMonths(period, index + 1));
+}
+
+function addMonths(period: string, monthsToAdd: number) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1 + monthsToAdd, 1);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getUnitLabel(type: FeeCalculatorCostType) {
+  if (type === "court") {
+    return "Canchas";
+  }
+
+  if (type === "coach") {
+    return "Horas";
+  }
+
+  return "Cantidad";
+}
+
+function getForecastLabel(type: FeeCalculatorCostType) {
+  if (type === "court") {
+    return "Canchas pronosticadas";
+  }
+
+  if (type === "coach") {
+    return "Horas previstas";
+  }
+
+  return "Cantidad estimada";
+}
+
+function getActualLabel(type: FeeCalculatorCostType) {
+  if (type === "court") {
+    return "Canchas reales";
+  }
+
+  if (type === "coach") {
+    return "Horas reales";
+  }
+
+  return "Cantidad real";
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-AR", {
     currency: "ARS",
@@ -735,6 +1051,16 @@ function formatPeriod(period: string) {
   return new Intl.DateTimeFormat("es-AR", {
     month: "long",
     year: "numeric",
+  }).format(date);
+}
+
+function formatShortPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "short",
+    year: "2-digit",
   }).format(date);
 }
 
