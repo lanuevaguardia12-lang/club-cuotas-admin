@@ -4,4 +4,4 @@ coverage
 dist
 build
 outputs
-public/*.svg
+public/**/*.svg

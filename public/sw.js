@@ -1,8 +1,11 @@
 /* global self, caches, URL, Promise, fetch */
 
-const CACHE_NAME = "club-cuotas-admin-v1";
+const CACHE_NAME = "club-cuotas-admin-v2";
 const STATIC_ASSETS = [
+  "/favicon.ico",
   "/favicon.svg",
+  "/icons/favicon-16x16.png",
+  "/icons/favicon-32x32.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/maskable-icon-512.png",
