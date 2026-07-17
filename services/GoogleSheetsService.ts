@@ -71,6 +71,13 @@ import type {
   UpsertPaymentRecordInput,
 } from "@/types/premium";
 
+type RevalidateTagWithProfile = (
+  tag: string,
+  profile: "max" | { expire?: number },
+) => void;
+
+const revalidateTagWithProfile = revalidateTag as unknown as RevalidateTagWithProfile;
+
 interface GoogleSheetsConfig {
   spreadsheetId?: string;
   clientEmail?: string;
@@ -4458,21 +4465,21 @@ function createId(prefix: string) {
 }
 
 function invalidateDashboardCache() {
-  revalidateTag("google-sheets");
-  revalidateTag("google-sheets:dashboard");
+  revalidateTagWithProfile("google-sheets", "max");
+  revalidateTagWithProfile("google-sheets:dashboard", "max");
 }
 
 function invalidateSettingsCache() {
-  revalidateTag("google-sheets");
-  revalidateTag("google-sheets:settings");
+  revalidateTagWithProfile("google-sheets", "max");
+  revalidateTagWithProfile("google-sheets:settings", "max");
 }
 
 function invalidatePremiumCache() {
-  revalidateTag("google-sheets");
-  revalidateTag("google-sheets:premium");
+  revalidateTagWithProfile("google-sheets", "max");
+  revalidateTagWithProfile("google-sheets:premium", "max");
 }
 
 function invalidateFeeCalculatorCache() {
-  revalidateTag("google-sheets");
-  revalidateTag("google-sheets:fee-calculator");
+  revalidateTagWithProfile("google-sheets", "max");
+  revalidateTagWithProfile("google-sheets:fee-calculator", "max");
 }
