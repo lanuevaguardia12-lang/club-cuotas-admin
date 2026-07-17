@@ -1,0 +1,13 @@
+{
+  "framework": "nextjs",
+  "regions": ["gru1"],
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "0 12 * * *"
+    }
+  ]
+}
