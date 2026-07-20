@@ -4310,18 +4310,20 @@ function calculateBaseQuotaForPeriod(
 ) {
   return costs
     .filter((cost) => isCostActiveForPeriod(cost, period))
-    .reduce((total, cost) => total + calculateCostShare(cost, actuals, period, mode), 0);
+    .reduce(
+      (total, cost) => total + calculateCostShare(cost, costs, actuals, period, mode),
+      0,
+    );
 }
 
 function calculateCostShare(
   cost: FeeCalculatorCost,
+  costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
   period: string,
   mode: "forecast" | "actual",
 ) {
-  const actualUnits = actuals.find(
-    (actual) => actual.costId === cost.id && actual.period === period,
-  )?.actualUnits;
+  const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
   const units =
     mode === "actual" && typeof actualUnits === "number"
       ? actualUnits
@@ -4343,9 +4345,13 @@ function mergeInferredFeeCalculatorActuals(
   );
 
   costs.forEach((cost) => {
+    if (!isCostActiveForPeriod(cost, period)) {
+      return;
+    }
+
     const key = `${cost.id}:${period}`;
 
-    if (existingKeys.has(key)) {
+    if (existingKeys.has(key) || hasActualUnitsForCost(cost, costs, merged, period)) {
       return;
     }
 
@@ -4371,6 +4377,62 @@ function mergeInferredFeeCalculatorActuals(
   return merged;
 }
 
+function hasActualUnitsForCost(
+  cost: FeeCalculatorCost,
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+) {
+  return typeof findActualUnitsForCost(cost, costs, actuals, period) === "number";
+}
+
+function findActualUnitsForCost(
+  cost: FeeCalculatorCost,
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+) {
+  const exactActual = actuals.find(
+    (actual) => actual.costId === cost.id && actual.period === period,
+  );
+
+  if (typeof exactActual?.actualUnits === "number") {
+    return exactActual.actualUnits;
+  }
+
+  if (!isAutoActualCost(cost)) {
+    return undefined;
+  }
+
+  const compatibleActual = actuals.find((actual) => {
+    if (actual.period !== period || actual.costId === cost.id) {
+      return false;
+    }
+
+    const actualCost = costs.find((candidate) => candidate.id === actual.costId);
+
+    return isCompatibleAutoActualCost(cost, actualCost);
+  });
+
+  return compatibleActual?.actualUnits;
+}
+
+function isCompatibleAutoActualCost(
+  cost: FeeCalculatorCost,
+  actualCost: FeeCalculatorCost | undefined,
+) {
+  if (!actualCost) {
+    return false;
+  }
+
+  return (
+    actualCost.type === cost.type &&
+    isAutoActualCost(cost) &&
+    isAutoActualCost(actualCost) &&
+    normalizeText(actualCost.name) === normalizeText(cost.name)
+  );
+}
+
 function inferActualUnitsForCost(
   cost: FeeCalculatorCost,
   matches: MatchRecord[],
@@ -4387,6 +4449,10 @@ function inferActualUnitsForCost(
   }
 
   return undefined;
+}
+
+function isAutoActualCost(cost: FeeCalculatorCost) {
+  return cost.type === "court" || cost.type === "coach";
 }
 
 function isLocalMatch(match: MatchRecord) {

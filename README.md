@@ -513,7 +513,10 @@ La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo
 divide por `dividir_entre`.
 
-Los tipos especiales autocompletan la cantidad real del mes anterior:
+Los tipos especiales autocompletan la cantidad real del mes anterior al periodo
+seleccionado. Por ejemplo, al calcular agosto 2026, las canchas reales y horas
+reales se toman desde los partidos de julio 2026, aunque el costo se haya creado
+antes o se repita mensualmente:
 
 - `court`: `monto` es costo por jornada. La cantidad real se cuenta desde
   `Partidos jugados formulario`, columna `Local / Visitante`, tomando solo
@@ -525,6 +528,11 @@ En `CalculadoraReales` se puede corregir manualmente la cantidad real del mes
 anterior; si existe una correccion manual, tiene prioridad sobre el calculo
 automatico. La diferencia contra lo estimado se suma o resta en la cuota del mes
 siguiente.
+
+Si una estructura de costos se copia a otros meses y cambia el `id` interno de
+la fila, la app igualmente intenta vincular correcciones manuales por tipo y
+nombre del costo para `court` y `coach`. Esto evita que una correccion quede
+atada al mes en que se creo originalmente el gasto.
 
 La devolucion ya no toma la cuota base desde el Sheet viejo de cuotas. La app
 calcula la cuota base del mes anterior con la misma estructura de costos y usa
@@ -805,6 +813,12 @@ Los endpoints mutables validan permisos RBAC y registran auditoria.
 
 `GOOGLE_SHEETS_CACHE_TTL_SECONDS` define el tiempo de revalidacion. Por defecto:
 `300` segundos.
+
+La app no consulta Google Sheets en segundo plano de forma permanente. Vuelve a
+leer la hoja cuando se abre o refresca una pantalla, o cuando una API necesita
+datos, respetando ese TTL. Si se agrega un partido nuevo desde el formulario,
+puede tardar hasta ese valor en verse reflejado; para verlo antes, bajar
+`GOOGLE_SHEETS_CACHE_TTL_SECONDS` en Vercel y redeployar.
 
 ### Migracion a PostgreSQL
 

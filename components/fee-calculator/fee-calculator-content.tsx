@@ -102,8 +102,14 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
     defaultValues: getDefaultCostValues(data),
   });
   const selectedType = watch("type");
-  const trackedActualCosts = data.costs.filter((cost) =>
-    ["court", "coach"].includes(cost.type),
+  const trackedActualCosts = useMemo(
+    () =>
+      data.costs.filter(
+        (cost) =>
+          ["court", "coach"].includes(cost.type) &&
+          isCostActiveInPeriod(cost, data.previousPeriod),
+      ),
+    [data.costs, data.previousPeriod],
   );
   const repeatableCosts = useMemo(
     () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
