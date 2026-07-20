@@ -28,6 +28,7 @@ import { ReminderButton } from "@/components/reminders/reminder-button";
 import type { PlayerPaymentStatus, PlayerTableRow } from "@/types/dashboard";
 
 interface PlayersTableProps {
+  period: string;
   rows: PlayerTableRow[];
 }
 
@@ -50,7 +51,14 @@ const statusOptions: Array<{ value: "all" | PlayerPaymentStatus; label: string }
   { value: "pending", label: "Pendiente" },
 ];
 
-export function PlayersTable({ rows }: PlayersTableProps) {
+const feeSourceLabels: Record<PlayerTableRow["feeSource"], string> = {
+  calculator: "Calculador",
+  none: "Sin cálculo",
+  payments: "Cuotas",
+  player: "Jugador",
+};
+
+export function PlayersTable({ period, rows }: PlayersTableProps) {
   const router = useRouter();
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [query, setQuery] = useState("");
@@ -123,7 +131,9 @@ export function PlayersTable({ rows }: PlayersTableProps) {
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
-        cell: ({ row }) => row.original.fee,
+        cell: ({ row }) => (
+          <FeeAmountCell player={row.original} period={period} compact />
+        ),
       },
       {
         accessorKey: "status",
@@ -159,7 +169,7 @@ export function PlayersTable({ rows }: PlayersTableProps) {
         cell: ({ row }) => <RowActions player={row.original} />,
       },
     ],
-    [],
+    [period],
   );
 
   const table = useReactTable({
@@ -189,7 +199,7 @@ export function PlayersTable({ rows }: PlayersTableProps) {
         <div>
           <h2 className="text-lg font-semibold">Jugadores y cuotas</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Tabla operativa con búsqueda, filtros, ordenamiento y paginación.
+            Cuotas de {formatPeriod(period)} tomadas desde el calculador.
           </p>
         </div>
 
@@ -405,15 +415,46 @@ function PlayerCard({ row }: { row: PlayerTableRow }) {
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
+        <div className="border-primary/20 bg-primary/5 rounded-md border p-3">
+          <p className="text-muted-foreground text-xs">
+            Cuota {formatPeriod(row.feePeriod)}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xl font-semibold">{row.fee}</p>
+            <Badge variant={row.feeSource === "calculator" ? "success" : "secondary"}>
+              {feeSourceLabels[row.feeSource]}
+            </Badge>
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <Info label="Teléfono" value={row.phone} />
-          <Info label="Cuota" value={row.fee} />
           <Info label="Último pago" value={row.lastPayment} />
           <Info label="Observaciones" value={row.observations} />
         </div>
         <RowActions player={row} />
       </CardContent>
     </Card>
+  );
+}
+
+function FeeAmountCell({
+  compact = false,
+  period,
+  player,
+}: {
+  compact?: boolean;
+  period: string;
+  player: PlayerTableRow;
+}) {
+  return (
+    <div className="grid gap-1">
+      <span className={compact ? "font-semibold" : "text-xl font-semibold"}>
+        {player.fee}
+      </span>
+      <span className="text-muted-foreground text-xs">
+        {feeSourceLabels[player.feeSource]} · {formatPeriod(period)}
+      </span>
+    </div>
   );
 }
 
@@ -436,4 +477,18 @@ function normalize(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function formatPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+
+  if (Number.isNaN(date.getTime())) {
+    return period;
+  }
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }

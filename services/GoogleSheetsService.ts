@@ -427,16 +427,23 @@ export class GoogleSheetsService implements IDataService {
     invalidateSettingsCache();
   }
 
-  async getDashboardData(): Promise<DashboardData> {
+  async getDashboardData(period = getCurrentPeriod()): Promise<DashboardData> {
     const cachedAt = new Date().toISOString();
 
     try {
       this.assertConfigured();
+      assertValidPeriod(period);
       const { players, fees, message } = await this.readDashboardRecords();
+      const feeCalculatorData = await this.getFeeCalculatorData(period);
 
       return buildDashboardData({
+        period,
         players,
         fees,
+        feeCalculations:
+          feeCalculatorData.source.status === "error"
+            ? []
+            : feeCalculatorData.playerCalculations,
         status: players.length === 0 && fees.length === 0 ? "empty" : "ready",
         message:
           players.length === 0 && fees.length === 0
@@ -449,6 +456,7 @@ export class GoogleSheetsService implements IDataService {
       const serviceError = normalizeGoogleSheetsError(error);
 
       return buildFallbackDashboardData({
+        period,
         status: "error",
         message: serviceError.message,
         cachedAt,
@@ -3243,22 +3251,26 @@ function formatPlayerStatus(player: PlayerRecord) {
 }
 
 function buildDashboardData({
+  period,
   players,
   fees,
+  feeCalculations,
   status,
   message,
   cachedAt,
   revalidateSeconds,
 }: {
+  period: string;
   players: PlayerRecord[];
   fees: FeeRecord[];
+  feeCalculations: FeePlayerCalculation[];
   status: DashboardData["source"]["status"];
   message: string;
   cachedAt: string;
   revalidateSeconds: number;
 }): DashboardData {
-  const currentPeriod = getCurrentPeriod();
-  const currentYear = new Date().getFullYear();
+  const currentPeriod = period;
+  const currentYear = Number(period.slice(0, 4));
   const paidFees = fees.filter((fee) => fee.status === "paid");
   const pendingFees = fees.filter((fee) => fee.status !== "paid");
   const overdueFees = fees.filter((fee) => fee.status === "overdue");
@@ -3297,6 +3309,7 @@ function buildDashboardData({
   ).length;
 
   return {
+    period,
     metrics: [
       {
         id: "total-players",
@@ -3357,7 +3370,7 @@ function buildDashboardData({
       playerLifecycle: buildPlayerLifecycle(players),
       delinquencyTrend: buildDelinquencyTrend(players, fees),
     },
-    players: buildPlayerTableRows(players, fees),
+    players: buildPlayerTableRows(players, fees, feeCalculations, period),
     emptyState: {
       title: status === "ready" ? "Dashboard principal" : "Dashboard sin datos",
       description:
@@ -3558,17 +3571,20 @@ function sumCashFlow(
 }
 
 function buildFallbackDashboardData({
+  period,
   status,
   message,
   cachedAt,
   revalidateSeconds,
 }: {
+  period: string;
   status: DashboardData["source"]["status"];
   message: string;
   cachedAt: string;
   revalidateSeconds: number;
 }): DashboardData {
   return {
+    period,
     metrics: buildEmptyMetrics(),
     charts: {
       feeStatus: buildFeeStatusChart(0, 0, 0),
@@ -3703,9 +3719,20 @@ function buildDelinquencyTrend(
 function buildPlayerTableRows(
   players: PlayerRecord[],
   fees: FeeRecord[],
+  feeCalculations: FeePlayerCalculation[],
+  period: string,
 ): PlayerTableRow[] {
   const feesByPlayer = groupFeesByPlayer(fees);
   const playerIdsFromFees = Array.from(new Set(fees.map((fee) => fee.playerId)));
+  const feeCalculationsByPlayerId = new Map(
+    feeCalculations.map((calculation) => [calculation.playerId, calculation]),
+  );
+  const feeCalculationsByPlayerName = new Map(
+    feeCalculations.map((calculation) => [
+      normalizeClubPlayerName(calculation.playerName),
+      calculation,
+    ]),
+  );
   const sourcePlayers =
     players.length > 0
       ? players
@@ -3722,19 +3749,32 @@ function buildPlayerTableRows(
 
   return sourcePlayers.map((player) => {
     const playerFees = feesByPlayer.get(player.id) ?? [];
-    const currentFee = findCurrentFee(playerFees);
+    const currentFee = findCurrentFee(playerFees, period);
     const latestFee = findLatestFee(playerFees);
     const latestPaidFee = findLatestPaidFee(playerFees);
+    const calculatedFee =
+      feeCalculationsByPlayerId.get(player.id) ??
+      feeCalculationsByPlayerName.get(normalizeClubPlayerName(player.name));
     const status = getPlayerPaymentStatus(playerFees, currentFee, latestFee);
-    const feeAmount = currentFee?.amount || latestFee?.amount || player.monthlyFee;
+    const feeAmount =
+      calculatedFee?.finalQuota ?? currentFee?.amount ?? player.monthlyFee ?? 0;
+    const feeSource = calculatedFee
+      ? "calculator"
+      : currentFee
+        ? "payments"
+        : player.monthlyFee
+          ? "player"
+          : "none";
 
     return {
       id: player.id,
       name: player.name,
       category: player.category,
       phone: player.phone,
-      fee: feeAmount > 0 ? formatCurrency(feeAmount) : "-",
+      fee: feeSource === "none" ? "-" : formatCurrency(feeAmount),
       feeAmount,
+      feePeriod: period,
+      feeSource,
       status,
       lastPayment: latestPaidFee?.paidAt ? formatDate(latestPaidFee.paidAt) : "-",
       lastPaymentDate: latestPaidFee?.paidAt,
@@ -3830,10 +3870,8 @@ function groupFeesByPlayer(fees: FeeRecord[]) {
   return grouped;
 }
 
-function findCurrentFee(fees: FeeRecord[]) {
-  const currentPeriod = getCurrentPeriod();
-
-  return fees.find((fee) => fee.period === currentPeriod);
+function findCurrentFee(fees: FeeRecord[], period: string) {
+  return fees.find((fee) => fee.period === period);
 }
 
 function findLatestFee(fees: FeeRecord[]) {

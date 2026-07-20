@@ -1126,7 +1126,12 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                       {row.playedMatches}/{row.totalMatches} partidos
                     </p>
                   </div>
-                  <Badge variant="default">{formatCurrency(row.finalQuota)}</Badge>
+                </div>
+                <div className="border-primary/20 bg-primary/5 rounded-md border p-3">
+                  <p className="text-muted-foreground text-xs">Cuota final</p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {formatCurrency(row.finalQuota)}
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <Info label="Base" value={formatCurrency(row.baseQuota)} />

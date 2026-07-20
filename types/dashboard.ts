@@ -106,6 +106,8 @@ export interface PlayerTableRow {
   phone: string;
   fee: string;
   feeAmount: number;
+  feePeriod: string;
+  feeSource: "calculator" | "payments" | "player" | "none";
   status: PlayerPaymentStatus;
   lastPayment: string;
   lastPaymentDate?: string;
@@ -156,6 +158,7 @@ export interface DataSourceState {
 }
 
 export interface DashboardData {
+  period: string;
   metrics: DashboardMetric[];
   charts: DashboardChartsData;
   players: PlayerTableRow[];

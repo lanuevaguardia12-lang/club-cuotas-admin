@@ -16,12 +16,12 @@ export async function GET(request: NextRequest) {
   }
 
   const dataService = getDataService();
+  const period = new Date().toISOString().slice(0, 7);
   const [dashboard, settingsData, premium] = await Promise.all([
-    dataService.getDashboardData(),
+    dataService.getDashboardData(period),
     dataService.getAppSettings(),
     dataService.getPremiumData(),
   ]);
-  const period = new Date().toISOString().slice(0, 7);
   const scheduledFor = new Date().toISOString();
   const alreadyQueued = new Set(
     premium.reminders

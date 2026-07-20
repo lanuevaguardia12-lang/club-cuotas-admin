@@ -31,8 +31,11 @@ export class DatabaseService implements IDataService {
     );
   }
 
-  async getDashboardData(): Promise<DashboardData> {
+  async getDashboardData(
+    period = new Date().toISOString().slice(0, 7),
+  ): Promise<DashboardData> {
     return {
+      period,
       metrics: [
         {
           id: "total-players",

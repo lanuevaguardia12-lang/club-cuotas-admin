@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
+import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDataService } from "@/services/data-service";
 
@@ -33,8 +34,16 @@ const metricTones = {
   danger: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
 };
 
-export default async function DashboardPage() {
-  const dashboard = await getDataService().getDashboardData();
+interface DashboardPageProps {
+  searchParams: Promise<{
+    period?: string;
+  }>;
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const params = await searchParams;
+  const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
+  const dashboard = await getDataService().getDashboardData(period);
 
   return (
     <main className="grid gap-6">
@@ -46,23 +55,26 @@ export default async function DashboardPage() {
               Dashboard avanzado
             </h1>
             <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-              Indicadores operativos, morosidad, ingresos y evolución de jugadores.
+              Indicadores operativos, morosidad, ingresos y cuotas calculadas por mes.
             </p>
           </div>
-          <div className="border-border bg-card flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-            <Database className="text-muted-foreground size-4" aria-hidden="true" />
-            <span className="font-medium">{dashboard.source.provider}</span>
-            <span
-              className={
-                dashboard.source.status === "ready"
-                  ? "text-primary"
-                  : dashboard.source.status === "empty"
-                    ? "text-muted-foreground"
-                    : "text-destructive"
-              }
-            >
-              {dashboard.source.status}
-            </span>
+          <div className="flex flex-col gap-3 sm:items-end">
+            <div className="border-border bg-card flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+              <Database className="text-muted-foreground size-4" aria-hidden="true" />
+              <span className="font-medium">{dashboard.source.provider}</span>
+              <span
+                className={
+                  dashboard.source.status === "ready"
+                    ? "text-primary"
+                    : dashboard.source.status === "empty"
+                      ? "text-muted-foreground"
+                      : "text-destructive"
+                }
+              >
+                {dashboard.source.status}
+              </span>
+            </div>
+            <DashboardPeriodSelector period={dashboard.period} />
           </div>
         </div>
       </header>
@@ -90,7 +102,11 @@ export default async function DashboardPage() {
         })}
       </section>
 
-      <DashboardContent charts={dashboard.charts} players={dashboard.players} />
+      <DashboardContent
+        charts={dashboard.charts}
+        players={dashboard.players}
+        period={dashboard.period}
+      />
 
       {dashboard.source.status === "error" ? (
         <section className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">

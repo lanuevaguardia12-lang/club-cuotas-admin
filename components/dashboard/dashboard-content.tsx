@@ -7,6 +7,7 @@ import type { DashboardChartsData, PlayerTableRow } from "@/types/dashboard";
 
 interface DashboardContentProps {
   charts: DashboardChartsData;
+  period: string;
   players: PlayerTableRow[];
 }
 
@@ -27,11 +28,11 @@ const PlayersTable = dynamic(
   },
 );
 
-export function DashboardContent({ charts, players }: DashboardContentProps) {
+export function DashboardContent({ charts, period, players }: DashboardContentProps) {
   return (
     <>
       <DashboardCharts charts={charts} />
-      <PlayersTable rows={players} />
+      <PlayersTable rows={players} period={period} />
     </>
   );
 }

@@ -24,7 +24,7 @@ import type { AppSettingsData, UpdateAppSettingsInput } from "@/types/settings";
 export interface IDataService {
   getAppSettings(): Promise<AppSettingsData>;
   updateAppSettings(input: UpdateAppSettingsInput): Promise<void>;
-  getDashboardData(): Promise<DashboardData>;
+  getDashboardData(period?: string): Promise<DashboardData>;
   getCashFlowData(): Promise<CashFlowData>;
   getPlayersData(): Promise<PlayerDirectoryData>;
   upsertPlayer(input: UpsertPlayerInput): Promise<void>;
