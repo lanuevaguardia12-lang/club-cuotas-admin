@@ -221,6 +221,13 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async updateFeeRefundPolicy(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async getExportData(dataset: ExportDataset): Promise<ExportData> {
     const titles: Record<ExportDataset, string> = {
       "cash-flow": "Cash Flow",

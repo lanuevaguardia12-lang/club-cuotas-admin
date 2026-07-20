@@ -22,6 +22,7 @@ import {
   deleteFeeCalculatorCost,
   saveFeeCalculatorActual,
   saveFeeCalculatorCost,
+  saveFeeRefundPolicy,
 } from "@/app/(dashboard)/fee-calculator/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import type {
   FeeCalculatorCostType,
   FeeCalculatorData,
   FeePlayerCalculation,
+  FeeRefundPolicyRule,
 } from "@/types/fee-calculator";
 
 interface FeeCalculatorContentProps {
@@ -74,6 +76,13 @@ type CostTemplate =
   | "oldRecovery"
   | "rounding"
   | "custom";
+
+interface EditableRefundPolicyRow {
+  id: string;
+  fromPercent: string;
+  toPercent: string;
+  refundPercent: string;
+}
 
 export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
   const router = useRouter();
@@ -469,28 +478,7 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Política de devoluciones</CardTitle>
-            <p className="text-muted-foreground text-sm">
-              Se aplica sobre la cuota base del mes anterior según asistencia.
-            </p>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {data.refundPolicy.map((rule) => (
-              <div
-                key={`${rule.fromPercent}-${rule.toPercent}`}
-                className="border-border bg-background grid grid-cols-3 items-center gap-2 rounded-md border p-3 text-sm"
-              >
-                <span>{formatPercent(rule.fromPercent / 100)}</span>
-                <span>{formatPercent(rule.toPercent / 100)}</span>
-                <Badge variant={rule.refundPercent > 0 ? "warning" : "secondary"}>
-                  {formatPercent(rule.refundPercent / 100)}
-                </Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <RefundPolicyEditor rules={data.refundPolicy} />
       </div>
 
       <CostList data={data} onEditCost={handleEditCost} />
@@ -514,6 +502,141 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
 
       <PlayerCalculationsTable rows={sortedCalculations} />
     </section>
+  );
+}
+
+function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
+  const router = useRouter();
+  const [rows, setRows] = useState(() => rules.map(ruleToEditablePolicyRow));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function updateRow(
+    id: string,
+    key: keyof Omit<EditableRefundPolicyRow, "id">,
+    value: string,
+  ) {
+    setRows((current) =>
+      current.map((row) => (row.id === id ? { ...row, [key]: value } : row)),
+    );
+  }
+
+  function addRow() {
+    setRows((current) => [
+      ...current,
+      {
+        id: `new-${Date.now()}`,
+        fromPercent: "0",
+        toPercent: "100",
+        refundPercent: "0",
+      },
+    ]);
+  }
+
+  function deleteRow(id: string) {
+    setRows((current) => current.filter((row) => row.id !== id));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setMessage("");
+    await saveFeeRefundPolicy({
+      rules: rows.map((row) => ({
+        fromPercent: Number(row.fromPercent),
+        toPercent: Number(row.toPercent),
+        refundPercent: Number(row.refundPercent),
+      })),
+    });
+    router.refresh();
+    setSaving(false);
+    setMessage("Política guardada");
+    window.setTimeout(() => setMessage(""), 2400);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Política de devoluciones</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          Se aplica sobre la cuota base del mes anterior según asistencia.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="grid gap-2">
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              className="border-border bg-background grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-md border p-3 text-sm"
+            >
+              <label className="grid gap-1">
+                <span className="text-muted-foreground text-xs">Desde %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={row.fromPercent}
+                  onChange={(event) =>
+                    updateRow(row.id, "fromPercent", event.target.value)
+                  }
+                  className="border-input bg-card focus:ring-ring h-9 rounded-md border px-2 text-sm outline-none focus:ring-2"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-muted-foreground text-xs">Hasta %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={row.toPercent}
+                  onChange={(event) => updateRow(row.id, "toPercent", event.target.value)}
+                  className="border-input bg-card focus:ring-ring h-9 rounded-md border px-2 text-sm outline-none focus:ring-2"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-muted-foreground text-xs">Devolución %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={row.refundPercent}
+                  onChange={(event) =>
+                    updateRow(row.id, "refundPercent", event.target.value)
+                  }
+                  className="border-input bg-card focus:ring-ring h-9 rounded-md border px-2 text-sm outline-none focus:ring-2"
+                />
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Eliminar regla"
+                disabled={rows.length === 1}
+                onClick={() => deleteRow(row.id)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button type="button" variant="outline" onClick={addRow}>
+            <Plus />
+            Agregar regla
+          </Button>
+          <Button type="button" disabled={saving} onClick={handleSave}>
+            <Save />
+            Guardar política
+          </Button>
+          {message ? (
+            <span className="text-primary text-sm font-medium">{message}</span>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -879,20 +1002,19 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       <div>
         <h2 className="text-lg font-semibold">Cuota por jugador</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Cuota base menos devolución por asistencia y gastos pagados por el jugador.
+          Cuota base calculada por la app menos devolución por asistencia.
         </p>
       </div>
 
       <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-muted/60">
               <tr className="border-border border-b">
                 <TableHead>Jugador</TableHead>
                 <TableHead>Base</TableHead>
                 <TableHead>Partidos</TableHead>
                 <TableHead>Devolución</TableHead>
-                <TableHead>Gastos</TableHead>
                 <TableHead>Cuota final</TableHead>
               </tr>
             </thead>
@@ -910,7 +1032,6 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                       {formatPercent(row.refundPercent / 100)}
                     </p>
                   </td>
-                  <td className="px-4 py-3">{formatCurrency(row.expenseCredit)}</td>
                   <td className="px-4 py-3 text-base font-semibold">
                     {formatCurrency(row.finalQuota)}
                   </td>
@@ -937,7 +1058,6 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <Info label="Base" value={formatCurrency(row.baseQuota)} />
                 <Info label="Devolución" value={formatCurrency(row.refundAmount)} />
-                <Info label="Gastos" value={formatCurrency(row.expenseCredit)} />
                 <Info label="Asistencia" value={formatPercent(row.attendanceRate)} />
               </div>
               <MatchDetails row={row} />
@@ -1066,6 +1186,18 @@ function getDefaultCostValues(data: FeeCalculatorData): CostFormValues {
     splitBetween: data.summary.players || 1,
     forecastUnits: 1,
     notes: "",
+  };
+}
+
+function ruleToEditablePolicyRow(
+  rule: FeeRefundPolicyRule,
+  index: number,
+): EditableRefundPolicyRow {
+  return {
+    id: `rule-${index}`,
+    fromPercent: String(rule.fromPercent),
+    toPercent: String(rule.toPercent),
+    refundPercent: String(rule.refundPercent),
   };
 }
 

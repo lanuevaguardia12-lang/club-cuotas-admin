@@ -30,6 +30,23 @@ const actualSchema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 
+const refundPolicySchema = z.object({
+  rules: z
+    .array(
+      z
+        .object({
+          fromPercent: z.coerce.number().min(0).max(100),
+          toPercent: z.coerce.number().min(0).max(100),
+          refundPercent: z.coerce.number().min(0).max(100),
+        })
+        .refine((rule) => rule.toPercent >= rule.fromPercent, {
+          message: "El porcentaje final no puede ser menor al inicial.",
+          path: ["toPercent"],
+        }),
+    )
+    .min(1),
+});
+
 export async function saveFeeCalculatorCost(input: unknown) {
   const user = await getCurrentUser();
   assertPermission(user, "fee-calculator:manage");
@@ -108,6 +125,34 @@ export async function saveFeeCalculatorActual(input: unknown) {
           costId: parsed.costId,
           period: parsed.period,
           actualUnits: parsed.actualUnits,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  revalidatePath("/fee-calculator");
+
+  return { ok: true };
+}
+
+export async function saveFeeRefundPolicy(input: unknown) {
+  const user = await getCurrentUser();
+  assertPermission(user, "fee-calculator:manage");
+
+  const parsed = refundPolicySchema.parse(input);
+  const dataService = getDataService();
+
+  await dataService.updateFeeRefundPolicy(parsed);
+  if (user) {
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "api.request",
+        entityType: "fee",
+        entityId: "refund-policy",
+        summary: "Politica de devoluciones actualizada.",
+        metadata: {
+          rules: parsed.rules.length,
         },
       })
       .catch(() => undefined);

@@ -116,3 +116,7 @@ export interface UpdateFeeCalculatorActualInput {
   actualUnits: number;
   notes?: string;
 }
+
+export interface UpdateFeeRefundPolicyInput {
+  rules: FeeRefundPolicyRule[];
+}

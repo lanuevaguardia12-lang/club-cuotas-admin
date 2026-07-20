@@ -47,6 +47,7 @@ import type {
   FeePlayerCalculation,
   FeeRefundPolicyRule,
   UpdateFeeCalculatorActualInput,
+  UpdateFeeRefundPolicyInput,
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
 import type {
@@ -259,12 +260,24 @@ const feeCalculatorActualHeaders = [
   "actualizado_en",
 ];
 
+const feeRefundPolicyHeaders = ["desde", "hasta", "devolucion"];
+
 export class GoogleSheetsService implements IDataService {
   private readonly config: GoogleSheetsConfig;
 
   constructor(config: Partial<GoogleSheetsConfig> = {}) {
+    const spreadsheetId =
+      config.spreadsheetId ??
+      process.env.GOOGLE_SHEETS_SPREADSHEET_ID ??
+      config.matchesSpreadsheetId ??
+      process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID;
+    const matchesSpreadsheetId =
+      config.matchesSpreadsheetId ??
+      process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID ??
+      spreadsheetId;
+
     this.config = {
-      spreadsheetId: config.spreadsheetId ?? process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      spreadsheetId,
       clientEmail: config.clientEmail ?? process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
       privateKey: config.privateKey ?? process.env.GOOGLE_SHEETS_PRIVATE_KEY,
       playersRange:
@@ -305,11 +318,7 @@ export class GoogleSheetsService implements IDataService {
         config.feeCalculatorActualsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE ??
         DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE,
-      matchesSpreadsheetId:
-        config.matchesSpreadsheetId ??
-        process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID ??
-        config.spreadsheetId ??
-        process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      matchesSpreadsheetId,
       matchesRange:
         config.matchesRange ??
         process.env.GOOGLE_SHEETS_MATCHES_RANGE ??
@@ -463,18 +472,13 @@ export class GoogleSheetsService implements IDataService {
       this.assertConfigured();
       assertValidPeriod(period);
 
-      const {
-        players,
-        costsRows,
-        actualsRows,
-        refundPolicyRows,
-        matchRows,
-        expenseRows,
-      } = await this.readFeeCalculatorRows();
+      const { costsRows, actualsRows, refundPolicyRows, matchRows, expenseRows } =
+        await this.readFeeCalculatorRows();
       const costs = mapRowsToFeeCalculatorCosts(costsRows);
       const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
       const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
       const matches = mapRowsToMatches(matchRows);
+      const players = buildPlayersFromMatches(matches);
       const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
 
       return buildFeeCalculatorData({
@@ -515,19 +519,26 @@ export class GoogleSheetsService implements IDataService {
   async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
     this.assertConfigured();
 
+    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
     const cost = normalizeFeeCalculatorCostInput(input);
-    const rows = await this.readOptionalValues(this.config.feeCalculatorCostsRange);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      feeCalculatorSpreadsheetId,
+      this.config.feeCalculatorCostsRange,
+    );
     const now = new Date().toISOString();
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
 
-    await this.ensureSheetForRange(this.config.feeCalculatorCostsRange);
+    await this.ensureSheetForRange(
+      this.config.feeCalculatorCostsRange,
+      feeCalculatorSpreadsheetId,
+    );
 
     if (rows.length === 0) {
       const id = cost.id || createId("cost");
 
       await sheets.spreadsheets.values.update({
-        spreadsheetId: this.config.spreadsheetId,
+        spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A:M`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
@@ -564,7 +575,7 @@ export class GoogleSheetsService implements IDataService {
       const spreadsheetRow = targetRowIndex + 2;
 
       await sheets.spreadsheets.values.update({
-        spreadsheetId: this.config.spreadsheetId,
+        spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
@@ -581,7 +592,7 @@ export class GoogleSheetsService implements IDataService {
       });
     } else {
       await sheets.spreadsheets.values.append({
-        spreadsheetId: this.config.spreadsheetId,
+        spreadsheetId: feeCalculatorSpreadsheetId,
         range: this.config.feeCalculatorCostsRange,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
@@ -605,7 +616,11 @@ export class GoogleSheetsService implements IDataService {
   async deleteFeeCalculatorCost(costId: string): Promise<void> {
     this.assertConfigured();
 
-    const values = await this.readValues(this.config.feeCalculatorCostsRange);
+    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const values = await this.readOptionalValuesFromSpreadsheet(
+      feeCalculatorSpreadsheetId,
+      this.config.feeCalculatorCostsRange,
+    );
 
     if (values.length === 0) {
       return;
@@ -647,7 +662,7 @@ export class GoogleSheetsService implements IDataService {
     }
 
     await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: this.config.spreadsheetId,
+      spreadsheetId: feeCalculatorSpreadsheetId,
       requestBody: {
         valueInputOption: "USER_ENTERED",
         data,
@@ -660,17 +675,24 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
     assertValidPeriod(input.period);
 
+    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
     const actual = normalizeFeeCalculatorActualInput(input);
-    const rows = await this.readOptionalValues(this.config.feeCalculatorActualsRange);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      feeCalculatorSpreadsheetId,
+      this.config.feeCalculatorActualsRange,
+    );
     const now = new Date().toISOString();
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
 
-    await this.ensureSheetForRange(this.config.feeCalculatorActualsRange);
+    await this.ensureSheetForRange(
+      this.config.feeCalculatorActualsRange,
+      feeCalculatorSpreadsheetId,
+    );
 
     if (rows.length === 0) {
       await sheets.spreadsheets.values.update({
-        spreadsheetId: this.config.spreadsheetId,
+        spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A:F`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
@@ -709,7 +731,7 @@ export class GoogleSheetsService implements IDataService {
       const spreadsheetRow = targetRowIndex + 2;
 
       await sheets.spreadsheets.values.update({
-        spreadsheetId: this.config.spreadsheetId,
+        spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
@@ -724,7 +746,7 @@ export class GoogleSheetsService implements IDataService {
       });
     } else {
       await sheets.spreadsheets.values.append({
-        spreadsheetId: this.config.spreadsheetId,
+        spreadsheetId: feeCalculatorSpreadsheetId,
         range: this.config.feeCalculatorActualsRange,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
@@ -739,6 +761,37 @@ export class GoogleSheetsService implements IDataService {
         },
       });
     }
+
+    invalidateFeeCalculatorCache();
+  }
+
+  async updateFeeRefundPolicy(input: UpdateFeeRefundPolicyInput): Promise<void> {
+    this.assertConfigured();
+
+    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const rules = normalizeFeeRefundPolicyInput(input);
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.refundPolicyRange);
+
+    await this.ensureSheetForRange(
+      this.config.refundPolicyRange,
+      feeCalculatorSpreadsheetId,
+    );
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: feeCalculatorSpreadsheetId,
+      range: this.config.refundPolicyRange,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: feeCalculatorSpreadsheetId,
+      range: `${sheetPrefix}!A:C`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [
+          feeRefundPolicyHeaders,
+          ...rules.map((rule) => [rule.fromPercent, rule.toPercent, rule.refundPercent]),
+        ],
+      },
+    });
 
     invalidateFeeCalculatorCache();
   }
@@ -1266,6 +1319,7 @@ export class GoogleSheetsService implements IDataService {
   private async readFeeCalculatorRows() {
     const spreadsheetId = this.config.spreadsheetId;
     const matchesSpreadsheetId = this.config.matchesSpreadsheetId;
+    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -1274,45 +1328,43 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
-    const [{ players, fees }, calculatorRows] = await Promise.all([
-      this.readDashboardRecords(),
-      unstable_cache(
-        async () => ({
-          costsRows: await this.readOptionalValues(this.config.feeCalculatorCostsRange),
-          actualsRows: await this.readOptionalValues(
-            this.config.feeCalculatorActualsRange,
-          ),
-          refundPolicyRows: await this.readOptionalValues(this.config.refundPolicyRange),
-          matchRows: matchesSpreadsheetId
-            ? await this.readOptionalValuesFromSpreadsheet(
-                matchesSpreadsheetId,
-                this.config.matchesRange,
-              )
-            : [],
-          expenseRows: await this.readOptionalValues(CLUB_EXPENSES_RANGE),
-        }),
-        [
-          "google-sheets-fee-calculator",
-          spreadsheetId,
-          matchesSpreadsheetId ?? "",
+    return unstable_cache(
+      async () => ({
+        costsRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
           this.config.feeCalculatorCostsRange,
+        ),
+        actualsRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
           this.config.feeCalculatorActualsRange,
+        ),
+        refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
           this.config.refundPolicyRange,
-          this.config.matchesRange,
-          CLUB_EXPENSES_RANGE,
-        ],
-        {
-          revalidate: this.config.cacheTtlSeconds,
-          tags: ["google-sheets", "google-sheets:fee-calculator"],
-        },
-      )(),
-    ]);
-
-    return {
-      players,
-      fees,
-      ...calculatorRows,
-    };
+        ),
+        matchRows: matchesSpreadsheetId
+          ? await this.readOptionalValuesFromSpreadsheet(
+              matchesSpreadsheetId,
+              this.config.matchesRange,
+            )
+          : [],
+        expenseRows: [],
+      }),
+      [
+        "google-sheets-fee-calculator",
+        spreadsheetId,
+        matchesSpreadsheetId ?? "",
+        feeCalculatorSpreadsheetId,
+        this.config.feeCalculatorCostsRange,
+        this.config.feeCalculatorActualsRange,
+        this.config.refundPolicyRange,
+        this.config.matchesRange,
+      ],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:fee-calculator"],
+      },
+    )();
   }
 
   private async readValues(range: string) {
@@ -1355,11 +1407,27 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
-  private async ensureSheetForRange(range: string) {
+  private getFeeCalculatorSpreadsheetId() {
+    const spreadsheetId = this.config.matchesSpreadsheetId ?? this.config.spreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    return spreadsheetId;
+  }
+
+  private async ensureSheetForRange(
+    range: string,
+    spreadsheetId = this.config.spreadsheetId ?? this.getFeeCalculatorSpreadsheetId(),
+  ) {
     const title = unquoteSheetTitle(getSheetPrefix(range));
     const sheets = this.createSheetsClient();
     const metadata = await sheets.spreadsheets.get({
-      spreadsheetId: this.config.spreadsheetId,
+      spreadsheetId,
       fields: "sheets.properties.title",
     });
     const exists = metadata.data.sheets?.some(
@@ -1371,7 +1439,7 @@ export class GoogleSheetsService implements IDataService {
     }
 
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: this.config.spreadsheetId,
+      spreadsheetId,
       requestBody: {
         requests: [
           {
@@ -2128,6 +2196,33 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
+function buildPlayersFromMatches(matches: MatchRecord[]): PlayerRecord[] {
+  const names = new Map<string, string>();
+  const seenIds = new Set<string>();
+
+  matches.forEach((match) => {
+    match.players.forEach((playerName) => {
+      const normalizedName = normalizeClubPlayerName(playerName);
+
+      if (normalizedName && !names.has(normalizedName)) {
+        names.set(normalizedName, playerName.trim());
+      }
+    });
+  });
+
+  return Array.from(names.values())
+    .sort((left, right) => left.localeCompare(right, "es"))
+    .map((name) => ({
+      id: createUniqueClubPlayerId(createClubPlayerId(name), seenIds),
+      name,
+      category: "",
+      phone: "",
+      monthlyFee: 0,
+      observations: "Jugador detectado desde partidos jugados.",
+      status: "active",
+    }));
+}
+
 function mapClubExpenseRowsToPlayerCredits(rows: unknown[][]): PlayerExpenseCredit[] {
   return rowsToRecords(rows)
     .map((record) => {
@@ -2346,7 +2441,7 @@ function buildPlayerFeeCalculation({
         normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
     )
     .reduce((total, credit) => total + credit.amount, 0);
-  const finalQuota = Math.max(baseQuota - refundAmount - expenseCredit, 0);
+  const finalQuota = Math.max(baseQuota - refundAmount, 0);
 
   return {
     playerId: player.id,
@@ -3650,6 +3745,34 @@ function normalizeFeeCalculatorActualInput(
     actualUnits: Math.max(Number(input.actualUnits), 0),
     notes: input.notes?.trim() ?? "",
   };
+}
+
+function normalizeFeeRefundPolicyInput(
+  input: UpdateFeeRefundPolicyInput,
+): FeeRefundPolicyRule[] {
+  const rules = input.rules
+    .map((rule) => ({
+      fromPercent: Math.max(Number(rule.fromPercent), 0),
+      toPercent: Math.min(Math.max(Number(rule.toPercent), 0), 100),
+      refundPercent: Math.min(Math.max(Number(rule.refundPercent), 0), 100),
+    }))
+    .filter(
+      (rule) =>
+        Number.isFinite(rule.fromPercent) &&
+        Number.isFinite(rule.toPercent) &&
+        Number.isFinite(rule.refundPercent) &&
+        rule.toPercent >= rule.fromPercent,
+    )
+    .sort((left, right) => left.fromPercent - right.fromPercent);
+
+  if (rules.length === 0) {
+    throw new DataServiceError(
+      "La politica de devoluciones debe tener al menos una regla valida.",
+      "CONFIGURATION_ERROR",
+    );
+  }
+
+  return rules;
 }
 
 function buildFeeCalculatorCostWritableRow(headers: string[], cost: FeeCalculatorCost) {

@@ -29,7 +29,7 @@ export default async function FeeCalculatorPage({
               Calculador de cuota
             </h1>
             <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-              Costos, canchas reales, asistencia, devoluciones y gastos del mes anterior.
+              Costos, canchas reales, asistencia y devoluciones calculadas desde partidos.
             </p>
           </div>
           <div className="border-border bg-card flex items-center gap-2 rounded-md border px-3 py-2 text-sm">

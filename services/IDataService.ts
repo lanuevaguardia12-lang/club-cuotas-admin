@@ -8,6 +8,7 @@ import type { ExportData, ExportDataset } from "@/types/export";
 import type {
   FeeCalculatorData,
   UpdateFeeCalculatorActualInput,
+  UpdateFeeRefundPolicyInput,
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
 import type {
@@ -28,6 +29,7 @@ export interface IDataService {
   upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void>;
   deleteFeeCalculatorCost(costId: string): Promise<void>;
   updateFeeCalculatorActual(input: UpdateFeeCalculatorActualInput): Promise<void>;
+  updateFeeRefundPolicy(input: UpdateFeeRefundPolicyInput): Promise<void>;
   getExportData(dataset: ExportDataset): Promise<ExportData>;
   getPlayerProfile(playerId: string, year?: number): Promise<PlayerProfile | null>;
   updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput): Promise<void>;

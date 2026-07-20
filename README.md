@@ -194,7 +194,7 @@ STRIPE_SECRET_KEY="replace-with-stripe-secret-key"
 STRIPE_WEBHOOK_SECRET="replace-with-stripe-webhook-secret"
 STRIPE_AMOUNT_MULTIPLIER=100
 
-GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-spreadsheet-id"
+GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_CLIENT_EMAIL="replace-with-service-account-email"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
 GOOGLE_SHEETS_PLAYERS_RANGE="Jugadores!A:Z"
@@ -336,8 +336,8 @@ Archivos principales:
 
 Rangos por defecto:
 
-- `Jugadores!A:Z`
-- `Cuotas!A:Z`
+- `Jugadores!A:Z` para el dashboard heredado, opcional para el calculador
+- `Cuotas!A:Z` para el dashboard heredado, no se usa en el calculador
 - `CashFlow!A:Z`
 - `Configuracion!A:B`
 - `Auditoria!A:Z`
@@ -349,7 +349,8 @@ Rangos por defecto:
 - `CalculadoraReales!A:Z`
 - `Politica devoluciones!A:C`
 - `Partidos jugados formulario!A:Z` en el Sheet definido por
-  `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`
+  `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`. Para el calculador actual, este Sheet
+  tambien puede ser `GOOGLE_SHEETS_SPREADSHEET_ID`.
 
 ### Planilla operativa La Nueva Guardia
 
@@ -496,8 +497,15 @@ La pantalla `/fee-calculator` calcula la cuota final por jugador con esta regla:
 cuota final =
   cuota base del mes actual
   - devolucion por asistencia del mes anterior sobre la cuota base anterior
-  - gastos pagados por el jugador en el mes anterior
 ```
+
+El calculador ya no depende del Sheet viejo de cuotas ni de `Listado jugadores`.
+La lista de jugadores se arma desde `Partidos jugados formulario`, leyendo todos
+los nombres de `Jugadores que ingresaron`.
+
+Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` es la base operativa. La
+app lee de ahi los partidos y tambien guarda ahi las hojas `CalculadoraCostos`,
+`CalculadoraReales` y `Politica devoluciones`.
 
 La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo
@@ -520,7 +528,7 @@ La devolucion ya no toma la cuota base desde el Sheet viejo de cuotas. La app
 calcula la cuota base del mes anterior con la misma estructura de costos y usa
 ese valor como base de devolucion.
 
-La devolucion se calcula con `Politica devoluciones`:
+La devolucion se calcula con `Politica devoluciones`, editable desde la app:
 
 | Desde  | Hasta | Devolucion |
 | ------ | ----- | ---------- |
