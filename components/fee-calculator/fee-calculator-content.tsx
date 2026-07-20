@@ -320,6 +320,8 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
         </CardHeader>
       </Card>
 
+      <FeeCalculatorNotice data={data} rows={sortedCalculations} />
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card>
           <CardHeader>
@@ -503,6 +505,53 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
       <PlayerCalculationsTable rows={sortedCalculations} />
     </section>
   );
+}
+
+function FeeCalculatorNotice({
+  data,
+  rows,
+}: {
+  data: FeeCalculatorData;
+  rows: FeePlayerCalculation[];
+}) {
+  if (data.source.status === "error") {
+    return null;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <Card className="border-destructive/30 bg-destructive/10">
+        <CardContent className="p-5">
+          <h2 className="text-destructive font-semibold">No se detectaron jugadores</h2>
+          <p className="text-destructive/90 mt-2 text-sm">
+            El listado se arma desde la hoja de partidos. Revisá que Vercel tenga
+            configurado GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID, que el rango sea{" "}
+            <span className="font-medium">Partidos jugados formulario!A:Z</span> y que la
+            Service Account tenga acceso al Sheet.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (data.summary.activeCosts === 0 || data.summary.baseQuota === 0) {
+    return (
+      <Card className="border-[#f4ce0f]/50 bg-[#f4ce0f]/10">
+        <CardContent className="p-5">
+          <h2 className="font-semibold text-[#7a6500] dark:text-[#f4ce0f]">
+            Jugadores detectados, faltan costos activos
+          </h2>
+          <p className="mt-2 text-sm text-[#6c5a00] dark:text-[#f4ce0f]/90">
+            Ya hay {rows.length} jugadores tomados desde partidos. Para ver cuánto le
+            queda pagar a cada uno, cargá costos para {formatPeriod(data.period)} con
+            monto, cantidad estimada y cantidad de personas.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return null;
 }
 
 function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
@@ -925,73 +974,88 @@ function AttendanceBreakdown({
         </p>
       </div>
 
-      <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead className="bg-muted/60">
-              <tr className="border-border border-b">
-                <TableHead>Jugador</TableHead>
-                <TableHead>Partidos del mes</TableHead>
-                <TableHead>Asistió</TableHead>
-                <TableHead>Asistencia</TableHead>
-                <TableHead>Devolución</TableHead>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.playerId} className="border-border border-b last:border-b-0">
-                  <td className="px-4 py-3 font-medium">{row.playerName}</td>
-                  <td className="px-4 py-3">{row.totalMatches}</td>
-                  <td className="px-4 py-3">
-                    <MatchDetails row={row} compact />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={row.refundPercent > 0 ? "warning" : "success"}>
-                      {formatPercent(row.attendanceRate)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{formatPercent(row.refundPercent / 100)}</div>
-                    <p className="text-muted-foreground text-xs">
-                      sobre {formatCurrency(row.previousBaseQuota)}
-                    </p>
-                  </td>
+      {rows.length === 0 ? (
+        <EmptyTableState
+          title="Sin jugadores para mostrar"
+          description="Cuando la app lea jugadores desde la hoja de partidos, vas a ver acá cuántos partidos jugó cada uno y el porcentaje de asistencia."
+        />
+      ) : (
+        <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px] text-sm">
+              <thead className="bg-muted/60">
+                <tr className="border-border border-b">
+                  <TableHead>Jugador</TableHead>
+                  <TableHead>Partidos del mes</TableHead>
+                  <TableHead>Asistió</TableHead>
+                  <TableHead>Asistencia</TableHead>
+                  <TableHead>Devolución</TableHead>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.playerId}
+                    className="border-border border-b last:border-b-0"
+                  >
+                    <td className="px-4 py-3 font-medium">{row.playerName}</td>
+                    <td className="px-4 py-3">{row.totalMatches}</td>
+                    <td className="px-4 py-3">
+                      <MatchDetails row={row} compact />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={row.refundPercent > 0 ? "warning" : "success"}>
+                        {formatPercent(row.attendanceRate)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{formatPercent(row.refundPercent / 100)}</div>
+                      <p className="text-muted-foreground text-xs">
+                        sobre {formatCurrency(row.previousBaseQuota)}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="grid gap-3 md:hidden">
-        {rows.map((row) => (
-          <Card key={row.playerId}>
-            <CardContent className="grid gap-4 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{row.playerName}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm">
-                    {row.playedMatches}/{row.totalMatches} partidos
-                  </p>
+      {rows.length > 0 ? (
+        <div className="grid gap-3 md:hidden">
+          {rows.map((row) => (
+            <Card key={row.playerId}>
+              <CardContent className="grid gap-4 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">{row.playerName}</h3>
+                    <p className="text-muted-foreground mt-1 text-sm">
+                      {row.playedMatches}/{row.totalMatches} partidos
+                    </p>
+                  </div>
+                  <Badge variant={row.refundPercent > 0 ? "warning" : "success"}>
+                    {formatPercent(row.attendanceRate)}
+                  </Badge>
                 </div>
-                <Badge variant={row.refundPercent > 0 ? "warning" : "success"}>
-                  {formatPercent(row.attendanceRate)}
-                </Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <Info label="Partidos del mes" value={String(row.totalMatches)} />
-                <Info label="Asistió" value={String(row.playedMatches)} />
-                <Info label="Devolución" value={formatPercent(row.refundPercent / 100)} />
-                <Info
-                  label="Base devolución"
-                  value={formatCurrency(row.previousBaseQuota)}
-                />
-              </div>
-              <MatchDetails row={row} compact />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <Info label="Partidos del mes" value={String(row.totalMatches)} />
+                  <Info label="Asistió" value={String(row.playedMatches)} />
+                  <Info
+                    label="Devolución"
+                    value={formatPercent(row.refundPercent / 100)}
+                  />
+                  <Info
+                    label="Base devolución"
+                    value={formatCurrency(row.previousBaseQuota)}
+                  />
+                </div>
+                <MatchDetails row={row} compact />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1006,66 +1070,89 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
         </p>
       </div>
 
-      <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-sm">
-            <thead className="bg-muted/60">
-              <tr className="border-border border-b">
-                <TableHead>Jugador</TableHead>
-                <TableHead>Base</TableHead>
-                <TableHead>Partidos</TableHead>
-                <TableHead>Devolución</TableHead>
-                <TableHead>Cuota final</TableHead>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.playerId} className="border-border border-b last:border-b-0">
-                  <td className="px-4 py-3 font-medium">{row.playerName}</td>
-                  <td className="px-4 py-3">{formatCurrency(row.baseQuota)}</td>
-                  <td className="px-4 py-3">
-                    <MatchDetails row={row} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{formatCurrency(row.refundAmount)}</div>
-                    <p className="text-muted-foreground text-xs">
-                      {formatPercent(row.refundPercent / 100)}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-base font-semibold">
-                    {formatCurrency(row.finalQuota)}
-                  </td>
+      {rows.length === 0 ? (
+        <EmptyTableState
+          title="Sin cuotas por jugador"
+          description="La cuota final aparece cuando el calculador logra leer jugadores desde partidos y existen costos activos para el período seleccionado."
+        />
+      ) : (
+        <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead className="bg-muted/60">
+                <tr className="border-border border-b">
+                  <TableHead>Jugador</TableHead>
+                  <TableHead>Base</TableHead>
+                  <TableHead>Partidos</TableHead>
+                  <TableHead>Devolución</TableHead>
+                  <TableHead>Cuota final</TableHead>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.playerId}
+                    className="border-border border-b last:border-b-0"
+                  >
+                    <td className="px-4 py-3 font-medium">{row.playerName}</td>
+                    <td className="px-4 py-3">{formatCurrency(row.baseQuota)}</td>
+                    <td className="px-4 py-3">
+                      <MatchDetails row={row} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{formatCurrency(row.refundAmount)}</div>
+                      <p className="text-muted-foreground text-xs">
+                        {formatPercent(row.refundPercent / 100)}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-base font-semibold">
+                      {formatCurrency(row.finalQuota)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="grid gap-3 md:hidden">
-        {rows.map((row) => (
-          <Card key={row.playerId}>
-            <CardContent className="grid gap-4 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{row.playerName}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm">
-                    {row.playedMatches}/{row.totalMatches} partidos
-                  </p>
+      {rows.length > 0 ? (
+        <div className="grid gap-3 md:hidden">
+          {rows.map((row) => (
+            <Card key={row.playerId}>
+              <CardContent className="grid gap-4 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">{row.playerName}</h3>
+                    <p className="text-muted-foreground mt-1 text-sm">
+                      {row.playedMatches}/{row.totalMatches} partidos
+                    </p>
+                  </div>
+                  <Badge variant="default">{formatCurrency(row.finalQuota)}</Badge>
                 </div>
-                <Badge variant="default">{formatCurrency(row.finalQuota)}</Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <Info label="Base" value={formatCurrency(row.baseQuota)} />
-                <Info label="Devolución" value={formatCurrency(row.refundAmount)} />
-                <Info label="Asistencia" value={formatPercent(row.attendanceRate)} />
-              </div>
-              <MatchDetails row={row} />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <Info label="Base" value={formatCurrency(row.baseQuota)} />
+                  <Info label="Devolución" value={formatCurrency(row.refundAmount)} />
+                  <Info label="Asistencia" value={formatPercent(row.attendanceRate)} />
+                </div>
+                <MatchDetails row={row} />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function EmptyTableState({ description, title }: { description: string; title: string }) {
+  return (
+    <Card className="border-dashed">
+      <CardContent className="p-5">
+        <h3 className="font-semibold">{title}</h3>
+        <p className="text-muted-foreground mt-2 text-sm">{description}</p>
+      </CardContent>
+    </Card>
   );
 }
 
