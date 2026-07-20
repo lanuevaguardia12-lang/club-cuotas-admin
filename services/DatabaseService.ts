@@ -112,8 +112,11 @@ export class DatabaseService implements IDataService {
     };
   }
 
-  async getCashFlowData(): Promise<CashFlowData> {
+  async getCashFlowData(
+    period = new Date().toISOString().slice(0, 7),
+  ): Promise<CashFlowData> {
     return {
+      period,
       metrics: [
         {
           id: "income",
@@ -148,6 +151,10 @@ export class DatabaseService implements IDataService {
         monthly: [],
         annual: [],
       },
+      transactions: [],
+      expectedFeeIncome: 0,
+      additionalIncome: 0,
+      additionalExpenses: 0,
       emptyState: {
         title: "Cash Flow pendiente",
         description:
@@ -161,6 +168,20 @@ export class DatabaseService implements IDataService {
         revalidateSeconds: 0,
       },
     };
+  }
+
+  async upsertCashFlowTransaction(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async deleteCashFlowTransaction(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
   }
 
   async getPlayersData(): Promise<PlayerDirectoryData> {
@@ -206,6 +227,7 @@ export class DatabaseService implements IDataService {
       costs: [],
       actuals: [],
       adjustments: [],
+      players: [],
       refundPolicy: [],
       playerCalculations: [],
       matchSummaries: [],

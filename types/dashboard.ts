@@ -58,6 +58,23 @@ export interface DashboardChartsData {
 
 export type CashFlowTransactionType = "income" | "expense";
 
+export type CashFlowTransactionSource = "manual" | "fee-calculator" | "legacy";
+
+export interface CashFlowTransaction {
+  id: string;
+  date?: string;
+  period: string;
+  type: CashFlowTransactionType;
+  concept: string;
+  amount: number;
+  repeatsMonthly: boolean;
+  startPeriod: string;
+  endPeriod: string;
+  notes: string;
+  active: boolean;
+  source: CashFlowTransactionSource;
+}
+
 export interface CashFlowMetric {
   id: "income" | "expenses" | "balance" | "cash";
   title: string;
@@ -87,13 +104,31 @@ export interface CashFlowChartsData {
 }
 
 export interface CashFlowData {
+  period: string;
   metrics: CashFlowMetric[];
   charts: CashFlowChartsData;
+  transactions: CashFlowTransaction[];
+  expectedFeeIncome: number;
+  additionalIncome: number;
+  additionalExpenses: number;
   emptyState: {
     title: string;
     description: string;
   };
   source: DataSourceState;
+}
+
+export interface UpsertCashFlowTransactionInput {
+  id?: string;
+  date: string;
+  period: string;
+  type: CashFlowTransactionType;
+  concept: string;
+  amount: number;
+  repeatsMonthly: boolean;
+  startPeriod: string;
+  endPeriod: string;
+  notes?: string;
 }
 
 export type PlayerPaymentStatus = "paid" | "debt" | "pending";

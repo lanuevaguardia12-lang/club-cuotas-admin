@@ -1,13 +1,50 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { CashFlowChartsData } from "@/types/dashboard";
+import {
+  deleteCashFlowTransaction,
+  saveCashFlowTransaction,
+} from "@/app/(dashboard)/cash-flow/actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type {
+  CashFlowData,
+  CashFlowTransaction,
+  CashFlowTransactionType,
+} from "@/types/dashboard";
 
 interface CashFlowContentProps {
-  charts: CashFlowChartsData;
+  canWrite: boolean;
+  data: CashFlowData;
 }
+
+const transactionSchema = z
+  .object({
+    id: z.string().optional(),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Elegí una fecha."),
+    period: z.string().regex(/^\d{4}-\d{2}$/, "Elegí un mes."),
+    type: z.enum(["income", "expense"]),
+    concept: z.string().trim().min(2, "Ingresá un concepto.").max(140),
+    amount: z.number().positive("El monto debe ser mayor a cero."),
+    repeatsMonthly: z.boolean(),
+    startPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí mes inicial."),
+    endPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí mes final."),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .refine((value) => value.endPeriod >= value.startPeriod, {
+    message: "El mes final no puede ser anterior al inicial.",
+    path: ["endPeriod"],
+  });
+
+type TransactionFormValues = z.infer<typeof transactionSchema>;
 
 const CashFlowCharts = dynamic(
   () =>
@@ -18,8 +55,405 @@ const CashFlowCharts = dynamic(
   },
 );
 
-export function CashFlowContent({ charts }: CashFlowContentProps) {
-  return <CashFlowCharts charts={charts} />;
+const typeLabels: Record<CashFlowTransactionType, string> = {
+  expense: "Gasto",
+  income: "Ingreso",
+};
+
+export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
+  const router = useRouter();
+  const [editingId, setEditingId] = useState("");
+  const [deletingId, setDeletingId] = useState("");
+  const [message, setMessage] = useState("");
+  const {
+    formState: { errors, isSubmitting },
+    handleSubmit,
+    register,
+    reset,
+    watch,
+  } = useForm<TransactionFormValues>({
+    resolver: zodResolver(transactionSchema),
+    defaultValues: getDefaultValues(data.period),
+  });
+  const repeatsMonthly = watch("repeatsMonthly");
+  const manualTransactions = useMemo(
+    () =>
+      data.transactions
+        .filter((transaction) => transaction.source === "manual")
+        .sort((left, right) => right.period.localeCompare(left.period)),
+    [data.transactions],
+  );
+
+  function handlePeriodChange(period: string) {
+    router.push(`/cash-flow?period=${period}`);
+  }
+
+  async function onSubmit(values: TransactionFormValues) {
+    setMessage("");
+    const normalizedValues = values.repeatsMonthly
+      ? values
+      : {
+          ...values,
+          startPeriod: values.period,
+          endPeriod: values.period,
+        };
+
+    await saveCashFlowTransaction(normalizedValues);
+    reset(getDefaultValues(data.period));
+    setEditingId("");
+    setMessage(values.id ? "Movimiento actualizado" : "Movimiento guardado");
+    router.refresh();
+    window.setTimeout(() => setMessage(""), 2200);
+  }
+
+  function handleEdit(transaction: CashFlowTransaction) {
+    setEditingId(transaction.id);
+    reset({
+      id: transaction.id,
+      date: transaction.date ?? `${transaction.period}-01`,
+      period: transaction.period,
+      type: transaction.type,
+      concept: transaction.concept,
+      amount: transaction.amount,
+      repeatsMonthly: transaction.repeatsMonthly,
+      startPeriod: transaction.startPeriod,
+      endPeriod: transaction.endPeriod,
+      notes: transaction.notes,
+    });
+    document
+      .getElementById("cash-flow-form")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function cancelEdit() {
+    setEditingId("");
+    reset(getDefaultValues(data.period));
+  }
+
+  async function handleDelete(transaction: CashFlowTransaction) {
+    if (!window.confirm(`¿Eliminar ${transaction.concept}?`)) {
+      return;
+    }
+
+    setDeletingId(transaction.id);
+    await deleteCashFlowTransaction(transaction.id);
+    setDeletingId("");
+    setMessage("Movimiento eliminado");
+    router.refresh();
+    window.setTimeout(() => setMessage(""), 2200);
+  }
+
+  return (
+    <section className="grid gap-6">
+      <Card>
+        <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>Periodo financiero</CardTitle>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Las cuotas esperadas salen del calculador para el mes elegido.
+            </p>
+          </div>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium">Mes</span>
+            <input
+              type="month"
+              value={data.period}
+              onChange={(event) => handlePeriodChange(event.target.value)}
+              className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+            />
+          </label>
+        </CardHeader>
+      </Card>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <DetailCard
+          label="Cuotas esperadas"
+          value={formatCurrency(data.expectedFeeIncome)}
+          detail="Suma de jugadores activos"
+        />
+        <DetailCard
+          label="Ingresos adicionales"
+          value={formatCurrency(data.additionalIncome)}
+          detail="Movimientos cargados"
+        />
+        <DetailCard
+          label="Gastos adicionales"
+          value={formatCurrency(data.additionalExpenses)}
+          detail="Movimientos cargados"
+        />
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>{editingId ? "Editar movimiento" : "Nuevo movimiento"}</CardTitle>
+            <p className="text-muted-foreground text-sm">
+              Cargá ingresos y gastos adicionales al cálculo de cuotas.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <form
+              id="cash-flow-form"
+              className="grid gap-4"
+              onSubmit={handleSubmit(onSubmit)}
+            >
+              <input type="hidden" {...register("id")} />
+              {editingId ? (
+                <div className="border-primary/30 bg-primary/10 text-primary flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                  <span>Editando movimiento</span>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelEdit}>
+                    <X />
+                    Cancelar
+                  </Button>
+                </div>
+              ) : null}
+
+              <Field label="Concepto" error={errors.concept?.message}>
+                <input
+                  {...register("concept")}
+                  disabled={!canWrite}
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Tipo" error={errors.type?.message}>
+                  <select
+                    {...register("type")}
+                    disabled={!canWrite}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  >
+                    <option value="income">Ingreso</option>
+                    <option value="expense">Gasto</option>
+                  </select>
+                </Field>
+
+                <Field label="Monto" error={errors.amount?.message}>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    {...register("amount", { valueAsNumber: true })}
+                    disabled={!canWrite}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  />
+                </Field>
+
+                <Field label="Fecha" error={errors.date?.message}>
+                  <input
+                    type="date"
+                    {...register("date")}
+                    disabled={!canWrite}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  />
+                </Field>
+
+                <Field label="Mes" error={errors.period?.message}>
+                  <input
+                    type="month"
+                    {...register("period")}
+                    disabled={!canWrite}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  />
+                </Field>
+              </div>
+
+              <label className="border-border bg-background flex min-h-10 items-center justify-between gap-3 rounded-md border px-3">
+                <span className="text-sm font-medium">Movimiento recurrente</span>
+                <input
+                  type="checkbox"
+                  {...register("repeatsMonthly")}
+                  disabled={!canWrite}
+                  className="accent-primary size-5"
+                />
+              </label>
+
+              {repeatsMonthly ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Repite desde" error={errors.startPeriod?.message}>
+                    <input
+                      type="month"
+                      {...register("startPeriod")}
+                      disabled={!canWrite}
+                      className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                    />
+                  </Field>
+                  <Field label="Repite hasta" error={errors.endPeriod?.message}>
+                    <input
+                      type="month"
+                      {...register("endPeriod")}
+                      disabled={!canWrite}
+                      className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                    />
+                  </Field>
+                </div>
+              ) : null}
+
+              <Field label="Notas" error={errors.notes?.message}>
+                <textarea
+                  {...register("notes")}
+                  disabled={!canWrite}
+                  rows={3}
+                  className="border-input bg-background focus:ring-ring rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Button type="submit" disabled={!canWrite || isSubmitting}>
+                  {editingId ? <Save /> : <Plus />}
+                  {editingId ? "Actualizar" : "Guardar"}
+                </Button>
+                {message ? (
+                  <span className="text-primary text-sm font-medium">{message}</span>
+                ) : null}
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <CashFlowTransactionsList
+          canWrite={canWrite}
+          deletingId={deletingId}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
+          transactions={manualTransactions}
+        />
+      </div>
+
+      <CashFlowCharts charts={data.charts} />
+    </section>
+  );
+}
+
+function CashFlowTransactionsList({
+  canWrite,
+  deletingId,
+  onDelete,
+  onEdit,
+  transactions,
+}: {
+  canWrite: boolean;
+  deletingId: string;
+  onDelete: (transaction: CashFlowTransaction) => void;
+  onEdit: (transaction: CashFlowTransaction) => void;
+  transactions: CashFlowTransaction[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Movimientos adicionales</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          Ingresos y gastos manuales. Las cuotas esperadas no se editan acá.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {transactions.length === 0 ? (
+          <div className="border-border rounded-lg border border-dashed p-4">
+            <h3 className="font-semibold">Sin movimientos adicionales</h3>
+            <p className="text-muted-foreground mt-2 text-sm">
+              Cargá gastos o ingresos extra para completar el cash flow.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {transactions.map((transaction) => (
+              <div
+                key={transaction.id}
+                className="border-border bg-background grid gap-3 rounded-lg border p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate font-medium">{transaction.concept}</h3>
+                      <Badge
+                        variant={transaction.type === "income" ? "success" : "danger"}
+                      >
+                        {typeLabels[transaction.type]}
+                      </Badge>
+                      {transaction.repeatsMonthly ? (
+                        <Badge variant="secondary">Recurrente</Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      {transaction.repeatsMonthly
+                        ? `${formatPeriod(transaction.startPeriod)} a ${formatPeriod(transaction.endPeriod)}`
+                        : formatPeriod(transaction.period)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 font-semibold">
+                    {formatCurrency(transaction.amount)}
+                  </p>
+                </div>
+                {transaction.notes ? (
+                  <p className="text-muted-foreground text-sm">{transaction.notes}</p>
+                ) : null}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canWrite}
+                    onClick={() => onEdit(transaction)}
+                  >
+                    <Pencil />
+                    Editar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canWrite || deletingId === transaction.id}
+                    onClick={() => onDelete(transaction)}
+                  >
+                    <Trash2 />
+                    Eliminar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DetailCard({
+  detail,
+  label,
+  value,
+}: {
+  detail: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <p className="text-muted-foreground text-sm">{label}</p>
+        <p className="mt-2 text-2xl font-semibold">{value}</p>
+        <p className="text-muted-foreground mt-1 text-sm">{detail}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Field({
+  children,
+  error,
+  label,
+}: Readonly<{
+  children: React.ReactNode;
+  error?: string;
+  label: string;
+}>) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm font-medium">{label}</span>
+      {children}
+      {error ? <span className="text-destructive text-sm">{error}</span> : null}
+    </label>
+  );
 }
 
 function CashFlowChartsLoading() {
@@ -37,4 +471,36 @@ function CashFlowChartsLoading() {
       ))}
     </section>
   );
+}
+
+function getDefaultValues(period: string): TransactionFormValues {
+  return {
+    amount: 0,
+    concept: "",
+    date: `${period}-01`,
+    endPeriod: period,
+    period,
+    repeatsMonthly: false,
+    startPeriod: period,
+    type: "expense",
+    notes: "",
+  };
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    currency: "ARS",
+    maximumFractionDigits: 0,
+    style: "currency",
+  }).format(value);
+}
+
+function formatPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }

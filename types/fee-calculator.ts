@@ -1,4 +1,5 @@
 import type { DataSourceState } from "@/types/dashboard";
+import type { PlayerDirectoryStatus } from "@/types/players";
 
 export type FeeCalculatorCostType = "fixed" | "court" | "coach" | "custom";
 
@@ -65,6 +66,13 @@ export interface FeeCalculatorAdjustment {
   variance: number;
 }
 
+export interface FeeCalculatorPlayer {
+  id: string;
+  name: string;
+  category: string;
+  status: PlayerDirectoryStatus;
+}
+
 export interface FeePlayerCalculation {
   playerId: string;
   playerName: string;
@@ -104,6 +112,7 @@ export interface FeeCalculatorData {
   costs: FeeCalculatorCost[];
   actuals: FeeCalculatorActual[];
   adjustments: FeeCalculatorAdjustment[];
+  players: FeeCalculatorPlayer[];
   refundPolicy: FeeRefundPolicyRule[];
   playerCalculations: FeePlayerCalculation[];
   matchSummaries: FeePlayerMatchSummary[];

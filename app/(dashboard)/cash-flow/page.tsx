@@ -9,6 +9,8 @@ import {
 
 import { CashFlowContent } from "@/components/cash-flow/cash-flow-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { hasPermission } from "@/lib/auth/roles";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +29,17 @@ const metricTones = {
   danger: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
 };
 
-export default async function CashFlowPage() {
-  const cashFlow = await getDataService().getCashFlowData();
+export default async function CashFlowPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    period?: string;
+  }>;
+}) {
+  const user = await getCurrentUser();
+  const params = await searchParams;
+  const period = /^\d{4}-\d{2}$/.test(params?.period ?? "") ? params?.period : undefined;
+  const cashFlow = await getDataService().getCashFlowData(period);
 
   return (
     <main className="grid gap-6">
@@ -84,7 +95,10 @@ export default async function CashFlowPage() {
         })}
       </section>
 
-      <CashFlowContent charts={cashFlow.charts} />
+      <CashFlowContent
+        canWrite={hasPermission(user, "cash-flow:write")}
+        data={cashFlow}
+      />
 
       {cashFlow.source.status === "error" ? (
         <section className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">

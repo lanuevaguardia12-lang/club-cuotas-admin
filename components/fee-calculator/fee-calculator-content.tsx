@@ -23,6 +23,7 @@ import {
   saveFeeCalculatorActual,
   saveFeeCalculatorCost,
   saveFeeRefundPolicy,
+  updateFeeCalculatorPlayerStatus,
 } from "@/app/(dashboard)/fee-calculator/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -403,7 +404,7 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
                   <input
                     type="number"
                     min={0}
-                    step={1}
+                    step="0.000001"
                     {...register("amount", { valueAsNumber: true })}
                     className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
                   />
@@ -493,6 +494,8 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
       <CostList data={data} onEditCost={handleEditCost} />
 
       <AdjustmentList data={data} />
+
+      <CalculatorPlayersPanel data={data} />
 
       <RepeatStructurePanel
         costsCount={repeatableCosts.length}
@@ -768,7 +771,7 @@ function CostList({
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-                <Info label="Monto unitario" value={formatCurrency(cost.amount)} />
+                <Info label="Monto unitario" value={formatPreciseCurrency(cost.amount)} />
                 <Info label="Divide" value={String(cost.splitBetween)} />
                 <Info
                   label={getUnitLabel(cost.type)}
@@ -776,11 +779,11 @@ function CostList({
                 />
                 <Info
                   label="Total"
-                  value={formatCurrency(cost.amount * cost.forecastUnits)}
+                  value={formatPreciseCurrency(cost.amount * cost.forecastUnits)}
                 />
                 <Info
                   label="Cuota/persona"
-                  value={formatCurrency(
+                  value={formatPreciseCurrency(
                     (cost.amount * cost.forecastUnits) / Math.max(cost.splitBetween, 1),
                   )}
                 />
@@ -899,6 +902,85 @@ function AdjustmentAmountBadge({ adjustment }: { adjustment: FeeCalculatorAdjust
     <Badge variant={isPositive ? "danger" : "success"}>
       {formatSignedCurrency(adjustment.variance)}
     </Badge>
+  );
+}
+
+function CalculatorPlayersPanel({ data }: { data: FeeCalculatorData }) {
+  const router = useRouter();
+  const [savingId, setSavingId] = useState("");
+  const activePlayers = data.players.filter(
+    (player) => player.status === "active",
+  ).length;
+  const inactivePlayers = data.players.length - activePlayers;
+
+  async function updateStatus(
+    player: FeeCalculatorData["players"][number],
+    status: "active" | "inactive",
+  ) {
+    setSavingId(player.id);
+    await updateFeeCalculatorPlayerStatus({
+      id: player.id,
+      name: player.name,
+      category: player.category,
+      status,
+    });
+    router.refresh();
+    setSavingId("");
+  }
+
+  return (
+    <section className="grid gap-3">
+      <div>
+        <h2 className="text-lg font-semibold">Jugadores del calculador</h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Solo los activos entran en la cuota y en el ingreso esperado del Cash Flow.
+          {data.players.length > 0
+            ? ` ${activePlayers} activos · ${inactivePlayers} inactivos.`
+            : ""}
+        </p>
+      </div>
+
+      {data.players.length === 0 ? (
+        <EmptyTableState
+          title="Sin jugadores cargados"
+          description="Cargá jugadores en la sección Jugadores para poder calcular cuotas."
+        />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {data.players.map((player) => {
+            const isActive = player.status === "active";
+            const nextStatus = isActive ? "inactive" : "active";
+
+            return (
+              <Card key={player.id}>
+                <CardContent className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate font-medium">{player.name}</h3>
+                      <Badge variant={isActive ? "success" : "danger"}>
+                        {isActive ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </div>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      {player.category || "Plantel"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={isActive ? "outline" : "default"}
+                    size="sm"
+                    disabled={savingId === player.id}
+                    onClick={() => updateStatus(player, nextStatus)}
+                  >
+                    {isActive ? "Inactivar" : "Activar"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1477,6 +1559,14 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-AR", {
     currency: "ARS",
     maximumFractionDigits: 0,
+    style: "currency",
+  }).format(value);
+}
+
+function formatPreciseCurrency(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    currency: "ARS",
+    maximumFractionDigits: 6,
     style: "currency",
   }).format(value);
 }

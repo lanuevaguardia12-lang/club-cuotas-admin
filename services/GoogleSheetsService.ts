@@ -18,6 +18,7 @@ import type {
   CashFlowData,
   CashFlowMetric,
   CashFlowMonthlyPoint,
+  CashFlowTransaction,
   CashFlowTransactionType,
   ChartDatum,
   DashboardData,
@@ -30,6 +31,7 @@ import type {
   PlayerProfile,
   PlayerTableRow,
   PlayerYearMonth,
+  UpsertCashFlowTransactionInput,
   UpdatePlayerFeeStatusInput,
 } from "@/types/dashboard";
 import type {
@@ -44,6 +46,7 @@ import type {
   FeeCalculatorCost,
   FeeCalculatorCostType,
   FeeCalculatorData,
+  FeeCalculatorPlayer,
   FeeMatchDetail,
   FeePlayerCalculation,
   FeeRefundPolicyRule,
@@ -136,13 +139,9 @@ interface FeeRecord {
   paidAt?: string;
 }
 
-interface CashFlowTransactionRecord {
-  id: string;
-  date: string | undefined;
-  period: string;
-  type: CashFlowTransactionType;
-  concept: string;
-  amount: number;
+interface CashFlowTransactionRecord extends CashFlowTransaction {
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface MatchRecord {
@@ -241,6 +240,22 @@ const paymentHeaders = [
   "created_at",
   "updated_at",
   "raw_event_type",
+];
+
+const cashFlowHeaders = [
+  "id",
+  "fecha",
+  "periodo",
+  "tipo",
+  "concepto",
+  "monto",
+  "repite_mensual",
+  "vigencia_desde",
+  "vigencia_hasta",
+  "notas",
+  "activo",
+  "creado_en",
+  "actualizado_en",
 ];
 
 const playerDirectoryHeaders = [
@@ -466,20 +481,27 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
-  async getCashFlowData(): Promise<CashFlowData> {
+  async getCashFlowData(period = getCurrentPeriod()): Promise<CashFlowData> {
     const cachedAt = new Date().toISOString();
 
     try {
       this.assertConfigured();
+      assertValidPeriod(period);
       const transactions = await this.readCashFlowTransactions();
+      const feeIncomeByPeriod = await this.readFeeIncomeByPeriod(
+        getCashFlowProjectionPeriods(period),
+      );
+      const expectedFeeIncome = feeIncomeByPeriod.get(period) ?? 0;
 
       return buildCashFlowData({
+        period,
         transactions,
-        status: transactions.length === 0 ? "empty" : "ready",
+        feeIncomeByPeriod,
+        status: transactions.length === 0 && expectedFeeIncome === 0 ? "empty" : "ready",
         message:
-          transactions.length === 0
-            ? "Google Sheets conectado, sin movimientos de cash flow cargados."
-            : "Cash Flow obtenido desde Google Sheets.",
+          transactions.length === 0 && expectedFeeIncome === 0
+            ? "Google Sheets conectado, sin movimientos ni cuotas calculadas."
+            : "Cash Flow obtenido desde Google Sheets y calculador de cuota.",
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
@@ -487,12 +509,196 @@ export class GoogleSheetsService implements IDataService {
       const serviceError = normalizeGoogleSheetsError(error);
 
       return buildFallbackCashFlowData({
+        period,
         status: "error",
         message: serviceError.message,
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
     }
+  }
+
+  async upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.config.spreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const transaction = normalizeCashFlowTransactionInput(input);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.cashFlowRange,
+    );
+    const now = new Date().toISOString();
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
+
+    await this.ensureSheetForRange(this.config.cashFlowRange, spreadsheetId);
+
+    if (rows.length === 0) {
+      const id = transaction.id || createId("cash-flow");
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A:M`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            cashFlowHeaders,
+            buildCashFlowWritableRow(cashFlowHeaders, {
+              ...transaction,
+              id,
+              active: true,
+              source: "manual",
+              createdAt: now,
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+      invalidateCashFlowCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, cashFlowHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      cashFlowHeaders,
+    );
+    const idIndex = findHeaderIndex(headers, ["id", "movimiento_id", "transaction_id"]);
+    const targetId = transaction.id || createId("cash-flow");
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === targetId)
+        : -1;
+
+    if (targetRowIndex >= 0) {
+      const existing = mapRowsToCashFlowTransactions([
+        headers,
+        dataRows[targetRowIndex],
+      ])[0];
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            buildCashFlowWritableRow(headers, {
+              ...transaction,
+              id: targetId,
+              active: existing?.active ?? true,
+              source: "manual",
+              createdAt: existing?.createdAt || now,
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: this.config.cashFlowRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [
+            buildCashFlowWritableRow(headers, {
+              ...transaction,
+              id: targetId,
+              active: true,
+              source: "manual",
+              createdAt: now,
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    }
+
+    invalidateCashFlowCache();
+  }
+
+  async deleteCashFlowTransaction(transactionId: string): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.config.spreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const values = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.cashFlowRange,
+    );
+
+    if (values.length === 0) {
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = values;
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
+    let headers = normalizeWritableHeaders(headerRow, cashFlowHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      cashFlowHeaders,
+    );
+    const idIndex = findHeaderIndex(headers, ["id", "movimiento_id", "transaction_id"]);
+    const activeIndex = findHeaderIndex(headers, ["activo", "active"]);
+    const updatedAtIndex = findHeaderIndex(headers, [
+      "actualizado_en",
+      "updated_at",
+      "updated",
+    ]);
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === transactionId)
+        : -1;
+
+    if (targetRowIndex < 0 || activeIndex < 0) {
+      return;
+    }
+
+    const spreadsheetRow = targetRowIndex + 2;
+    const data = [
+      {
+        range: `${sheetPrefix}!${toColumnName(activeIndex)}${spreadsheetRow}`,
+        values: [["false"]],
+      },
+    ];
+
+    if (updatedAtIndex >= 0) {
+      data.push({
+        range: `${sheetPrefix}!${toColumnName(updatedAtIndex)}${spreadsheetRow}`,
+        values: [[new Date().toISOString()]],
+      });
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data,
+      },
+    });
+    invalidateCashFlowCache();
   }
 
   async getPlayersData(): Promise<PlayerDirectoryData> {
@@ -1520,6 +1726,30 @@ export class GoogleSheetsService implements IDataService {
     )();
   }
 
+  private async ensureWritableHeaders(
+    spreadsheetId: string,
+    sheetPrefix: string,
+    headers: string[],
+    requiredHeaders: string[],
+  ) {
+    const mergedHeaders = Array.from(new Set([...headers, ...requiredHeaders]));
+
+    if (mergedHeaders.length === headers.length) {
+      return headers;
+    }
+
+    await this.createSheetsClient().spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetPrefix}!A1:${toColumnName(mergedHeaders.length - 1)}1`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [mergedHeaders],
+      },
+    });
+
+    return mergedHeaders;
+  }
+
   private async readCachedClubFinancialRows() {
     const spreadsheetId = this.config.spreadsheetId;
 
@@ -1894,6 +2124,23 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
+  private async readFeeIncomeByPeriod(periods: string[]) {
+    const uniquePeriods = Array.from(new Set(periods));
+    const entries = await Promise.all(
+      uniquePeriods.map(async (period) => {
+        const data = await this.getFeeCalculatorData(period);
+        const total = data.playerCalculations.reduce(
+          (sum, calculation) => sum + calculation.finalQuota,
+          0,
+        );
+
+        return [period, total] as const;
+      }),
+    );
+
+    return new Map(entries);
+  }
+
   private async updateClubSheetFeeStatus(input: UpdatePlayerFeeStatusInput) {
     if (input.status !== "paid") {
       throw new DataServiceError(
@@ -2096,7 +2343,7 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     observacion: player.notes,
     notas: player.notes,
     notes: player.notes,
-    estado: player.status === "active" ? "activo" : "baja",
+    estado: player.status === "active" ? "activo" : "inactivo",
     status: player.status,
     fecha_alta: player.joinedAt,
     alta: player.joinedAt,
@@ -2153,7 +2400,7 @@ function mapRowsToFees(rows: unknown[][]): FeeRecord[] {
 
 function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRecord[] {
   return rowsToRecords(rows)
-    .map((record, index) => {
+    .map((record, index): CashFlowTransactionRecord | null => {
       const date = parseDate(pick(record, ["fecha", "date", "dia", "day"]));
       const rawAmount = parseMoney(
         pick(record, ["monto", "importe", "amount", "valor", "total"]),
@@ -2167,8 +2414,22 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
         normalizePeriod(pick(record, ["periodo", "period", "mes"])) ??
         getPeriodFromDate(date) ??
         getCurrentPeriod();
+      const startPeriod =
+        normalizePeriod(
+          pick(record, ["vigencia_desde", "desde", "start_period", "periodo_desde"]),
+        ) ?? period;
+      const rawEndPeriod =
+        normalizePeriod(
+          pick(record, ["vigencia_hasta", "hasta", "end_period", "periodo_hasta"]),
+        ) ?? startPeriod;
+      const endPeriod = rawEndPeriod < startPeriod ? startPeriod : rawEndPeriod;
+      const repeatsMonthly = parseLooseBoolean(
+        pick(record, ["repite_mensual", "repite", "mensual", "recurrente"]),
+        false,
+      );
+      const active = parseLooseBoolean(pick(record, ["activo", "active"]), true);
 
-      if (amount === 0) {
+      if (amount === 0 || !active) {
         return null;
       }
 
@@ -2189,6 +2450,19 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
             "category",
           ]) || "-",
         amount,
+        repeatsMonthly,
+        startPeriod,
+        endPeriod: repeatsMonthly ? endPeriod : period,
+        notes: pick(record, ["notas", "notes", "observaciones"]),
+        active,
+        source: "manual",
+        createdAt:
+          parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
+          new Date().toISOString(),
+        updatedAt:
+          parseDateTime(
+            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+          ) ?? new Date().toISOString(),
       };
     })
     .filter((transaction): transaction is CashFlowTransactionRecord =>
@@ -2313,6 +2587,12 @@ function mapClubFeesToIncomeTransactions(
         type: "income",
         concept: `Cuota ${player?.name ?? fee.playerId}`,
         amount: fee.amount,
+        repeatsMonthly: false,
+        startPeriod: fee.period,
+        endPeriod: fee.period,
+        notes: "Ingreso legacy desde cuotas pagadas.",
+        active: true,
+        source: "legacy",
       };
     });
 }
@@ -2340,6 +2620,12 @@ function mapClubExpenseRowsToTransactions(
         pick(record, ["concepto", "descripcion", "detalle", "category"]) ||
         "Gasto del club",
       amount,
+      repeatsMonthly: false,
+      startPeriod: getPeriodFromDate(date) ?? getCurrentPeriod(),
+      endPeriod: getPeriodFromDate(date) ?? getCurrentPeriod(),
+      notes: "Gasto legacy del club.",
+      active: true,
+      source: "legacy",
     });
   });
 
@@ -2629,6 +2915,7 @@ function buildFeeCalculatorData({
   const previousPeriod = getPreviousPeriod(period);
   const periodBeforePrevious = getPreviousPeriod(previousPeriod);
   const activePlayers = players.filter((player) => !isDroppedPlayer(player));
+  const calculatorPlayers = players.map(mapPlayerToFeeCalculatorPlayer);
   const activeCosts = costs.filter((cost) => cost.active);
   const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
     (mergedActuals, actualPeriod) =>
@@ -2691,6 +2978,7 @@ function buildFeeCalculatorData({
     costs,
     actuals: effectiveActuals,
     adjustments,
+    players: calculatorPlayers,
     refundPolicy,
     playerCalculations: calculations,
     matchSummaries: calculations.map((calculation) => ({
@@ -2782,7 +3070,7 @@ function buildPlayerFeeCalculation({
         normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
     )
     .reduce((total, credit) => total + credit.amount, 0);
-  const finalQuota = Math.max(baseQuota - refundAmount, 0);
+  const finalQuota = Math.max(baseQuota - refundAmount - expenseCredit, 0);
 
   return {
     playerId: player.id,
@@ -2801,6 +3089,15 @@ function buildPlayerFeeCalculation({
     playedMatches,
     totalMatches: totalMatchesPreviousPeriod,
     matches: playerMatches,
+  };
+}
+
+function mapPlayerToFeeCalculatorPlayer(player: PlayerRecord): FeeCalculatorPlayer {
+  return {
+    id: player.id,
+    name: player.name,
+    category: player.category,
+    status: isDroppedPlayer(player) ? "inactive" : "active",
   };
 }
 
@@ -3198,6 +3495,10 @@ function buildCashFlowExport(transactions: CashFlowTransactionRecord[]): ExportD
     { key: "type", header: "Tipo" },
     { key: "concept", header: "Concepto" },
     { key: "amount", header: "Monto", type: "currency" },
+    { key: "repeatsMonthly", header: "Recurrente" },
+    { key: "startPeriod", header: "Desde" },
+    { key: "endPeriod", header: "Hasta" },
+    { key: "notes", header: "Notas" },
   ];
   const rows = transactions.map<ExportRow>((transaction) => ({
     id: transaction.id,
@@ -3206,6 +3507,10 @@ function buildCashFlowExport(transactions: CashFlowTransactionRecord[]): ExportD
     type: transaction.type === "income" ? "Ingreso" : "Gasto",
     concept: transaction.concept,
     amount: transaction.type === "income" ? transaction.amount : -transaction.amount,
+    repeatsMonthly: transaction.repeatsMonthly ? "Si" : "No",
+    startPeriod: transaction.startPeriod,
+    endPeriod: transaction.endPeriod,
+    notes: transaction.notes,
   }));
 
   return buildExportData("cash-flow", "Cash Flow", "cash-flow", columns, rows);
@@ -3242,7 +3547,7 @@ function formatFeeStatus(status: FeeStatus) {
 
 function formatPlayerStatus(player: PlayerRecord) {
   if (isDroppedPlayer(player)) {
-    return "Baja";
+    return "Inactivo";
   }
 
   return player.status || "Activo";
@@ -3300,7 +3605,9 @@ function buildDashboardData({
   }).length;
   const upToDatePlayers =
     players.length > 0
-      ? players.filter((player) => !pendingPlayerIds.has(player.id)).length
+      ? players.filter(
+          (player) => !isDroppedPlayer(player) && !pendingPlayerIds.has(player.id),
+        ).length
       : Math.max(totalPlayers - pendingPlayerIds.size, 0);
   const pendingNotOverduePlayers = Array.from(pendingPlayerIds).filter(
     (playerId) => !overduePlayerIds.has(playerId),
@@ -3387,46 +3694,66 @@ function buildDashboardData({
 }
 
 function buildCashFlowData({
+  period,
   transactions,
+  feeIncomeByPeriod,
   status,
   message,
   cachedAt,
   revalidateSeconds,
 }: {
+  period: string;
   transactions: CashFlowTransactionRecord[];
+  feeIncomeByPeriod: Map<string, number>;
   status: CashFlowData["source"]["status"];
   message: string;
   cachedAt: string;
   revalidateSeconds: number;
 }): CashFlowData {
-  const currentPeriod = getCurrentPeriod();
-  const currentTransactions = transactions.filter(
-    (transaction) => transaction.period === currentPeriod,
+  const projectionPeriods = getCashFlowProjectionPeriods(period);
+  const expandedTransactions = expandCashFlowTransactions(
+    transactions,
+    projectionPeriods,
   );
-  const currentIncome = sumCashFlow(currentTransactions, "income");
-  const currentExpenses = sumCashFlow(currentTransactions, "expense");
+  const feeTransactions = buildFeeIncomeTransactions(feeIncomeByPeriod);
+  const projectedTransactions = [...expandedTransactions, ...feeTransactions];
+  const currentManualTransactions = expandedTransactions.filter(
+    (transaction) => transaction.period === period,
+  );
+  const expectedFeeIncome = feeIncomeByPeriod.get(period) ?? 0;
+  const additionalIncome = sumCashFlow(currentManualTransactions, "income");
+  const currentIncome = expectedFeeIncome + additionalIncome;
+  const currentExpenses = sumCashFlow(currentManualTransactions, "expense");
   const currentBalance = currentIncome - currentExpenses;
   const totalCash =
-    sumCashFlow(transactions, "income") - sumCashFlow(transactions, "expense");
+    sumCashFlow(projectedTransactions, "income") -
+    sumCashFlow(projectedTransactions, "expense");
 
   return {
+    period,
     metrics: buildCashFlowMetrics({
       currentIncome,
       currentExpenses,
       currentBalance,
       totalCash,
-      currentPeriod,
+      currentPeriod: period,
+      expectedFeeIncome,
+      additionalIncome,
     }),
     charts: {
-      monthly: buildCashFlowMonthlyChart(transactions),
-      annual: buildCashFlowAnnualChart(transactions),
+      monthly: buildCashFlowMonthlyChart(projectedTransactions, period),
+      annual: buildCashFlowAnnualChart(projectedTransactions),
     },
+    transactions,
+    expectedFeeIncome,
+    additionalIncome,
+    additionalExpenses: currentExpenses,
     emptyState: {
       title: status === "ready" ? "Cash Flow" : "Cash Flow sin movimientos",
       description:
         status === "ready"
-          ? "Vista financiera de ingresos, gastos, balance y saldo."
-          : "Carga movimientos en Google Sheets para alimentar esta seccion.",
+          ? "Vista financiera de cuotas esperadas, ingresos, gastos, balance y saldo."
+          : "Carga movimientos o calcula cuotas para alimentar esta seccion.",
     },
     source: {
       provider: "google-sheets",
@@ -3439,28 +3766,37 @@ function buildCashFlowData({
 }
 
 function buildFallbackCashFlowData({
+  period,
   status,
   message,
   cachedAt,
   revalidateSeconds,
 }: {
+  period: string;
   status: CashFlowData["source"]["status"];
   message: string;
   cachedAt: string;
   revalidateSeconds: number;
 }): CashFlowData {
   return {
+    period,
     metrics: buildCashFlowMetrics({
       currentIncome: 0,
       currentExpenses: 0,
       currentBalance: 0,
       totalCash: 0,
-      currentPeriod: getCurrentPeriod(),
+      currentPeriod: period,
+      expectedFeeIncome: 0,
+      additionalIncome: 0,
     }),
     charts: {
-      monthly: buildCashFlowMonthlyChart([]),
+      monthly: buildCashFlowMonthlyChart([], period),
       annual: buildCashFlowAnnualChart([]),
     },
+    transactions: [],
+    expectedFeeIncome: 0,
+    additionalIncome: 0,
+    additionalExpenses: 0,
     emptyState: {
       title: "Cash Flow sin datos",
       description: "Configura la hoja CashFlow para ver informacion financiera.",
@@ -3481,26 +3817,30 @@ function buildCashFlowMetrics({
   currentBalance,
   totalCash,
   currentPeriod,
+  expectedFeeIncome,
+  additionalIncome,
 }: {
   currentIncome: number;
   currentExpenses: number;
   currentBalance: number;
   totalCash: number;
   currentPeriod: string;
+  expectedFeeIncome: number;
+  additionalIncome: number;
 }): CashFlowMetric[] {
   return [
     {
       id: "income",
       title: "Ingresos",
       value: formatCurrency(currentIncome),
-      detail: currentPeriod,
+      detail: `${formatCurrency(expectedFeeIncome)} cuotas + ${formatCurrency(additionalIncome)} extra`,
       tone: "success",
     },
     {
       id: "expenses",
       title: "Gastos",
       value: formatCurrency(currentExpenses),
-      detail: currentPeriod,
+      detail: formatPeriodLabel(currentPeriod),
       tone: currentExpenses > 0 ? "warning" : "neutral",
     },
     {
@@ -3522,8 +3862,9 @@ function buildCashFlowMetrics({
 
 function buildCashFlowMonthlyChart(
   transactions: CashFlowTransactionRecord[],
+  selectedPeriod = getCurrentPeriod(),
 ): CashFlowMonthlyPoint[] {
-  return getLastPeriods(12).map((period) => {
+  return getCashFlowProjectionPeriods(selectedPeriod).map((period) => {
     const periodTransactions = transactions.filter(
       (transaction) => transaction.period === period,
     );
@@ -3557,6 +3898,87 @@ function buildCashFlowAnnualChart(
       balance: ingresos - gastos,
     };
   });
+}
+
+function expandCashFlowTransactions(
+  transactions: CashFlowTransactionRecord[],
+  periods: string[],
+): CashFlowTransactionRecord[] {
+  const periodSet = new Set(periods);
+
+  return transactions.flatMap((transaction) => {
+    const transactionPeriods = transaction.repeatsMonthly
+      ? getPeriodsBetween(transaction.startPeriod, transaction.endPeriod)
+      : [transaction.period];
+
+    return transactionPeriods
+      .filter((period) => periodSet.has(period))
+      .map((period) => ({
+        ...transaction,
+        id:
+          transaction.repeatsMonthly && period !== transaction.period
+            ? `${transaction.id}-${period}`
+            : transaction.id,
+        period,
+        date: getCashFlowDateForPeriod(transaction.date, period),
+      }));
+  });
+}
+
+function buildFeeIncomeTransactions(
+  feeIncomeByPeriod: Map<string, number>,
+): CashFlowTransactionRecord[] {
+  return Array.from(feeIncomeByPeriod.entries())
+    .filter(([, amount]) => amount > 0)
+    .map(([period, amount]) => ({
+      id: `fee-income-${period}`,
+      date: `${period}-01`,
+      period,
+      type: "income",
+      concept: "Cuotas calculadas",
+      amount,
+      repeatsMonthly: false,
+      startPeriod: period,
+      endPeriod: period,
+      notes: "Ingreso esperado calculado desde el calculador de cuota.",
+      active: true,
+      source: "fee-calculator",
+    }));
+}
+
+function getCashFlowProjectionPeriods(period: string) {
+  return Array.from(new Set([...getLastPeriods(12), period])).sort();
+}
+
+function getPeriodsBetween(startPeriod: string, endPeriod: string) {
+  const periods: string[] = [];
+  let current = startPeriod;
+
+  while (current <= endPeriod && periods.length < 120) {
+    periods.push(current);
+    current = addMonthsToPeriod(current, 1);
+  }
+
+  return periods;
+}
+
+function addMonthsToPeriod(period: string, monthsToAdd: number) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1 + monthsToAdd, 1);
+
+  return getCurrentPeriod(date);
+}
+
+function getCashFlowDateForPeriod(date: string | undefined, period: string) {
+  if (!date) {
+    return `${period}-01`;
+  }
+
+  const day = Number(date.slice(8, 10)) || 1;
+  const [year, month] = period.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+
+  return `${period}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
 }
 
 function sumCashFlow(
@@ -3733,7 +4155,7 @@ function buildPlayerTableRows(
   );
   const sourcePlayers =
     players.length > 0
-      ? players
+      ? players.filter((player) => !isDroppedPlayer(player))
       : playerIdsFromFees.map((playerId) => ({
           id: playerId,
           name: playerId,
@@ -4109,6 +4531,50 @@ function normalizeFeeCalculatorCostInput(
   };
 }
 
+function normalizeCashFlowTransactionInput(
+  input: UpsertCashFlowTransactionInput,
+): Omit<CashFlowTransactionRecord, "active" | "source" | "createdAt" | "updatedAt"> {
+  const date = parseDate(input.date);
+  const period = normalizePeriod(input.period);
+  const startPeriod = normalizePeriod(input.startPeriod);
+  const endPeriod = normalizePeriod(input.endPeriod);
+
+  if (!date) {
+    throw new DataServiceError(
+      "La fecha del movimiento debe ser valida.",
+      "CONFIGURATION_ERROR",
+    );
+  }
+
+  if (!period || !startPeriod || !endPeriod) {
+    throw new DataServiceError(
+      "El periodo del movimiento debe tener formato AAAA-MM.",
+      "CONFIGURATION_ERROR",
+    );
+  }
+
+  const repeatsMonthly = Boolean(input.repeatsMonthly);
+  const normalizedStartPeriod = repeatsMonthly ? startPeriod : period;
+  const normalizedEndPeriod = repeatsMonthly
+    ? endPeriod < startPeriod
+      ? startPeriod
+      : endPeriod
+    : period;
+
+  return {
+    id: input.id?.trim() ?? "",
+    date,
+    period,
+    type: input.type,
+    concept: input.concept.trim(),
+    amount: Math.max(Number(input.amount), 0),
+    repeatsMonthly,
+    startPeriod: normalizedStartPeriod,
+    endPeriod: normalizedEndPeriod,
+    notes: input.notes?.trim() ?? "",
+  };
+}
+
 function normalizeFeeCalculatorActualInput(
   input: UpdateFeeCalculatorActualInput,
 ): Omit<FeeCalculatorActual, "id" | "updatedAt"> {
@@ -4146,6 +4612,61 @@ function normalizeFeeRefundPolicyInput(
   }
 
   return rules;
+}
+
+function buildCashFlowWritableRow(
+  headers: string[],
+  transaction: CashFlowTransactionRecord,
+) {
+  const now = new Date().toISOString();
+  const values: Record<string, string | number> = {
+    id: transaction.id,
+    movimiento_id: transaction.id,
+    transaction_id: transaction.id,
+    cash_flow_id: transaction.id,
+    fecha: transaction.date ?? "",
+    date: transaction.date ?? "",
+    dia: transaction.date ?? "",
+    periodo: transaction.period,
+    period: transaction.period,
+    mes: transaction.period,
+    tipo: transaction.type === "income" ? "ingreso" : "gasto",
+    type: transaction.type,
+    movimiento: transaction.type,
+    clase: transaction.type,
+    concepto: transaction.concept,
+    descripcion: transaction.concept,
+    description: transaction.concept,
+    detalle: transaction.concept,
+    monto: transaction.amount,
+    importe: transaction.amount,
+    amount: transaction.amount,
+    valor: transaction.amount,
+    total: transaction.amount,
+    repite_mensual: transaction.repeatsMonthly ? "true" : "false",
+    repite: transaction.repeatsMonthly ? "true" : "false",
+    mensual: transaction.repeatsMonthly ? "true" : "false",
+    recurrente: transaction.repeatsMonthly ? "true" : "false",
+    vigencia_desde: transaction.startPeriod,
+    desde: transaction.startPeriod,
+    start_period: transaction.startPeriod,
+    periodo_desde: transaction.startPeriod,
+    vigencia_hasta: transaction.endPeriod,
+    hasta: transaction.endPeriod,
+    end_period: transaction.endPeriod,
+    periodo_hasta: transaction.endPeriod,
+    notas: transaction.notes,
+    notes: transaction.notes,
+    observaciones: transaction.notes,
+    activo: transaction.active ? "true" : "false",
+    active: transaction.active ? "true" : "false",
+    creado_en: transaction.createdAt ?? now,
+    created_at: transaction.createdAt ?? now,
+    actualizado_en: transaction.updatedAt ?? now,
+    updated_at: transaction.updatedAt ?? now,
+  };
+
+  return headers.map((header) => values[header] ?? "");
 }
 
 function buildFeeCalculatorCostWritableRow(headers: string[], cost: FeeCalculatorCost) {
@@ -4917,6 +5438,7 @@ function normalizeAuditEntityType(value: string): AuditEntityType {
     "settings",
     "player",
     "fee",
+    "cash-flow",
     "notification",
     "reminder",
     "payment",
@@ -5245,9 +5767,16 @@ function invalidatePlayersCache() {
   revalidateTagWithProfile("google-sheets:players", "max");
   revalidateTagWithProfile("google-sheets:dashboard", "max");
   revalidateTagWithProfile("google-sheets:fee-calculator", "max");
+  revalidateTagWithProfile("google-sheets:cash-flow", "max");
 }
 
 function invalidateFeeCalculatorCache() {
   revalidateTagWithProfile("google-sheets", "max");
   revalidateTagWithProfile("google-sheets:fee-calculator", "max");
+  revalidateTagWithProfile("google-sheets:cash-flow", "max");
+}
+
+function invalidateCashFlowCache() {
+  revalidateTagWithProfile("google-sheets", "max");
+  revalidateTagWithProfile("google-sheets:cash-flow", "max");
 }

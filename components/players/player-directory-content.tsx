@@ -47,7 +47,7 @@ type PlayerFormValues = z.infer<typeof playerSchema>;
 
 const statusLabels: Record<PlayerDirectoryStatus, string> = {
   active: "Activo",
-  inactive: "Baja",
+  inactive: "Inactivo",
 };
 
 const statusVariants: Record<PlayerDirectoryStatus, "success" | "danger"> = {
@@ -124,14 +124,14 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
   }
 
   async function handleDelete(player: PlayerDirectoryItem) {
-    if (!window.confirm(`¿Dar de baja a ${player.name}?`)) {
+    if (!window.confirm(`¿Marcar inactivo a ${player.name}?`)) {
       return;
     }
 
     setDeletingId(player.id);
     await deletePlayer(player.id);
     setDeletingId("");
-    setMessage(`${player.name} dado de baja`);
+    setMessage(`${player.name} marcado inactivo`);
     router.refresh();
     window.setTimeout(() => setMessage(""), 2200);
   }
@@ -163,7 +163,7 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
           icon={Phone}
           label="Con contacto"
           value={String(withContact)}
-          detail={`${inactivePlayers} dados de baja`}
+          detail={`${inactivePlayers} inactivos`}
         />
       </div>
 
@@ -221,7 +221,7 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
                     className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
                   >
                     <option value="active">Activo</option>
-                    <option value="inactive">Baja</option>
+                    <option value="inactive">Inactivo</option>
                   </select>
                 </Field>
               </div>
@@ -259,7 +259,7 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
             <div>
               <h2 className="text-lg font-semibold">Base de jugadores</h2>
               <p className="text-muted-foreground mt-1 text-sm">
-                Alta, edición y baja lógica sobre la hoja Jugadores.
+                Alta, edición y estado activo/inactivo sobre la hoja Jugadores.
               </p>
             </div>
 
@@ -286,7 +286,7 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
                 >
                   <option value="all">Todos</option>
                   <option value="active">Activos</option>
-                  <option value="inactive">Bajas</option>
+                  <option value="inactive">Inactivos</option>
                 </select>
               </label>
             </div>
@@ -473,7 +473,7 @@ function PlayerActions({
         onClick={() => onDelete(player)}
       >
         <Trash2 />
-        Dar de baja
+        Marcar inactivo
       </Button>
     </div>
   );

@@ -2,6 +2,7 @@ import type {
   CashFlowData,
   DashboardData,
   PlayerProfile,
+  UpsertCashFlowTransactionInput,
   UpdatePlayerFeeStatusInput,
 } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
@@ -25,7 +26,9 @@ export interface IDataService {
   getAppSettings(): Promise<AppSettingsData>;
   updateAppSettings(input: UpdateAppSettingsInput): Promise<void>;
   getDashboardData(period?: string): Promise<DashboardData>;
-  getCashFlowData(): Promise<CashFlowData>;
+  getCashFlowData(period?: string): Promise<CashFlowData>;
+  upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;
+  deleteCashFlowTransaction(transactionId: string): Promise<void>;
   getPlayersData(): Promise<PlayerDirectoryData>;
   upsertPlayer(input: UpsertPlayerInput): Promise<void>;
   deletePlayer(playerId: string): Promise<void>;

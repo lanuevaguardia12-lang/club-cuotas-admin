@@ -47,6 +47,13 @@ const refundPolicySchema = z.object({
     .min(1),
 });
 
+const calculatorPlayerStatusSchema = z.object({
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(2).max(120),
+  category: z.string().trim().max(80).optional(),
+  status: z.enum(["active", "inactive"]),
+});
+
 export async function saveFeeCalculatorCost(input: unknown) {
   const user = await getCurrentUser();
   assertPermission(user, "fee-calculator:manage");
@@ -159,6 +166,43 @@ export async function saveFeeRefundPolicy(input: unknown) {
   }
 
   revalidatePath("/fee-calculator");
+
+  return { ok: true };
+}
+
+export async function updateFeeCalculatorPlayerStatus(input: unknown) {
+  const user = await getCurrentUser();
+  assertPermission(user, "fee-calculator:manage");
+
+  const parsed = calculatorPlayerStatusSchema.parse(input);
+  const dataService = getDataService();
+
+  await dataService.upsertPlayer({
+    id: parsed.id,
+    name: parsed.name,
+    category: parsed.category,
+    status: parsed.status,
+  });
+
+  if (user) {
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "api.request",
+        entityType: "player",
+        entityId: parsed.id,
+        summary: "Estado de jugador actualizado desde el calculador.",
+        metadata: {
+          name: parsed.name,
+          status: parsed.status,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  revalidatePath("/fee-calculator");
+  revalidatePath("/");
+  revalidatePath("/cash-flow");
 
   return { ok: true };
 }

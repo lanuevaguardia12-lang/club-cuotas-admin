@@ -21,6 +21,7 @@ export type AuditEntityType =
   | "settings"
   | "player"
   | "fee"
+  | "cash-flow"
   | "notification"
   | "reminder"
   | "payment"

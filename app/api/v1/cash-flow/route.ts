@@ -13,7 +13,10 @@ export async function GET(request: NextRequest) {
     return auth.response;
   }
 
-  const cashFlow = await getDataService().getCashFlowData();
+  const period = /^\d{4}-\d{2}$/.test(request.nextUrl.searchParams.get("period") ?? "")
+    ? (request.nextUrl.searchParams.get("period") ?? undefined)
+    : undefined;
+  const cashFlow = await getDataService().getCashFlowData(period);
 
   return NextResponse.json({ data: cashFlow });
 }

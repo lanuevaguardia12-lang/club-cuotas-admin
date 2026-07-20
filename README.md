@@ -399,10 +399,10 @@ Hoja `Cuotas`:
 
 Hoja `CashFlow`:
 
-| id      | fecha      | periodo | tipo    | concepto        | monto |
-| ------- | ---------- | ------- | ------- | --------------- | ----- |
-| MOV-001 | 2026-07-05 | 2026-07 | ingreso | Cuotas socios   | 80000 |
-| MOV-002 | 2026-07-12 | 2026-07 | gasto   | Alquiler cancha | 25000 |
+| id      | fecha      | periodo | tipo    | concepto        | monto | repite_mensual | vigencia_desde | vigencia_hasta | notas        | activo |
+| ------- | ---------- | ------- | ------- | --------------- | ----- | -------------- | -------------- | -------------- | ------------ | ------ |
+| MOV-001 | 2026-07-05 | 2026-07 | ingreso | Sponsor         | 80000 | false          | 2026-07        | 2026-07        | Pago puntual | true   |
+| MOV-002 | 2026-07-12 | 2026-07 | gasto   | Alquiler cancha | 25000 | true           | 2026-07        | 2026-12        | Mensual      | true   |
 
 Hoja `Configuracion`:
 
@@ -505,6 +505,11 @@ La lista de jugadores se arma desde la base canonica `Jugadores`, editable desde
 `/players`. La hoja de partidos se usa solo para asistencia, rivales, canchas
 locales reales y asistencia del DT.
 
+Cada jugador tiene estado `activo` o `inactivo`. Los jugadores inactivos no se
+incluyen en la cuota por jugador ni en el ingreso esperado del Cash Flow. Ese
+estado puede cambiarse desde `Jugadores` o desde el panel de jugadores del
+calculador.
+
 Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` es la base operativa. La
 app lee de ahi los partidos y tambien guarda ahi las hojas `Jugadores`,
 `CalculadoraCostos`, `CalculadoraReales` y `Politica devoluciones`.
@@ -512,6 +517,8 @@ app lee de ahi los partidos y tambien guarda ahi las hojas `Jugadores`,
 La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo
 divide por `dividir_entre`.
+
+Los montos de costos aceptan decimales finos, por ejemplo `1473.684211`.
 
 Los tipos especiales autocompletan la cantidad real del mes anterior al periodo
 seleccionado. Por ejemplo, al calcular agosto 2026, las canchas reales y horas
@@ -621,14 +628,19 @@ Los datasets se preparan asi:
 ### Cash Flow
 
 La seccion `/cash-flow` consume datos desde `IDataService`, igual que
-el resto de la aplicacion. Con `DATA_SOURCE=google-sheets`, los movimientos se
-leen desde `GOOGLE_SHEETS_CASH_FLOW_RANGE`.
+el resto de la aplicacion. Con `DATA_SOURCE=google-sheets`, los movimientos
+manuales se leen y escriben en `GOOGLE_SHEETS_CASH_FLOW_RANGE`.
+
+Los ingresos del Cash Flow incluyen la sumatoria de cuotas calculadas para los
+jugadores activos del periodo seleccionado. Esa linea no se carga a mano: sale
+del calculador de cuota. Encima de eso se pueden cargar ingresos y gastos
+adicionales con concepto, fecha, monto, notas y recurrencia mensual entre meses.
 
 La pantalla muestra:
 
-- Ingresos del mes actual.
-- Gastos del mes actual.
-- Balance del mes actual.
+- Ingresos del periodo seleccionado.
+- Gastos del periodo seleccionado.
+- Balance del periodo seleccionado.
 - Saldo acumulado.
 - Grafico mensual de los ultimos 12 meses.
 - Grafico anual de los ultimos 5 años.
