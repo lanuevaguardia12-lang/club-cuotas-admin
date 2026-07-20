@@ -48,6 +48,23 @@ export interface FeePlayerMatchSummary {
   matches: FeeMatchDetail[];
 }
 
+export interface FeeCalculatorAdjustment {
+  id: string;
+  name: string;
+  sourceCostId: string;
+  sourceCostName: string;
+  type: FeeCalculatorCostType;
+  period: string;
+  forecastUnits: number;
+  actualUnits: number;
+  unitDifference: number;
+  unitAmount: number;
+  splitBetween: number;
+  forecastShare: number;
+  actualShare: number;
+  variance: number;
+}
+
 export interface FeePlayerCalculation {
   playerId: string;
   playerName: string;
@@ -86,6 +103,7 @@ export interface FeeCalculatorData {
   previousPeriod: string;
   costs: FeeCalculatorCost[];
   actuals: FeeCalculatorActual[];
+  adjustments: FeeCalculatorAdjustment[];
   refundPolicy: FeeRefundPolicyRule[];
   playerCalculations: FeePlayerCalculation[];
   matchSummaries: FeePlayerMatchSummary[];

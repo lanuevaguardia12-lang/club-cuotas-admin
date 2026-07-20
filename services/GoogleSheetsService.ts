@@ -40,6 +40,7 @@ import type {
 import type { ExportColumn, ExportData, ExportDataset, ExportRow } from "@/types/export";
 import type {
   FeeCalculatorActual,
+  FeeCalculatorAdjustment,
   FeeCalculatorCost,
   FeeCalculatorCostType,
   FeeCalculatorData,
@@ -2645,24 +2646,20 @@ function buildFeeCalculatorData({
     period,
     "forecast",
   );
-  const previousPlannedQuota = calculateBaseQuotaForPeriod(
+  const adjustments = buildFeeCalculatorAdjustments(
     activeCosts,
     effectiveActuals,
     previousPeriod,
-    "forecast",
-  );
-  const previousActualQuota = calculateBaseQuotaForPeriod(
-    activeCosts,
-    effectiveActuals,
-    previousPeriod,
-    "actual",
   );
   const previousPeriodBaseQuota = calculateAppBaseQuotaForPeriod(
     activeCosts,
     effectiveActuals,
     previousPeriod,
   );
-  const previousCostVariance = previousActualQuota - previousPlannedQuota;
+  const previousCostVariance = adjustments.reduce(
+    (total, adjustment) => total + adjustment.variance,
+    0,
+  );
   const previousPeriodMatches = matches.filter(
     (match) => match.period === previousPeriod,
   );
@@ -2693,6 +2690,7 @@ function buildFeeCalculatorData({
     previousPeriod,
     costs,
     actuals: effectiveActuals,
+    adjustments,
     refundPolicy,
     playerCalculations: calculations,
     matchSummaries: calculations.map((calculation) => ({
@@ -4302,6 +4300,52 @@ function calculateAppBaseQuotaForPeriod(
   return Math.max(plannedQuota + previousActualQuota - previousPlannedQuota, 0);
 }
 
+function buildFeeCalculatorAdjustments(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+): FeeCalculatorAdjustment[] {
+  return costs
+    .filter((cost) => isCostActiveForPeriod(cost, period))
+    .map((cost) => {
+      const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
+
+      if (typeof actualUnits !== "number") {
+        return null;
+      }
+
+      const splitBetween = Math.max(cost.splitBetween, 1);
+      const forecastUnits = cost.forecastUnits;
+      const unitDifference = actualUnits - forecastUnits;
+      const forecastShare = (cost.amount * forecastUnits) / splitBetween;
+      const actualShare = (cost.amount * actualUnits) / splitBetween;
+      const variance = actualShare - forecastShare;
+
+      if (Math.abs(variance) < 0.01) {
+        return null;
+      }
+
+      return {
+        id: `adjustment-${cost.id}-${period}`,
+        name: getAdjustmentName(cost),
+        sourceCostId: cost.id,
+        sourceCostName: cost.name,
+        type: cost.type,
+        period,
+        forecastUnits,
+        actualUnits,
+        unitDifference,
+        unitAmount: cost.amount,
+        splitBetween,
+        forecastShare,
+        actualShare,
+        variance,
+      } satisfies FeeCalculatorAdjustment;
+    })
+    .filter((adjustment): adjustment is FeeCalculatorAdjustment => Boolean(adjustment))
+    .sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
 function calculateBaseQuotaForPeriod(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
@@ -4453,6 +4497,18 @@ function inferActualUnitsForCost(
 
 function isAutoActualCost(cost: FeeCalculatorCost) {
   return cost.type === "court" || cost.type === "coach";
+}
+
+function getAdjustmentName(cost: FeeCalculatorCost) {
+  if (cost.type === "court") {
+    return "Ajuste cancha real";
+  }
+
+  if (cost.type === "coach") {
+    return "Ajuste horas DT";
+  }
+
+  return `Ajuste ${cost.name}`;
 }
 
 function isLocalMatch(match: MatchRecord) {

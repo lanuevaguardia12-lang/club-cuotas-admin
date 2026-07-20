@@ -529,6 +529,12 @@ anterior; si existe una correccion manual, tiene prioridad sobre el calculo
 automatico. La diferencia contra lo estimado se suma o resta en la cuota del mes
 siguiente.
 
+La diferencia se muestra como concepto calculado en la pantalla, por ejemplo
+`Ajuste cancha real` o `Ajuste horas DT`. Si en julio se pronostico 1 cancha de
+`240000 / 19` y realmente se jugaron 2 canchas locales, agosto recibe un ajuste
+positivo de `240000 / 19`. Si se jugaron menos canchas u horas que las
+pronosticadas, el concepto aparece negativo y descuenta de la cuota siguiente.
+
 Si una estructura de costos se copia a otros meses y cambia el `id` interno de
 la fila, la app igualmente intenta vincular correcciones manuales por tipo y
 nombre del costo para `court` y `coach`. Esto evita que una correccion quede

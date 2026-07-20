@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
+  FeeCalculatorAdjustment,
   FeeCalculatorCost,
   FeeCalculatorCostType,
   FeeCalculatorData,
@@ -296,7 +297,7 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
           icon={RotateCcw}
           label="Ajuste reales"
           value={formatCurrency(data.summary.previousCostVariance)}
-          detail={`Diferencia de ${formatPeriod(data.previousPeriod)}`}
+          detail={`${data.adjustments.length} conceptos de ${formatPeriod(data.previousPeriod)}`}
         />
         <MetricCard
           icon={ListChecks}
@@ -491,6 +492,8 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
 
       <CostList data={data} onEditCost={handleEditCost} />
 
+      <AdjustmentList data={data} />
+
       <RepeatStructurePanel
         costsCount={repeatableCosts.length}
         data={data}
@@ -502,9 +505,7 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
         selectedPeriods={repeatMonths}
       />
 
-      {trackedActualCosts.length > 0 ? (
-        <ActualUnitsPanel data={data} costs={trackedActualCosts} />
-      ) : null}
+      <ActualUnitsPanel data={data} costs={trackedActualCosts} />
 
       <AttendanceBreakdown data={data} rows={sortedCalculations} />
 
@@ -795,6 +796,112 @@ function CostList({
   );
 }
 
+function AdjustmentList({ data }: { data: FeeCalculatorData }) {
+  const adjustments = data.adjustments;
+
+  return (
+    <section className="grid gap-3">
+      <div>
+        <h2 className="text-lg font-semibold">Ajustes automáticos</h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Diferencia entre lo pronosticado y lo real de{" "}
+          {formatPeriod(data.previousPeriod)}. Impacta en la cuota de{" "}
+          {formatPeriod(data.period)}.
+        </p>
+      </div>
+
+      {adjustments.length === 0 ? (
+        <EmptyTableState
+          title="Sin ajustes para aplicar"
+          description="Cuando las canchas reales u horas reales sean distintas a lo pronosticado, el ajuste aparece aca como importe positivo o negativo."
+        />
+      ) : (
+        <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead className="bg-muted/60">
+                <tr className="border-border border-b">
+                  <TableHead>Concepto</TableHead>
+                  <TableHead>Periodo real</TableHead>
+                  <TableHead>Previsto</TableHead>
+                  <TableHead>Real</TableHead>
+                  <TableHead>Diferencia</TableHead>
+                  <TableHead>Impacto por jugador</TableHead>
+                </tr>
+              </thead>
+              <tbody>
+                {adjustments.map((adjustment) => (
+                  <tr
+                    key={adjustment.id}
+                    className="border-border border-b last:border-b-0"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{adjustment.name}</div>
+                      <p className="text-muted-foreground text-xs">
+                        {adjustment.sourceCostName}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">{formatPeriod(adjustment.period)}</td>
+                    <td className="px-4 py-3">
+                      {formatNumber(adjustment.forecastUnits)}
+                    </td>
+                    <td className="px-4 py-3">{formatNumber(adjustment.actualUnits)}</td>
+                    <td className="px-4 py-3">
+                      {formatSignedNumber(adjustment.unitDifference)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <AdjustmentAmountBadge adjustment={adjustment} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {adjustments.length > 0 ? (
+        <div className="grid gap-3 md:hidden">
+          {adjustments.map((adjustment) => (
+            <Card key={adjustment.id}>
+              <CardContent className="grid gap-4 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">{adjustment.name}</h3>
+                    <p className="text-muted-foreground mt-1 text-sm">
+                      {formatPeriod(adjustment.period)} · {adjustment.sourceCostName}
+                    </p>
+                  </div>
+                  <AdjustmentAmountBadge adjustment={adjustment} />
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <Info label="Previsto" value={formatNumber(adjustment.forecastUnits)} />
+                  <Info label="Real" value={formatNumber(adjustment.actualUnits)} />
+                  <Info
+                    label="Diferencia"
+                    value={formatSignedNumber(adjustment.unitDifference)}
+                  />
+                  <Info label="Divide" value={String(adjustment.splitBetween)} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function AdjustmentAmountBadge({ adjustment }: { adjustment: FeeCalculatorAdjustment }) {
+  const isPositive = adjustment.variance > 0;
+
+  return (
+    <Badge variant={isPositive ? "danger" : "success"}>
+      {formatSignedCurrency(adjustment.variance)}
+    </Badge>
+  );
+}
+
 function RepeatStructurePanel({
   costsCount,
   data,
@@ -881,10 +988,23 @@ function ActualUnitsPanel({
           Podés editarlas si necesitás corregirlas.
         </p>
       </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-2">
-        {costs.map((cost) => (
-          <ActualUnitsForm key={cost.id} cost={cost} data={data} />
-        ))}
+      <CardContent>
+        {costs.length === 0 ? (
+          <div className="border-border rounded-lg border border-dashed p-4">
+            <h3 className="font-semibold">Sin cantidades reales para cargar</h3>
+            <p className="text-muted-foreground mt-2 text-sm">
+              No hay costos de cancha o DT vigentes en {formatPeriod(data.previousPeriod)}
+              . Para generar ajustes en {formatPeriod(data.period)}, primero tiene que
+              existir ese costo en el mes anterior.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {costs.map((cost) => (
+              <ActualUnitsForm key={cost.id} cost={cost} data={data} />
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1070,7 +1190,8 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       <div>
         <h2 className="text-lg font-semibold">Cuota por jugador</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Cuota base calculada por la app menos devolución por asistencia.
+          Cuota base calculada por la app, con ajustes reales, menos devolución por
+          asistencia.
         </p>
       </div>
 
@@ -1360,10 +1481,22 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatSignedCurrency(value: number) {
+  const sign = value > 0 ? "+" : "";
+
+  return `${sign}${formatCurrency(value)}`;
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-AR", {
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatSignedNumber(value: number) {
+  const sign = value > 0 ? "+" : "";
+
+  return `${sign}${formatNumber(value)}`;
 }
 
 function formatPercent(value: number) {

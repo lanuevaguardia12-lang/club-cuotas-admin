@@ -205,6 +205,7 @@ export class DatabaseService implements IDataService {
       previousPeriod,
       costs: [],
       actuals: [],
+      adjustments: [],
       refundPolicy: [],
       playerCalculations: [],
       matchSummaries: [],
