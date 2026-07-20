@@ -71,6 +71,12 @@ import type {
   ReminderStatus,
   UpsertPaymentRecordInput,
 } from "@/types/premium";
+import type {
+  PlayerDirectoryData,
+  PlayerDirectoryItem,
+  PlayerDirectoryStatus,
+  UpsertPlayerInput,
+} from "@/types/players";
 
 type RevalidateTagWithProfile = (
   tag: string,
@@ -109,6 +115,7 @@ interface PlayerRecord {
   name: string;
   category: string;
   phone: string;
+  email: string;
   monthlyFee: number;
   observations: string;
   status: string;
@@ -233,6 +240,20 @@ const paymentHeaders = [
   "created_at",
   "updated_at",
   "raw_event_type",
+];
+
+const playerDirectoryHeaders = [
+  "id",
+  "nombre",
+  "telefono",
+  "email",
+  "categoria",
+  "observaciones",
+  "estado",
+  "fecha_alta",
+  "fecha_baja",
+  "creado_en",
+  "actualizado_en",
 ];
 
 const feeCalculatorCostHeaders = [
@@ -465,6 +486,189 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
+  async getPlayersData(): Promise<PlayerDirectoryData> {
+    const cachedAt = new Date().toISOString();
+
+    try {
+      this.assertConfigured();
+
+      const rows = await this.readCachedPlayerDirectoryRows();
+      const players = mapRowsToPlayerDirectoryItems(rows);
+
+      return {
+        players,
+        emptyState: {
+          title: players.length === 0 ? "Sin jugadores cargados" : "Base de jugadores",
+          description:
+            players.length === 0
+              ? "Cargá jugadores para que el calculador pueda calcular cuotas aunque todavía no hayan jugado partidos."
+              : "Jugadores administrados desde la hoja Jugadores.",
+        },
+        source: {
+          provider: "google-sheets",
+          status: players.length === 0 ? "empty" : "ready",
+          message:
+            players.length === 0
+              ? "Google Sheets conectado, sin jugadores cargados."
+              : "Jugadores obtenidos desde Google Sheets.",
+          cachedAt,
+          revalidateSeconds: this.config.cacheTtlSeconds,
+        },
+      };
+    } catch (error) {
+      const serviceError = normalizeGoogleSheetsError(error);
+
+      return {
+        players: [],
+        emptyState: {
+          title: "No se pudieron obtener jugadores",
+          description: serviceError.message,
+        },
+        source: {
+          provider: "google-sheets",
+          status: "error",
+          message: serviceError.message,
+          cachedAt,
+          revalidateSeconds: this.config.cacheTtlSeconds,
+        },
+      };
+    }
+  }
+
+  async upsertPlayer(input: UpsertPlayerInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.playersRange,
+    );
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.playersRange);
+    const now = new Date().toISOString();
+
+    await this.ensureSheetForRange(this.config.playersRange, spreadsheetId);
+
+    if (rows.length === 0) {
+      const player = normalizePlayerInput(input, new Set(), now);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A:K`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            playerDirectoryHeaders,
+            buildPlayerDirectoryWritableRow(playerDirectoryHeaders, player),
+          ],
+        },
+      });
+      invalidatePlayersCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    const headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
+    const idIndex = findHeaderIndex(headers, ["id", "jugador_id", "player_id"]);
+    const existingPlayers = mapRowsToPlayerDirectoryItems([headers, ...dataRows]);
+    const existingIds = new Set(existingPlayers.map((player) => player.id));
+    const targetId =
+      input.id?.trim() ||
+      createUniqueClubPlayerId(createClubPlayerId(input.name) || "player", existingIds);
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === targetId)
+        : -1;
+    const existing =
+      targetRowIndex >= 0
+        ? mapRowsToPlayerDirectoryItems([headers, dataRows[targetRowIndex]])[0]
+        : undefined;
+    const player = normalizePlayerInput(input, existingIds, now, targetId, existing);
+
+    if (targetRowIndex >= 0) {
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [buildPlayerDirectoryWritableRow(headers, player)],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: this.config.playersRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [buildPlayerDirectoryWritableRow(headers, player)],
+        },
+      });
+    }
+
+    invalidatePlayersCache();
+  }
+
+  async deletePlayer(playerId: string): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.playersRange,
+    );
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    const headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
+    const idIndex = findHeaderIndex(headers, ["id", "jugador_id", "player_id"]);
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === playerId)
+        : -1;
+
+    if (targetRowIndex < 0) {
+      return;
+    }
+
+    const existing = mapRowsToPlayerDirectoryItems([
+      headers,
+      dataRows[targetRowIndex],
+    ])[0];
+
+    if (!existing) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.playersRange);
+    const spreadsheetRow = targetRowIndex + 2;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [
+          buildPlayerDirectoryWritableRow(headers, {
+            ...existing,
+            status: "inactive",
+            leftAt: existing.leftAt || now.slice(0, 10),
+            updatedAt: now,
+          }),
+        ],
+      },
+    });
+
+    invalidatePlayersCache();
+  }
+
   async getFeeCalculatorData(period = getCurrentPeriod()): Promise<FeeCalculatorData> {
     const cachedAt = new Date().toISOString();
 
@@ -472,13 +676,19 @@ export class GoogleSheetsService implements IDataService {
       this.assertConfigured();
       assertValidPeriod(period);
 
-      const { costsRows, actualsRows, refundPolicyRows, matchRows, expenseRows } =
-        await this.readFeeCalculatorRows();
+      const {
+        playersRows,
+        costsRows,
+        actualsRows,
+        refundPolicyRows,
+        matchRows,
+        expenseRows,
+      } = await this.readFeeCalculatorRows();
+      const players = mapRowsToPlayers(playersRows);
       const costs = mapRowsToFeeCalculatorCosts(costsRows);
       const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
       const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
       const matches = mapRowsToMatches(matchRows);
-      const players = buildPlayersFromMatches(matches);
       const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
 
       return buildFeeCalculatorData({
@@ -1150,6 +1360,7 @@ export class GoogleSheetsService implements IDataService {
 
   private async readCachedDashboardRows() {
     const spreadsheetId = this.config.spreadsheetId;
+    const playersSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -1160,18 +1371,36 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readValues(this.config.playersRange),
-        feesRows: await this.readValues(this.config.feesRange),
+        playersRows: await this.readValuesFromSpreadsheet(
+          playersSpreadsheetId,
+          this.config.playersRange,
+        ),
+        feesRows: await this.readOptionalValues(this.config.feesRange),
       }),
       [
         "google-sheets-dashboard",
         spreadsheetId,
+        playersSpreadsheetId,
         this.config.playersRange,
         this.config.feesRange,
       ],
       {
         revalidate: this.config.cacheTtlSeconds,
         tags: ["google-sheets", "google-sheets:dashboard"],
+      },
+    )();
+  }
+
+  private async readCachedPlayerDirectoryRows() {
+    const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+
+    return unstable_cache(
+      async () =>
+        this.readOptionalValuesFromSpreadsheet(spreadsheetId, this.config.playersRange),
+      ["google-sheets-players", spreadsheetId, this.config.playersRange],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:players"],
       },
     )();
   }
@@ -1330,6 +1559,10 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
+        playersRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
+          this.config.playersRange,
+        ),
         costsRows: await this.readOptionalValuesFromSpreadsheet(
           feeCalculatorSpreadsheetId,
           this.config.feeCalculatorCostsRange,
@@ -1355,6 +1588,7 @@ export class GoogleSheetsService implements IDataService {
         spreadsheetId,
         matchesSpreadsheetId ?? "",
         feeCalculatorSpreadsheetId,
+        this.config.playersRange,
         this.config.feeCalculatorCostsRange,
         this.config.feeCalculatorActualsRange,
         this.config.refundPolicyRange,
@@ -1573,7 +1807,10 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readPlayerMonthlyFee(playerId: string) {
-    const playersRows = await this.readValues(this.config.playersRange);
+    const playersRows = await this.readValuesFromSpreadsheet(
+      this.getFeeCalculatorSpreadsheetId(),
+      this.config.playersRange,
+    );
     const player = mapRowsToPlayers(playersRows).find(
       (candidate) => candidate.id === playerId,
     );
@@ -1711,7 +1948,10 @@ function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
       name: name || `Jugador ${index + 1}`,
       category:
         pick(record, ["categoria", "category", "division", "equipo"]) || "Sin categoria",
-      phone: pick(record, ["telefono", "phone", "whatsapp", "celular"]) || "-",
+      phone:
+        normalizeClubPhone(pick(record, ["telefono", "phone", "whatsapp", "celular"])) ||
+        "-",
+      email: pick(record, ["email", "correo", "mail", "correo_electronico"]),
       monthlyFee: parseMoney(
         pick(record, ["cuota", "monto_mensual", "monthly_fee", "importe"]),
       ),
@@ -1741,6 +1981,127 @@ function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
       ),
     };
   });
+}
+
+function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[] {
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const name = pick(record, ["nombre", "name", "jugador", "player"]).trim();
+
+      if (!name) {
+        return null;
+      }
+
+      const id =
+        pick(record, ["id", "jugador_id", "id_jugador", "player_id"]) ||
+        createClubPlayerId(name) ||
+        `player-${index + 1}`;
+      const leftAt = parseDate(
+        pick(record, ["fecha_baja", "baja", "left_at", "deleted_at"]),
+      );
+      const status = normalizePlayerDirectoryStatus(
+        pick(record, ["estado", "status"]),
+        leftAt,
+      );
+      const createdAt =
+        parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ?? "";
+      const updatedAt =
+        parseDateTime(
+          pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+        ) || createdAt;
+
+      return {
+        id,
+        name,
+        phone: pick(record, ["telefono", "phone", "whatsapp", "celular"]),
+        email: pick(record, ["email", "correo", "mail", "correo_electronico"]),
+        category:
+          pick(record, ["categoria", "category", "division", "equipo"]) || "Plantel",
+        notes: pick(record, ["observaciones", "observacion", "notas", "notes"]),
+        status,
+        joinedAt:
+          parseDate(
+            pick(record, ["fecha_alta", "alta", "fecha_ingreso", "ingreso", "joined_at"]),
+          ) || createdAt.slice(0, 10),
+        leftAt: status === "inactive" ? leftAt || "" : "",
+        createdAt,
+        updatedAt,
+      } satisfies PlayerDirectoryItem;
+    })
+    .filter((player): player is PlayerDirectoryItem => Boolean(player))
+    .sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
+function normalizePlayerInput(
+  input: UpsertPlayerInput,
+  existingIds: Set<string>,
+  now: string,
+  targetId?: string,
+  existing?: PlayerDirectoryItem,
+): PlayerDirectoryItem {
+  const name = input.name.trim();
+  const id =
+    targetId ||
+    input.id?.trim() ||
+    createUniqueClubPlayerId(createClubPlayerId(name) || "player", existingIds);
+  const status = input.status ?? existing?.status ?? "active";
+
+  return {
+    id,
+    name,
+    phone: input.phone?.trim() ?? existing?.phone ?? "",
+    email: input.email?.trim() ?? existing?.email ?? "",
+    category: input.category?.trim() || existing?.category || "Plantel",
+    notes: input.notes?.trim() ?? existing?.notes ?? "",
+    status,
+    joinedAt: existing?.joinedAt || now.slice(0, 10),
+    leftAt: status === "inactive" ? existing?.leftAt || now.slice(0, 10) : "",
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirectoryItem) {
+  const values: Record<string, string> = {
+    id: player.id,
+    jugador_id: player.id,
+    id_jugador: player.id,
+    player_id: player.id,
+    nombre: player.name,
+    name: player.name,
+    jugador: player.name,
+    player: player.name,
+    telefono: player.phone,
+    phone: player.phone,
+    whatsapp: player.phone,
+    celular: player.phone,
+    email: player.email,
+    correo: player.email,
+    mail: player.email,
+    correo_electronico: player.email,
+    categoria: player.category,
+    category: player.category,
+    division: player.category,
+    equipo: player.category,
+    observaciones: player.notes,
+    observacion: player.notes,
+    notas: player.notes,
+    notes: player.notes,
+    estado: player.status === "active" ? "activo" : "baja",
+    status: player.status,
+    fecha_alta: player.joinedAt,
+    alta: player.joinedAt,
+    joined_at: player.joinedAt,
+    fecha_baja: player.leftAt,
+    baja: player.leftAt,
+    left_at: player.leftAt,
+    creado_en: player.createdAt,
+    created_at: player.createdAt,
+    actualizado_en: player.updatedAt,
+    updated_at: player.updatedAt,
+  };
+
+  return headers.map((header) => values[header] ?? "");
 }
 
 function mapRowsToFees(rows: unknown[][]): FeeRecord[] {
@@ -1848,6 +2209,7 @@ function mapClubRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
         phone: normalizeClubPhone(
           pick(record, ["telefono", "phone", "whatsapp", "celular"]),
         ),
+        email: pick(record, ["email", "correo", "mail", "correo_electronico"]),
         monthlyFee: parseMoney(
           pick(record, ["cuota", "monto_mensual", "monthly_fee", "importe"]),
         ),
@@ -2194,33 +2556,6 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
     })
     .filter((match): match is MatchRecord => Boolean(match))
     .sort((left, right) => left.date.localeCompare(right.date));
-}
-
-function buildPlayersFromMatches(matches: MatchRecord[]): PlayerRecord[] {
-  const names = new Map<string, string>();
-  const seenIds = new Set<string>();
-
-  matches.forEach((match) => {
-    match.players.forEach((playerName) => {
-      const normalizedName = normalizeClubPlayerName(playerName);
-
-      if (normalizedName && !names.has(normalizedName)) {
-        names.set(normalizedName, playerName.trim());
-      }
-    });
-  });
-
-  return Array.from(names.values())
-    .sort((left, right) => left.localeCompare(right, "es"))
-    .map((name) => ({
-      id: createUniqueClubPlayerId(createClubPlayerId(name), seenIds),
-      name,
-      category: "",
-      phone: "",
-      monthlyFee: 0,
-      observations: "Jugador detectado desde partidos jugados.",
-      status: "active",
-    }));
 }
 
 function mapClubExpenseRowsToPlayerCredits(rows: unknown[][]): PlayerExpenseCredit[] {
@@ -3379,6 +3714,7 @@ function buildPlayerTableRows(
           name: playerId,
           category: "Sin categoria",
           phone: "-",
+          email: "",
           monthlyFee: 0,
           observations: "-",
           status: "",
@@ -3417,6 +3753,7 @@ function buildPlayerFromFees(playerId: string, fees: FeeRecord[]): PlayerRecord 
     name: playerId,
     category: "Sin categoria",
     phone: "-",
+    email: "",
     monthlyFee: 0,
     observations: "-",
     status: "",
@@ -4138,6 +4475,24 @@ function normalizeFeeStatus(
   return "pending";
 }
 
+function normalizePlayerDirectoryStatus(
+  value: string,
+  leftAt?: string,
+): PlayerDirectoryStatus {
+  const status = normalizeText(value);
+
+  if (
+    leftAt ||
+    ["baja", "dado de baja", "dado_de_baja", "inactivo", "inactive", "deleted"].includes(
+      status,
+    )
+  ) {
+    return "inactive";
+  }
+
+  return "active";
+}
+
 function normalizeCashFlowType(value: string, amount: number): CashFlowTransactionType {
   const type = normalizeText(value);
 
@@ -4723,6 +5078,13 @@ function invalidateSettingsCache() {
 function invalidatePremiumCache() {
   revalidateTagWithProfile("google-sheets", "max");
   revalidateTagWithProfile("google-sheets:premium", "max");
+}
+
+function invalidatePlayersCache() {
+  revalidateTagWithProfile("google-sheets", "max");
+  revalidateTagWithProfile("google-sheets:players", "max");
+  revalidateTagWithProfile("google-sheets:dashboard", "max");
+  revalidateTagWithProfile("google-sheets:fee-calculator", "max");
 }
 
 function invalidateFeeCalculatorCache() {

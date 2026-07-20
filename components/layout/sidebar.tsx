@@ -31,6 +31,7 @@ const iconMap = {
   dashboard: LayoutDashboard,
   feeCalculator: Calculator,
   cashFlow: WalletCards,
+  players: UsersRound,
   notifications: Bell,
   payments: CreditCard,
   users: UsersRound,

@@ -522,12 +522,10 @@ function FeeCalculatorNotice({
     return (
       <Card className="border-destructive/30 bg-destructive/10">
         <CardContent className="p-5">
-          <h2 className="text-destructive font-semibold">No se detectaron jugadores</h2>
+          <h2 className="text-destructive font-semibold">No hay jugadores activos</h2>
           <p className="text-destructive/90 mt-2 text-sm">
-            El listado se arma desde la hoja de partidos. Revisá que Vercel tenga
-            configurado GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID, que el rango sea{" "}
-            <span className="font-medium">Partidos jugados formulario!A:Z</span> y que la
-            Service Account tenga acceso al Sheet.
+            El calculador usa la base de la hoja Jugadores. Cargá jugadores activos desde
+            la sección Jugadores y verificá que la Service Account tenga acceso al Sheet.
           </p>
         </CardContent>
       </Card>
@@ -539,12 +537,12 @@ function FeeCalculatorNotice({
       <Card className="border-[#f4ce0f]/50 bg-[#f4ce0f]/10">
         <CardContent className="p-5">
           <h2 className="font-semibold text-[#7a6500] dark:text-[#f4ce0f]">
-            Jugadores detectados, faltan costos activos
+            Jugadores activos, faltan costos activos
           </h2>
           <p className="mt-2 text-sm text-[#6c5a00] dark:text-[#f4ce0f]/90">
-            Ya hay {rows.length} jugadores tomados desde partidos. Para ver cuánto le
-            queda pagar a cada uno, cargá costos para {formatPeriod(data.period)} con
-            monto, cantidad estimada y cantidad de personas.
+            Ya hay {rows.length} jugadores activos. Para ver cuánto le queda pagar a cada
+            uno, cargá costos para {formatPeriod(data.period)} con monto, cantidad
+            estimada y cantidad de personas.
           </p>
         </CardContent>
       </Card>
@@ -977,7 +975,7 @@ function AttendanceBreakdown({
       {rows.length === 0 ? (
         <EmptyTableState
           title="Sin jugadores para mostrar"
-          description="Cuando la app lea jugadores desde la hoja de partidos, vas a ver acá cuántos partidos jugó cada uno y el porcentaje de asistencia."
+          description="Cuando cargues jugadores activos en la sección Jugadores, vas a ver acá cuántos partidos jugó cada uno y el porcentaje de asistencia."
         />
       ) : (
         <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
@@ -1073,7 +1071,7 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       {rows.length === 0 ? (
         <EmptyTableState
           title="Sin cuotas por jugador"
-          description="La cuota final aparece cuando el calculador logra leer jugadores desde partidos y existen costos activos para el período seleccionado."
+          description="La cuota final aparece cuando existen jugadores activos y costos cargados para el período seleccionado."
         />
       ) : (
         <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">

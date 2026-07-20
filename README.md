@@ -336,8 +336,8 @@ Archivos principales:
 
 Rangos por defecto:
 
-- `Jugadores!A:Z` para el dashboard heredado, opcional para el calculador
-- `Cuotas!A:Z` para el dashboard heredado, no se usa en el calculador
+- `Jugadores!A:Z` como base canonica editable de jugadores
+- `Cuotas!A:Z` para estados de pago heredados, opcional para el calculador
 - `CashFlow!A:Z`
 - `Configuracion!A:B`
 - `Auditoria!A:Z`
@@ -385,10 +385,10 @@ de la planilla operativa y compartirla con el Service Account como editor.
 
 Hoja `Jugadores`:
 
-| id      | nombre          | categoria | telefono       | cuota | observaciones |
-| ------- | --------------- | --------- | -------------- | ----- | ------------- |
-| JUG-001 | Martina Alvarez | Sub 18    | +5491111111111 | 25000 | Becada 50%    |
-| JUG-002 | Tomas Fernandez | Primera   | +5491122222222 | 25000 |               |
+| id              | nombre          | telefono       | email            | categoria | observaciones | estado | fecha_alta | fecha_baja | creado_en            | actualizado_en       |
+| --------------- | --------------- | -------------- | ---------------- | --------- | ------------- | ------ | ---------- | ---------- | -------------------- | -------------------- |
+| martina-alvarez | Martina Alvarez | +5491111111111 | martina@mail.com | Plantel   | Becada 50%    | activo | 2026-07-19 |            | 2026-07-19T12:00:00Z | 2026-07-19T12:00:00Z |
+| tomas-fernandez | Tomas Fernandez | +5491122222222 |                  | Plantel   |               | activo | 2026-07-19 |            | 2026-07-19T12:00:00Z | 2026-07-19T12:00:00Z |
 
 Hoja `Cuotas`:
 
@@ -469,7 +469,8 @@ Encabezados equivalentes soportados:
 
 - Jugadores: `id`, `jugador_id`, `id_jugador`, `player_id`, `nombre`, `name`,
   `jugador`, `categoria`, `category`, `division`, `equipo`, `telefono`, `phone`,
-  `whatsapp`, `celular`, `cuota`, `monto_mensual`, `monthly_fee`,
+  `whatsapp`, `celular`, `email`, `correo`, `mail`, `correo_electronico`,
+  `cuota`, `monto_mensual`, `monthly_fee`,
   `observaciones`, `observacion`, `notas`, `notes`, `estado`, `status`,
   `fecha_alta`, `alta`, `fecha_ingreso`, `ingreso`, `joined_at`, `created_at`,
   `fecha_registro`, `fecha_baja`, `baja`, `fecha_egreso`, `egreso`, `left_at`,
@@ -500,12 +501,13 @@ cuota final =
 ```
 
 El calculador ya no depende del Sheet viejo de cuotas ni de `Listado jugadores`.
-La lista de jugadores se arma desde `Partidos jugados formulario`, leyendo todos
-los nombres de `Jugadores que ingresaron`.
+La lista de jugadores se arma desde la base canonica `Jugadores`, editable desde
+`/players`. La hoja de partidos se usa solo para asistencia, rivales, canchas
+locales reales y asistencia del DT.
 
 Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` es la base operativa. La
-app lee de ahi los partidos y tambien guarda ahi las hojas `CalculadoraCostos`,
-`CalculadoraReales` y `Politica devoluciones`.
+app lee de ahi los partidos y tambien guarda ahi las hojas `Jugadores`,
+`CalculadoraCostos`, `CalculadoraReales` y `Politica devoluciones`.
 
 La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo

@@ -18,6 +18,7 @@ import type {
   PremiumData,
   UpsertPaymentRecordInput,
 } from "@/types/premium";
+import type { PlayerDirectoryData, UpsertPlayerInput } from "@/types/players";
 import type { AppSettingsData, UpdateAppSettingsInput } from "@/types/settings";
 
 export interface IDataService {
@@ -25,6 +26,9 @@ export interface IDataService {
   updateAppSettings(input: UpdateAppSettingsInput): Promise<void>;
   getDashboardData(): Promise<DashboardData>;
   getCashFlowData(): Promise<CashFlowData>;
+  getPlayersData(): Promise<PlayerDirectoryData>;
+  upsertPlayer(input: UpsertPlayerInput): Promise<void>;
+  deletePlayer(playerId: string): Promise<void>;
   getFeeCalculatorData(period?: string): Promise<FeeCalculatorData>;
   upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void>;
   deleteFeeCalculatorCost(costId: string): Promise<void>;

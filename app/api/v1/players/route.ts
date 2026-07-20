@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     return auth.response;
   }
 
-  const dashboard = await getDataService().getDashboardData();
+  const players = await getDataService().getPlayersData();
 
-  return NextResponse.json({ data: dashboard.players });
+  return NextResponse.json({ data: players.players });
 }

@@ -82,6 +82,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
     return hasPermission(user, "users:manage");
   }
 
+  if (href.startsWith("/players")) {
+    return hasPermission(user, "players:read");
+  }
+
   if (href.startsWith("/audit")) {
     return hasPermission(user, "audit:read");
   }

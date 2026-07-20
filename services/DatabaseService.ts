@@ -7,6 +7,7 @@ import type { CashFlowData, DashboardData, PlayerProfile } from "@/types/dashboa
 import type { ExportData, ExportDataset } from "@/types/export";
 import type { FeeCalculatorData } from "@/types/fee-calculator";
 import type { PremiumData } from "@/types/premium";
+import type { PlayerDirectoryData } from "@/types/players";
 import type { AppSettingsData } from "@/types/settings";
 
 export class DatabaseService implements IDataService {
@@ -157,6 +158,38 @@ export class DatabaseService implements IDataService {
         revalidateSeconds: 0,
       },
     };
+  }
+
+  async getPlayersData(): Promise<PlayerDirectoryData> {
+    return {
+      players: [],
+      emptyState: {
+        title: "Jugadores pendiente",
+        description:
+          "El contrato IDataService ya esta listo para administrar jugadores en PostgreSQL.",
+      },
+      source: {
+        provider: "postgresql",
+        status: "error",
+        message: "DatabaseService todavia no esta implementado.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  async upsertPlayer(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async deletePlayer(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
   }
 
   async getFeeCalculatorData(

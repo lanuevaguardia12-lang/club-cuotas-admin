@@ -8,6 +8,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "dashboard:read",
   },
   {
+    label: "Jugadores",
+    href: "/players",
+    icon: "players",
+    permission: "players:read",
+  },
+  {
     label: "Cash Flow",
     href: "/cash-flow",
     icon: "cashFlow",
