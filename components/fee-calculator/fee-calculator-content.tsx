@@ -107,13 +107,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
   });
   const selectedType = watch("type");
   const trackedActualCosts = useMemo(
-    () =>
-      data.costs.filter(
-        (cost) =>
-          ["court", "coach"].includes(cost.type) &&
-          isCostActiveInPeriod(cost, data.previousPeriod),
-      ),
-    [data.costs, data.previousPeriod],
+    () => getTrackedActualCosts(data.costs, data.previousPeriod, data.period),
+    [data.costs, data.period, data.previousPeriod],
   );
   const repeatableCosts = useMemo(
     () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
@@ -799,7 +794,7 @@ function CostList({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-semibold">{cost.name}</h3>
-                    <Badge variant="secondary">{typeLabels[cost.type]}</Badge>
+                    <Badge variant="secondary">{getCostTypeLabel(cost)}</Badge>
                   </div>
                   <p className="text-muted-foreground mt-1 text-sm">
                     {cost.startPeriod} a {cost.endPeriod} ·{" "}
@@ -833,7 +828,7 @@ function CostList({
                 <Info label="Monto unitario" value={formatPreciseCurrency(cost.amount)} />
                 <Info label="Divide" value={String(cost.splitBetween)} />
                 <Info
-                  label={getUnitLabel(cost.type)}
+                  label={getUnitLabel(cost)}
                   value={formatNumber(cost.forecastUnits)}
                 />
                 <Info
@@ -1190,7 +1185,7 @@ function ActualUnitsForm({
       <div>
         <p className="font-medium">{cost.name}</p>
         <p className="text-muted-foreground mt-1 text-xs">
-          {getForecastLabel(cost.type)}: {formatNumber(cost.forecastUnits)}
+          {getForecastLabel(cost)}: {formatNumber(cost.forecastUnits)}
         </p>
       </div>
       <label className="grid gap-2">
@@ -1586,6 +1581,39 @@ function isCostActiveInPeriod(cost: FeeCalculatorCost, period: string) {
   return period === cost.startPeriod;
 }
 
+function getTrackedActualCosts(
+  costs: FeeCalculatorCost[],
+  previousPeriod: string,
+  currentPeriod: string,
+) {
+  const previousCosts = costs.filter(
+    (cost) =>
+      Boolean(getAutoActualCostKind(cost)) && isCostActiveInPeriod(cost, previousPeriod),
+  );
+  const usedKinds = new Set(
+    previousCosts
+      .map((cost) => getAutoActualCostKind(cost))
+      .filter((kind): kind is "court" | "coach" => Boolean(kind)),
+  );
+  const fallbackCosts = costs.filter((cost) => {
+    const autoActualKind = getAutoActualCostKind(cost);
+
+    if (
+      !autoActualKind ||
+      usedKinds.has(autoActualKind) ||
+      !isCostActiveInPeriod(cost, currentPeriod)
+    ) {
+      return false;
+    }
+
+    usedKinds.add(autoActualKind);
+
+    return true;
+  });
+
+  return [...previousCosts, ...fallbackCosts];
+}
+
 function getRepeatablePeriods(period: string) {
   return Array.from({ length: 11 }, (_, index) => addMonths(period, index + 1));
 }
@@ -1597,28 +1625,84 @@ function addMonths(period: string, monthsToAdd: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function getUnitLabel(type: FeeCalculatorCostType) {
-  if (type === "court") {
+function getUnitLabel(cost: FeeCalculatorCost) {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
     return "Canchas";
   }
 
-  if (type === "coach") {
+  if (autoActualKind === "coach") {
     return "Horas";
   }
 
   return "Cantidad";
 }
 
-function getForecastLabel(type: FeeCalculatorCostType) {
-  if (type === "court") {
+function getForecastLabel(cost: FeeCalculatorCost) {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
     return "Canchas pronosticadas";
   }
 
-  if (type === "coach") {
+  if (autoActualKind === "coach") {
     return "Horas previstas";
   }
 
   return "Cantidad estimada";
+}
+
+function getCostTypeLabel(cost: FeeCalculatorCost) {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
+    return "Cancha";
+  }
+
+  if (autoActualKind === "coach") {
+    return "Director técnico";
+  }
+
+  return typeLabels[cost.type];
+}
+
+function getAutoActualCostKind(cost: FeeCalculatorCost): "court" | "coach" | undefined {
+  if (cost.type === "court" || cost.type === "coach") {
+    return cost.type;
+  }
+
+  const normalizedName = normalizeText(cost.name);
+  const normalizedKey = normalizeKey(cost.name);
+
+  if (/\bcancha(s)?\b/.test(normalizedName) || normalizedKey.includes("cancha")) {
+    return "court";
+  }
+
+  if (
+    normalizedName.includes("director tecnico") ||
+    normalizedName.includes("joaco") ||
+    /\b(dt|tecnico|entrenador)\b/.test(normalizedName) ||
+    /(^|_)(dt|tecnico|entrenador)(_|$)/.test(normalizedKey)
+  ) {
+    return "coach";
+  }
+
+  return undefined;
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeKey(value: string) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
 }
 
 function getActualLabel(type: FeeCalculatorCostType) {

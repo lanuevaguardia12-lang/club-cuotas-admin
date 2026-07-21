@@ -3494,7 +3494,7 @@ function buildFeeCalculatorData({
   );
   const activePlayers = players.filter((player) => activePlayerIds.has(player.id));
   const activeCosts = costs.filter((cost) => cost.active);
-  const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
+  let effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
     (mergedActuals, actualPeriod) =>
       mergeInferredFeeCalculatorActuals(
         activeCosts,
@@ -3503,6 +3503,18 @@ function buildFeeCalculatorData({
         actualPeriod,
       ),
     actuals,
+  );
+  const fallbackActualCosts = getFallbackAutoActualCosts(
+    activeCosts,
+    previousPeriod,
+    period,
+  );
+  effectiveActuals = mergeInferredFeeCalculatorActuals(
+    fallbackActualCosts,
+    effectiveActuals,
+    matches,
+    previousPeriod,
+    false,
   );
   const plannedCurrentQuota = calculateBaseQuotaForPeriod(
     activeCosts,
@@ -3514,6 +3526,7 @@ function buildFeeCalculatorData({
     activeCosts,
     effectiveActuals,
     previousPeriod,
+    period,
   );
   const previousPeriodBaseQuota = calculateAppBaseQuotaForPeriod(
     activeCosts,
@@ -5495,9 +5508,9 @@ function buildFeeCalculatorAdjustments(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
   period: string,
+  fallbackPeriod?: string,
 ): FeeCalculatorAdjustment[] {
-  return costs
-    .filter((cost) => isCostActiveForPeriod(cost, period))
+  return getAdjustmentReferenceCosts(costs, period, fallbackPeriod)
     .map((cost) => {
       const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
 
@@ -5573,22 +5586,19 @@ function mergeInferredFeeCalculatorActuals(
   actuals: FeeCalculatorActual[],
   matches: MatchRecord[],
   period: string,
+  requireActiveInPeriod = true,
 ) {
   const merged = [...actuals];
-  const existingKeys = new Set(
-    actuals.map((actual) => `${actual.costId}:${actual.period}`),
-  );
 
   costs.forEach((cost) => {
-    if (!isCostActiveForPeriod(cost, period)) {
+    if (requireActiveInPeriod && !isCostActiveForPeriod(cost, period)) {
       return;
     }
 
-    const key = `${cost.id}:${period}`;
-
-    if (existingKeys.has(key)) {
-      return;
-    }
+    const existingIndex = merged.findIndex(
+      (actual) => actual.costId === cost.id && actual.period === period,
+    );
+    const existingActual = existingIndex >= 0 ? merged[existingIndex] : undefined;
 
     const inferredUnits = inferActualUnitsForCost(cost, matches, period);
 
@@ -5596,21 +5606,88 @@ function mergeInferredFeeCalculatorActuals(
       return;
     }
 
-    merged.push({
+    if (existingActual && !isInferredFeeCalculatorActual(existingActual)) {
+      return;
+    }
+
+    const autoActualKind = getAutoActualCostKind(cost);
+    const inferredActual = {
       id: `auto-${cost.id}-${period}`,
       costId: cost.id,
       period,
       actualUnits: inferredUnits,
       notes:
-        cost.type === "coach"
+        autoActualKind === "coach"
           ? "Autocalculado desde Asistió joaco? x 3 horas."
           : "Autocalculado desde partidos Local.",
       updatedAt: new Date().toISOString(),
-    });
-    existingKeys.add(key);
+    };
+
+    if (existingIndex >= 0) {
+      merged[existingIndex] = inferredActual;
+    } else {
+      merged.push(inferredActual);
+    }
   });
 
   return merged;
+}
+
+function isInferredFeeCalculatorActual(actual: FeeCalculatorActual) {
+  const normalizedNotes = normalizeText(actual.notes);
+
+  return (
+    actual.id.startsWith("auto-") ||
+    normalizedNotes.includes("autocalculado") ||
+    normalizedNotes.includes("partidos local") ||
+    normalizedNotes.includes("asistio joaco")
+  );
+}
+
+function getAdjustmentReferenceCosts(
+  costs: FeeCalculatorCost[],
+  period: string,
+  fallbackPeriod?: string,
+) {
+  const periodCosts = costs.filter((cost) => isCostActiveForPeriod(cost, period));
+
+  if (!fallbackPeriod) {
+    return periodCosts;
+  }
+
+  const usedAutoKinds = new Set(
+    periodCosts
+      .map((cost) => getAutoActualCostKind(cost))
+      .filter((kind): kind is "court" | "coach" => Boolean(kind)),
+  );
+  const fallbackCosts = costs.filter((cost) => {
+    const autoActualKind = getAutoActualCostKind(cost);
+
+    if (
+      !autoActualKind ||
+      usedAutoKinds.has(autoActualKind) ||
+      !isCostActiveForPeriod(cost, fallbackPeriod)
+    ) {
+      return false;
+    }
+
+    usedAutoKinds.add(autoActualKind);
+
+    return true;
+  });
+
+  return [...periodCosts, ...fallbackCosts];
+}
+
+function getFallbackAutoActualCosts(
+  costs: FeeCalculatorCost[],
+  period: string,
+  fallbackPeriod: string,
+) {
+  return getAdjustmentReferenceCosts(costs, period, fallbackPeriod).filter(
+    (cost) =>
+      Boolean(getAutoActualCostKind(cost)) && !isCostActiveForPeriod(cost, period),
+  );
 }
 
 function findActualUnitsForCost(
@@ -5627,7 +5704,7 @@ function findActualUnitsForCost(
     return exactActual.actualUnits;
   }
 
-  if (!isAutoActualCost(cost)) {
+  if (!getAutoActualCostKind(cost)) {
     return undefined;
   }
 
@@ -5653,9 +5730,7 @@ function isCompatibleAutoActualCost(
   }
 
   return (
-    actualCost.type === cost.type &&
-    isAutoActualCost(cost) &&
-    isAutoActualCost(actualCost) &&
+    getAutoActualCostKind(actualCost) === getAutoActualCostKind(cost) &&
     normalizeText(actualCost.name) === normalizeText(cost.name)
   );
 }
@@ -5667,27 +5742,51 @@ function inferActualUnitsForCost(
 ) {
   const periodMatches = matches.filter((match) => match.period === period);
 
-  if (cost.type === "court") {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
     return periodMatches.filter(isLocalMatch).length;
   }
 
-  if (cost.type === "coach") {
+  if (autoActualKind === "coach") {
     return periodMatches.filter((match) => match.coachAttended).length * 3;
   }
 
   return undefined;
 }
 
-function isAutoActualCost(cost: FeeCalculatorCost) {
-  return cost.type === "court" || cost.type === "coach";
+function getAutoActualCostKind(cost: FeeCalculatorCost): "court" | "coach" | undefined {
+  if (cost.type === "court" || cost.type === "coach") {
+    return cost.type;
+  }
+
+  const normalizedName = normalizeText(cost.name);
+  const normalizedKey = normalizeHeader(cost.name);
+
+  if (/\bcancha(s)?\b/.test(normalizedName) || normalizedKey.includes("cancha")) {
+    return "court";
+  }
+
+  if (
+    normalizedName.includes("director tecnico") ||
+    normalizedName.includes("joaco") ||
+    /\b(dt|tecnico|entrenador)\b/.test(normalizedName) ||
+    /(^|_)(dt|tecnico|entrenador)(_|$)/.test(normalizedKey)
+  ) {
+    return "coach";
+  }
+
+  return undefined;
 }
 
 function getAdjustmentName(cost: FeeCalculatorCost) {
-  if (cost.type === "court") {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
     return "Ajuste cancha real";
   }
 
-  if (cost.type === "coach") {
+  if (autoActualKind === "coach") {
     return "Ajuste horas DT";
   }
 
