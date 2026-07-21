@@ -194,7 +194,9 @@ STRIPE_SECRET_KEY="replace-with-stripe-secret-key"
 STRIPE_WEBHOOK_SECRET="replace-with-stripe-webhook-secret"
 STRIPE_AMOUNT_MULTIPLIER=100
 
+# Sheet de la app: ABM de jugadores, calculador, cash flow y configuracion.
 GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-app-spreadsheet-id"
+# Sheet operativo del club: pagos del formulario y gastos Nueva Guardia.
 GOOGLE_SHEETS_CLUB_SPREADSHEET_ID="replace-with-club-spreadsheet-id"
 GOOGLE_SHEETS_CLIENT_EMAIL="replace-with-service-account-email"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
@@ -211,6 +213,7 @@ GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE="CalculadoraCostos!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE="CalculadoraReales!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_PLAYER_STATUSES_RANGE="CalculadoraJugadores!A:Z"
 GOOGLE_SHEETS_REFUND_POLICY_RANGE="Politica devoluciones!A:C"
+# Sheet externo del formulario de partidos jugados.
 GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_MATCHES_RANGE="Partidos jugados formulario!A:Z"
 GOOGLE_SHEETS_FORM_RESPONSES_RANGE="Respuestas de formulario!A:Z"
@@ -354,8 +357,7 @@ Rangos por defecto:
 - `CalculadoraReales!A:Z`
 - `Politica devoluciones!A:C`
 - `Partidos jugados formulario!A:Z` en el Sheet definido por
-  `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`. Para el calculador actual, este Sheet
-  tambien puede ser `GOOGLE_SHEETS_SPREADSHEET_ID`.
+  `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`.
 - `Respuestas de formulario!A:Z` y `Gastos nueva guardia!A:Z` en el Sheet
   definido por `GOOGLE_SHEETS_CLUB_SPREADSHEET_ID`.
 
@@ -390,8 +392,11 @@ En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
 - Si no existe `Configuracion`, la app usa configuracion por defecto y no rompe
   la pantalla.
 
-Para usar este modo solo hay que configurar el `GOOGLE_SHEETS_SPREADSHEET_ID`
-de la planilla operativa y compartirla con el Service Account como editor.
+Para usar este modo hay que configurar tres fuentes, aunque pueden coincidir si
+deciden unificar planillas: `GOOGLE_SHEETS_SPREADSHEET_ID` para la base de la
+app, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` para partidos jugados y
+`GOOGLE_SHEETS_CLUB_SPREADSHEET_ID` para pagos/gastos operativos. Todas deben
+estar compartidas con el Service Account como editor o lector segun corresponda.
 
 Hoja `Jugadores`:
 
@@ -523,7 +528,8 @@ Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` define la hoja de
 partidos. `GOOGLE_SHEETS_CLUB_SPREADSHEET_ID` define la planilla operativa del
 club para pagos (`Respuestas de formulario`) y gastos (`Gastos nueva guardia`).
 La app guarda el ABM y el calculador en las hojas `Jugadores`, `CalculadoraCostos`,
-`CalculadoraReales` y `Politica devoluciones`.
+`CalculadoraReales`, `CalculadoraJugadores` y `Politica devoluciones` del Sheet
+definido por `GOOGLE_SHEETS_SPREADSHEET_ID`.
 
 La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo

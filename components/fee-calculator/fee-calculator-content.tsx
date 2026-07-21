@@ -529,13 +529,18 @@ function FeeCalculatorNotice({
   }
 
   if (rows.length === 0) {
+    const hasPlayers = data.players.length > 0;
+
     return (
       <Card className="border-destructive/30 bg-destructive/10">
         <CardContent className="p-5">
-          <h2 className="text-destructive font-semibold">No hay jugadores activos</h2>
+          <h2 className="text-destructive font-semibold">
+            {hasPlayers ? "No hay jugadores activos" : "No hay jugadores en el ABM"}
+          </h2>
           <p className="text-destructive/90 mt-2 text-sm">
-            El calculador usa la base cargada en la sección Jugadores. Cargá jugadores
-            desde ese ABM y verificá que la Service Account tenga acceso al Sheet.
+            {hasPlayers
+              ? `Hay ${data.players.length} jugadores cargados, pero ninguno está activo para ${formatPeriod(data.period)}. Activá al menos uno desde el panel de jugadores del calculador.`
+              : "El calculador usa la base cargada en la sección Jugadores. Cargá jugadores desde ese ABM y verificá que GOOGLE_SHEETS_SPREADSHEET_ID apunte al Sheet donde vive la hoja Jugadores."}
           </p>
         </CardContent>
       </Card>

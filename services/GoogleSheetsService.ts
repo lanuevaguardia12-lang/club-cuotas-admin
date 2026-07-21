@@ -332,10 +332,7 @@ export class GoogleSheetsService implements IDataService {
 
   constructor(config: Partial<GoogleSheetsConfig> = {}) {
     const spreadsheetId =
-      config.spreadsheetId ??
-      process.env.GOOGLE_SHEETS_SPREADSHEET_ID ??
-      config.matchesSpreadsheetId ??
-      process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID;
+      config.spreadsheetId ?? process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const matchesSpreadsheetId =
       config.matchesSpreadsheetId ??
       process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID ??
@@ -800,7 +797,7 @@ export class GoogleSheetsService implements IDataService {
   async upsertPlayer(input: UpsertPlayerInput): Promise<void> {
     this.assertConfigured();
 
-    const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const spreadsheetId = this.getAppSpreadsheetId();
     const playersRange = this.getWritablePlayersRange();
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
@@ -878,7 +875,7 @@ export class GoogleSheetsService implements IDataService {
   async deletePlayer(playerId: string): Promise<void> {
     this.assertConfigured();
 
-    const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const spreadsheetId = this.getAppSpreadsheetId();
     const playersRange = this.getWritablePlayersRange();
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
@@ -982,7 +979,7 @@ export class GoogleSheetsService implements IDataService {
   async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
     this.assertConfigured();
 
-    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const cost = normalizeFeeCalculatorCostInput(input);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       feeCalculatorSpreadsheetId,
@@ -1085,7 +1082,7 @@ export class GoogleSheetsService implements IDataService {
   async deleteFeeCalculatorCost(costId: string): Promise<void> {
     this.assertConfigured();
 
-    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const values = await this.readOptionalValuesFromSpreadsheet(
       feeCalculatorSpreadsheetId,
       this.config.feeCalculatorCostsRange,
@@ -1144,7 +1141,7 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
     assertValidPeriod(input.period);
 
-    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const actual = normalizeFeeCalculatorActualInput(input);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       feeCalculatorSpreadsheetId,
@@ -1240,7 +1237,7 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
     assertValidPeriod(input.period);
 
-    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const playerStatus = normalizeFeeCalculatorPlayerStatusInput(input);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       feeCalculatorSpreadsheetId,
@@ -1354,7 +1351,7 @@ export class GoogleSheetsService implements IDataService {
   async updateFeeRefundPolicy(input: UpdateFeeRefundPolicyInput): Promise<void> {
     this.assertConfigured();
 
-    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const rules = normalizeFeeRefundPolicyInput(input);
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.refundPolicyRange);
@@ -1735,8 +1732,8 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedDashboardRows() {
-    const spreadsheetId = this.config.spreadsheetId;
-    const playersSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const playersSpreadsheetId = spreadsheetId;
     const clubSpreadsheetId = this.getClubSpreadsheetId();
 
     if (!spreadsheetId) {
@@ -1769,7 +1766,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedPlayerDirectoryRows() {
-    const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const spreadsheetId = this.getAppSpreadsheetId();
 
     return unstable_cache(
       async () => this.readPlayerDirectoryRows(spreadsheetId),
@@ -1967,9 +1964,9 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readFeeCalculatorRows() {
-    const spreadsheetId = this.config.spreadsheetId;
+    const spreadsheetId = this.getAppSpreadsheetId();
     const matchesSpreadsheetId = this.config.matchesSpreadsheetId;
-    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const feeCalculatorSpreadsheetId = spreadsheetId;
     const clubSpreadsheetId = this.getClubSpreadsheetId();
 
     if (!spreadsheetId) {
@@ -2113,12 +2110,12 @@ export class GoogleSheetsService implements IDataService {
     return spreadsheetId;
   }
 
-  private getFeeCalculatorSpreadsheetId() {
-    const spreadsheetId = this.config.matchesSpreadsheetId ?? this.config.spreadsheetId;
+  private getAppSpreadsheetId() {
+    const spreadsheetId = this.config.spreadsheetId;
 
     if (!spreadsheetId) {
       throw new DataServiceError(
-        "GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID no esta configurado.",
+        "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
         "CONFIGURATION_ERROR",
       );
     }
@@ -2128,7 +2125,7 @@ export class GoogleSheetsService implements IDataService {
 
   private async ensureSheetForRange(
     range: string,
-    spreadsheetId = this.config.spreadsheetId ?? this.getFeeCalculatorSpreadsheetId(),
+    spreadsheetId = this.getAppSpreadsheetId(),
   ) {
     const title = unquoteSheetTitle(getSheetPrefix(range));
     const sheets = this.createSheetsClient();
@@ -2282,9 +2279,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readPlayerMonthlyFee(playerId: string) {
-    const playersRows = await this.readPlayerDirectoryRows(
-      this.getFeeCalculatorSpreadsheetId(),
-    );
+    const playersRows = await this.readPlayerDirectoryRows(this.getAppSpreadsheetId());
     const player = mapRowsToPlayers(playersRows).find(
       (candidate) => candidate.id === playerId,
     );
