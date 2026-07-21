@@ -282,20 +282,20 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
         <MetricCard
           icon={CircleDollarSign}
           label="Cuota base"
-          value={formatCurrency(data.summary.baseQuota)}
-          detail={`A calcular en ${formatPeriod(data.period)}`}
-        />
-        <MetricCard
-          icon={CalendarDays}
-          label="Costo planificado"
           value={formatCurrency(data.summary.plannedCurrentQuota)}
-          detail={`Costos de ${formatPeriod(data.period)}`}
+          detail={`Suma de costos de ${formatPeriod(data.period)}`}
         />
         <MetricCard
           icon={RotateCcw}
           label="Ajuste reales"
           value={formatCurrency(data.summary.previousCostVariance)}
           detail={`${data.adjustments.length} conceptos de ${formatPeriod(data.previousPeriod)}`}
+        />
+        <MetricCard
+          icon={CalendarDays}
+          label="Cuota con ajustes"
+          value={formatCurrency(data.summary.baseQuota)}
+          detail={`Base +/- reales de ${formatPeriod(data.previousPeriod)}`}
         />
         <MetricCard
           icon={ListChecks}
@@ -399,10 +399,10 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
                   error={errors.amount?.message}
                 >
                   <input
-                    type="number"
-                    min={0}
-                    step="0.000001"
-                    {...register("amount", { valueAsNumber: true })}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ej: 240.000"
+                    {...register("amount", { setValueAs: parseLocalizedNumberInput })}
                     className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
                   />
                 </Field>
@@ -544,7 +544,7 @@ function FeeCalculatorNotice({
     );
   }
 
-  if (data.summary.activeCosts === 0 || data.summary.baseQuota === 0) {
+  if (data.summary.activeCosts === 0 || data.summary.plannedCurrentQuota === 0) {
     return (
       <Card className="border-[#f4ce0f]/50 bg-[#f4ce0f]/10">
         <CardContent className="p-5">
@@ -1189,7 +1189,7 @@ function ActualUnitsForm({
         </p>
       </div>
       <label className="grid gap-2">
-        <span className="text-sm font-medium">{getActualLabel(cost.type)}</span>
+        <span className="text-sm font-medium">{getActualLabel(cost)}</span>
         <input
           type="number"
           min={0}
@@ -1327,8 +1327,8 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       <div>
         <h2 className="text-lg font-semibold">Cuota por jugador</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Cuota base calculada por la app, con ajustes reales, menos devolución por
-          asistencia.
+          Cuota base con ajustes reales, menos devolución por asistencia y gastos del
+          jugador.
         </p>
       </div>
 
@@ -1344,7 +1344,7 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
               <thead className="bg-muted/60">
                 <tr className="border-border border-b">
                   <TableHead>Jugador</TableHead>
-                  <TableHead>Base</TableHead>
+                  <TableHead>Base con ajustes</TableHead>
                   <TableHead>Partidos</TableHead>
                   <TableHead>Devolución</TableHead>
                   <TableHead>Gastos</TableHead>
@@ -1408,7 +1408,7 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Info label="Base" value={formatCurrency(row.baseQuota)} />
+                  <Info label="Base con ajustes" value={formatCurrency(row.baseQuota)} />
                   <Info label="Devolución" value={formatCurrency(row.refundAmount)} />
                   <Info
                     label="Gastos"
@@ -1705,16 +1705,58 @@ function normalizeKey(value: string) {
     .replace(/^_|_$/g, "");
 }
 
-function getActualLabel(type: FeeCalculatorCostType) {
-  if (type === "court") {
+function getActualLabel(cost: FeeCalculatorCost) {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
     return "Canchas reales";
   }
 
-  if (type === "coach") {
+  if (autoActualKind === "coach") {
     return "Horas reales";
   }
 
   return "Cantidad real";
+}
+
+function parseLocalizedNumberInput(value: unknown) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().replace(/[^\d,.-]/g, "");
+
+  if (!normalized) {
+    return Number.NaN;
+  }
+
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  if (hasComma && hasDot) {
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+
+    return Number(
+      lastComma > lastDot
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, ""),
+    );
+  }
+
+  if (hasComma) {
+    return Number(normalized.replace(",", "."));
+  }
+
+  if (/^\d{1,3}(\.\d{3})+$/.test(normalized)) {
+    return Number(normalized.replace(/\./g, ""));
+  }
+
+  return Number(normalized);
 }
 
 function formatCurrency(value: number) {

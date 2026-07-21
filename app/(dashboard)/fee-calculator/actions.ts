@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
 const periodSchema = z.string().regex(/^\d{4}-\d{2}$/);
+const numericSchema = z.preprocess(parseLocalizedNumberInput, z.number());
 
 const costSchema = z.object({
   id: z.string().optional(),
@@ -16,17 +17,17 @@ const costSchema = z.object({
   type: z.enum(["fixed", "court", "coach", "custom"]),
   startPeriod: periodSchema,
   endPeriod: periodSchema,
-  amount: z.coerce.number().min(0),
+  amount: numericSchema.pipe(z.number().min(0)),
   repeatsMonthly: z.boolean(),
-  splitBetween: z.coerce.number().int().min(1),
-  forecastUnits: z.coerce.number().min(0),
+  splitBetween: numericSchema.pipe(z.number().int().min(1)),
+  forecastUnits: numericSchema.pipe(z.number().min(0)),
   notes: z.string().trim().max(500).optional(),
 });
 
 const actualSchema = z.object({
   costId: z.string().trim().min(1),
   period: periodSchema,
-  actualUnits: z.coerce.number().min(0),
+  actualUnits: numericSchema.pipe(z.number().min(0)),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -54,6 +55,46 @@ const calculatorPlayerStatusSchema = z.object({
   status: z.enum(["active", "inactive"]),
   notes: z.string().trim().max(500).optional(),
 });
+
+function parseLocalizedNumberInput(value: unknown) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().replace(/[^\d,.-]/g, "");
+
+  if (!normalized) {
+    return Number.NaN;
+  }
+
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  if (hasComma && hasDot) {
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+
+    return Number(
+      lastComma > lastDot
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, ""),
+    );
+  }
+
+  if (hasComma) {
+    return Number(normalized.replace(",", "."));
+  }
+
+  if (/^\d{1,3}(\.\d{3})+$/.test(normalized)) {
+    return Number(normalized.replace(/\./g, ""));
+  }
+
+  return Number(normalized);
+}
 
 export async function saveFeeCalculatorCost(input: unknown) {
   const user = await getCurrentUser();
