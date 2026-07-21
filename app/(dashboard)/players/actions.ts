@@ -6,6 +6,7 @@ import { z } from "zod";
 import { userToAuditActor } from "@/lib/audit";
 import { assertPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
+import { LNG_DEFAULT_ROSTER } from "@/lib/default-roster";
 import { getDataService } from "@/services/data-service";
 
 const playerSchema = z.object({
@@ -79,4 +80,35 @@ export async function deletePlayer(playerId: string) {
   revalidatePath("/fee-calculator");
 
   return { ok: true };
+}
+
+export async function restoreDefaultRoster() {
+  const user = await getCurrentUser();
+  assertPermission(user, "maintenance:manage");
+
+  const dataService = getDataService();
+
+  await dataService.replacePlayers(LNG_DEFAULT_ROSTER);
+
+  if (user) {
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "api.request",
+        entityType: "player",
+        entityId: "lng-default-roster",
+        summary: "Plantel base restaurado desde ABM.",
+        metadata: {
+          players: LNG_DEFAULT_ROSTER.length,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  revalidatePath("/players");
+  revalidatePath("/");
+  revalidatePath("/fee-calculator");
+  revalidatePath("/cash-flow");
+
+  return { ok: true, players: LNG_DEFAULT_ROSTER.length };
 }

@@ -32,10 +32,12 @@ export interface IDataService {
   deleteCashFlowTransaction(transactionId: string): Promise<void>;
   getPlayersData(): Promise<PlayerDirectoryData>;
   upsertPlayer(input: UpsertPlayerInput): Promise<void>;
+  replacePlayers(players: UpsertPlayerInput[]): Promise<void>;
   deletePlayer(playerId: string): Promise<void>;
   getFeeCalculatorData(period?: string): Promise<FeeCalculatorData>;
   upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void>;
   deleteFeeCalculatorCost(costId: string): Promise<void>;
+  resetFeeCalculatorCosts(): Promise<void>;
   updateFeeCalculatorActual(input: UpdateFeeCalculatorActualInput): Promise<void>;
   updateFeeCalculatorPlayerStatus(
     input: UpdateFeeCalculatorPlayerStatusInput,

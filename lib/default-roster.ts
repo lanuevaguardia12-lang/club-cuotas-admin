@@ -1,0 +1,32 @@
+import type { UpsertPlayerInput } from "@/types/players";
+
+export const LNG_DEFAULT_ROSTER: UpsertPlayerInput[] = [
+  { name: "Carlos Ladona", phone: "1154012398", category: "Plantel" },
+  { name: "Gonzalo Ladona", phone: "1154012398", category: "Plantel" },
+  { name: "Juan Ignacio Rodriguez", phone: "1150967779", category: "Plantel" },
+  { name: "Bautista Toledo", phone: "1162779335", category: "Plantel" },
+  { name: "Julian Cerino", phone: "1136668938", category: "Plantel" },
+  { name: "Ezequiel Garcia", phone: "1134076411", category: "Plantel" },
+  { name: "Pedro Domecq", phone: "1136457688", category: "Plantel" },
+  { name: "Alexis Saavedra", phone: "1134003222", category: "Plantel" },
+  { name: "Juan Pablo Regueiro", phone: "1144097274", category: "Plantel" },
+  { name: "Mariano Linardi", phone: "1151582017", category: "Plantel" },
+  { name: "Facundo Ioszt", phone: "1137047071", category: "Plantel" },
+  { name: "Tristan Llense", phone: "1161944192", category: "Plantel" },
+  { name: "Ezequiel Guerri", phone: "1168627736", category: "Plantel" },
+  { name: "Franco Linardi", phone: "1155750308", category: "Plantel" },
+  { name: "Tomas Giacche", phone: "1141989447", category: "Plantel" },
+  {
+    name: "Ivo Unzaga",
+    phone: "1159556277",
+    email: "unzaga62@gmail.com",
+    category: "Plantel",
+  },
+  { name: "Tomas Enrico Laspina", category: "Plantel" },
+  { name: "Julian Strutz", phone: "1139003927", category: "Plantel" },
+  { name: "Lautaro Aprigliano", phone: "1131150740", category: "Plantel" },
+  { name: "Agustin Lopez", phone: "1122864199", category: "Plantel" },
+  { name: "Roman Cetrangolo", phone: "1168964121", category: "Plantel" },
+  { name: "Matias Ponziani", phone: "1165034090", category: "Plantel" },
+  { name: "Tomas Bentancourt", category: "Plantel" },
+];

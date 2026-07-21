@@ -209,6 +209,13 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async replacePlayers(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async deletePlayer(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
@@ -267,6 +274,13 @@ export class DatabaseService implements IDataService {
   }
 
   async deleteFeeCalculatorCost(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async resetFeeCalculatorCosts(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
       "UNSUPPORTED_DATA_SOURCE",

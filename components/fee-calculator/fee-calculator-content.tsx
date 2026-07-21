@@ -20,6 +20,7 @@ import { z } from "zod";
 
 import {
   deleteFeeCalculatorCost,
+  resetFeeCalculatorCosts,
   saveFeeCalculatorActual,
   saveFeeCalculatorCost,
   saveFeeRefundPolicy,
@@ -38,6 +39,7 @@ import type {
 } from "@/types/fee-calculator";
 
 interface FeeCalculatorContentProps {
+  canMaintain: boolean;
   data: FeeCalculatorData;
 }
 
@@ -86,7 +88,7 @@ interface EditableRefundPolicyRow {
   refundPercent: string;
 }
 
-export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
+export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContentProps) {
   const router = useRouter();
   const [savingMessage, setSavingMessage] = useState("");
   const [editingCostName, setEditingCostName] = useState("");
@@ -491,7 +493,7 @@ export function FeeCalculatorContent({ data }: FeeCalculatorContentProps) {
         <RefundPolicyEditor rules={data.refundPolicy} />
       </div>
 
-      <CostList data={data} onEditCost={handleEditCost} />
+      <CostList canMaintain={canMaintain} data={data} onEditCost={handleEditCost} />
 
       <AdjustmentList data={data} />
 
@@ -703,22 +705,46 @@ function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
 }
 
 function CostList({
+  canMaintain,
   data,
   onEditCost,
 }: {
+  canMaintain: boolean;
   data: FeeCalculatorData;
   onEditCost: (cost: FeeCalculatorCost) => void;
 }) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState("");
+  const [resettingCosts, setResettingCosts] = useState(false);
 
   if (data.costs.length === 0) {
     return (
-      <Card>
-        <CardContent className="text-muted-foreground p-5 text-sm">
-          Todavía no hay costos cargados para calcular la cuota base.
-        </CardContent>
-      </Card>
+      <section className="grid gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Costos cargados</h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Estos costos alimentan la cuota base según su vigencia.
+            </p>
+          </div>
+          {canMaintain ? (
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={resettingCosts}
+              onClick={handleResetCosts}
+            >
+              <Trash2 />
+              Limpiar costos
+            </Button>
+          ) : null}
+        </div>
+        <Card>
+          <CardContent className="text-muted-foreground p-5 text-sm">
+            Todavía no hay costos activos para calcular la cuota base.
+          </CardContent>
+        </Card>
+      </section>
     );
   }
 
@@ -729,13 +755,41 @@ function CostList({
     setDeletingId("");
   }
 
+  async function handleResetCosts() {
+    if (
+      !window.confirm(
+        "Esto borra todos los costos y cantidades reales del calculador. ¿Continuar?",
+      )
+    ) {
+      return;
+    }
+
+    setResettingCosts(true);
+    await resetFeeCalculatorCosts();
+    router.refresh();
+    setResettingCosts(false);
+  }
+
   return (
     <section className="grid gap-3">
-      <div>
-        <h2 className="text-lg font-semibold">Costos cargados</h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Estos costos alimentan la cuota base según su vigencia.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Costos cargados</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Estos costos alimentan la cuota base según su vigencia.
+          </p>
+        </div>
+        {canMaintain ? (
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={resettingCosts}
+            onClick={handleResetCosts}
+          >
+            <Trash2 />
+            Limpiar costos
+          </Button>
+        ) : null}
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
         {data.costs.map((cost) => (
@@ -821,7 +875,7 @@ function AdjustmentList({ data }: { data: FeeCalculatorData }) {
       {adjustments.length === 0 ? (
         <EmptyTableState
           title="Sin ajustes para aplicar"
-          description="Cuando las canchas reales u horas reales sean distintas a lo pronosticado, el ajuste aparece aca como importe positivo o negativo."
+          description={`Se leyeron ${data.summary.totalLocalMatchesPreviousPeriod} canchas locales y ${formatNumber(data.summary.coachHoursPreviousPeriod)} h DT de ${formatPeriod(data.previousPeriod)}. Para generar ajuste tiene que existir un costo Cancha o Director técnico vigente en ese mes con una cantidad pronosticada distinta.`}
         />
       ) : (
         <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">

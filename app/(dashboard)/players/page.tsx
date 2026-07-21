@@ -47,6 +47,7 @@ export default async function PlayersPage() {
       <PlayerDirectoryContent
         data={data}
         canWrite={hasPermission(user, "players:write")}
+        canRestoreRoster={hasPermission(user, "maintenance:manage")}
       />
     </main>
   );

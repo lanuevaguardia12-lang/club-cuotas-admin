@@ -13,6 +13,7 @@ export type Permission =
   | "audit:read"
   | "notifications:manage"
   | "payments:manage"
+  | "maintenance:manage"
   | "api:read"
   | "api:write";
 
@@ -42,6 +43,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "audit:read",
     "notifications:manage",
     "payments:manage",
+    "maintenance:manage",
     "api:read",
     "api:write",
   ],

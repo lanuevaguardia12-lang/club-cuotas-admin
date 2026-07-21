@@ -872,6 +872,56 @@ export class GoogleSheetsService implements IDataService {
     invalidatePlayersCache();
   }
 
+  async replacePlayers(players: UpsertPlayerInput[]): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const playersRange = this.getWritablePlayersRange();
+    const sheetPrefix = getSheetPrefix(playersRange);
+    const now = new Date().toISOString();
+    const usedIds = new Set<string>();
+    const normalizedPlayers = players.map((player) => {
+      const normalized = normalizePlayerInput(
+        {
+          ...player,
+          status: "active",
+        },
+        usedIds,
+        now,
+      );
+
+      usedIds.add(normalized.id);
+
+      return normalized;
+    });
+    const sheets = this.createSheetsClient();
+    const lastColumn = toColumnName(playerDirectoryHeaders.length - 1);
+
+    await this.ensureSheetForRange(playersRange, spreadsheetId);
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${sheetPrefix}!A:${lastColumn}`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetPrefix}!A:${lastColumn}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [
+          playerDirectoryHeaders,
+          ...normalizedPlayers.map((player) =>
+            buildPlayerDirectoryWritableRow(playerDirectoryHeaders, player),
+          ),
+        ],
+      },
+    });
+
+    invalidatePlayersCache();
+    invalidateDashboardCache();
+    invalidateFeeCalculatorCache();
+    invalidateCashFlowCache();
+  }
+
   async deletePlayer(playerId: string): Promise<void> {
     this.assertConfigured();
 
@@ -1135,6 +1185,53 @@ export class GoogleSheetsService implements IDataService {
       },
     });
     invalidateFeeCalculatorCache();
+  }
+
+  async resetFeeCalculatorCosts(): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const sheets = this.createSheetsClient();
+    const costsSheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
+    const actualsSheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
+
+    await this.ensureSheetForRange(this.config.feeCalculatorCostsRange, spreadsheetId);
+    await this.ensureSheetForRange(this.config.feeCalculatorActualsRange, spreadsheetId);
+    await sheets.spreadsheets.values.batchClear({
+      spreadsheetId,
+      requestBody: {
+        ranges: [
+          `${costsSheetPrefix}!A:${toColumnName(feeCalculatorCostHeaders.length - 1)}`,
+          `${actualsSheetPrefix}!A:${toColumnName(
+            feeCalculatorActualHeaders.length - 1,
+          )}`,
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: [
+          {
+            range: `${costsSheetPrefix}!A:${toColumnName(
+              feeCalculatorCostHeaders.length - 1,
+            )}`,
+            values: [feeCalculatorCostHeaders],
+          },
+          {
+            range: `${actualsSheetPrefix}!A:${toColumnName(
+              feeCalculatorActualHeaders.length - 1,
+            )}`,
+            values: [feeCalculatorActualHeaders],
+          },
+        ],
+      },
+    });
+
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
+    invalidateCashFlowCache();
   }
 
   async updateFeeCalculatorActual(input: UpdateFeeCalculatorActualInput): Promise<void> {
@@ -5489,7 +5586,7 @@ function mergeInferredFeeCalculatorActuals(
 
     const key = `${cost.id}:${period}`;
 
-    if (existingKeys.has(key) || hasActualUnitsForCost(cost, costs, merged, period)) {
+    if (existingKeys.has(key)) {
       return;
     }
 
@@ -5510,18 +5607,10 @@ function mergeInferredFeeCalculatorActuals(
           : "Autocalculado desde partidos Local.",
       updatedAt: new Date().toISOString(),
     });
+    existingKeys.add(key);
   });
 
   return merged;
-}
-
-function hasActualUnitsForCost(
-  cost: FeeCalculatorCost,
-  costs: FeeCalculatorCost[],
-  actuals: FeeCalculatorActual[],
-  period: string,
-) {
-  return typeof findActualUnitsForCost(cost, costs, actuals, period) === "number";
 }
 
 function findActualUnitsForCost(

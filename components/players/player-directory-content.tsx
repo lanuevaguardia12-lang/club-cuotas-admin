@@ -6,6 +6,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  RotateCcw,
   Save,
   Search,
   Trash2,
@@ -18,13 +19,18 @@ import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
-import { deletePlayer, savePlayer } from "@/app/(dashboard)/players/actions";
+import {
+  deletePlayer,
+  restoreDefaultRoster,
+  savePlayer,
+} from "@/app/(dashboard)/players/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { PlayerDirectoryData, PlayerDirectoryItem } from "@/types/players";
 
 interface PlayerDirectoryContentProps {
   canWrite: boolean;
+  canRestoreRoster: boolean;
   data: PlayerDirectoryData;
 }
 
@@ -39,11 +45,16 @@ const playerSchema = z.object({
 
 type PlayerFormValues = z.infer<typeof playerSchema>;
 
-export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryContentProps) {
+export function PlayerDirectoryContent({
+  canRestoreRoster,
+  canWrite,
+  data,
+}: PlayerDirectoryContentProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [restoringRoster, setRestoringRoster] = useState(false);
   const [message, setMessage] = useState("");
   const {
     formState: { errors, isSubmitting },
@@ -114,6 +125,24 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
     window.setTimeout(() => setMessage(""), 2200);
   }
 
+  async function handleRestoreRoster() {
+    if (
+      !window.confirm(
+        "Esto reemplaza el listado completo por el plantel base de La Nueva Guardia. ¿Continuar?",
+      )
+    ) {
+      return;
+    }
+
+    setRestoringRoster(true);
+    setMessage("");
+    const result = await restoreDefaultRoster();
+    setRestoringRoster(false);
+    setMessage(`Plantel restaurado: ${result.players} jugadores`);
+    router.refresh();
+    window.setTimeout(() => setMessage(""), 2600);
+  }
+
   return (
     <section className="grid gap-6">
       {data.source.status === "error" ? (
@@ -144,6 +173,28 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
           detail="Teléfono o email"
         />
       </div>
+
+      {canRestoreRoster ? (
+        <Card className="border-[#0094dc]/30 bg-[#0094dc]/5">
+          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold">Plantel base La Nueva Guardia</h2>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Reemplaza el ABM actual por el listado oficial cargado en la app.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={restoringRoster}
+              onClick={handleRestoreRoster}
+            >
+              <RotateCcw />
+              Restaurar plantel
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
         <Card>

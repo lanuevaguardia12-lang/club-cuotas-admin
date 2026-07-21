@@ -113,6 +113,35 @@ export async function deleteFeeCalculatorCost(costId: string) {
   return { ok: true };
 }
 
+export async function resetFeeCalculatorCosts() {
+  const user = await getCurrentUser();
+  assertPermission(user, "maintenance:manage");
+
+  const dataService = getDataService();
+
+  await dataService.resetFeeCalculatorCosts();
+  if (user) {
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "api.request",
+        entityType: "fee",
+        entityId: "fee-calculator-costs",
+        summary: "Costos y cantidades reales del calculador reiniciados.",
+        metadata: {
+          ranges: "CalculadoraCostos, CalculadoraReales",
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  revalidatePath("/fee-calculator");
+  revalidatePath("/");
+  revalidatePath("/cash-flow");
+
+  return { ok: true };
+}
+
 export async function saveFeeCalculatorActual(input: unknown) {
   const user = await getCurrentUser();
   assertPermission(user, "fee-calculator:manage");

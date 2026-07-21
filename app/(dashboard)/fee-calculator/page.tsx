@@ -1,6 +1,8 @@
 import { Calculator, Database } from "lucide-react";
 
 import { FeeCalculatorContent } from "@/components/fee-calculator/fee-calculator-content";
+import { hasPermission } from "@/lib/auth/roles";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +18,7 @@ export default async function FeeCalculatorPage({
 }: FeeCalculatorPageProps) {
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
+  const user = await getCurrentUser();
   const data = await getDataService().getFeeCalculatorData(period);
 
   return (
@@ -50,7 +53,10 @@ export default async function FeeCalculatorPage({
         </div>
       </header>
 
-      <FeeCalculatorContent data={data} />
+      <FeeCalculatorContent
+        data={data}
+        canMaintain={hasPermission(user, "maintenance:manage")}
+      />
 
       {data.source.status === "error" ? (
         <section className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
