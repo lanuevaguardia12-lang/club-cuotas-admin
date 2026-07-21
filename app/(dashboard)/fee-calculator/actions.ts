@@ -15,10 +15,8 @@ const costSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(2).max(120),
   type: z.enum(["fixed", "court", "coach", "custom"]),
-  startPeriod: periodSchema,
-  endPeriod: periodSchema,
+  period: periodSchema,
   amount: numericSchema.pipe(z.number().min(0)),
-  repeatsMonthly: z.boolean(),
   splitBetween: numericSchema.pipe(z.number().int().min(1)),
   forecastUnits: numericSchema.pipe(z.number().min(0)),
   notes: z.string().trim().max(500).optional(),
@@ -102,8 +100,14 @@ export async function saveFeeCalculatorCost(input: unknown) {
 
   const parsed = costSchema.parse(input);
   const dataService = getDataService();
+  const monthlyCost = {
+    ...parsed,
+    startPeriod: parsed.period,
+    endPeriod: parsed.period,
+    repeatsMonthly: false,
+  };
 
-  await dataService.upsertFeeCalculatorCost(parsed);
+  await dataService.upsertFeeCalculatorCost(monthlyCost);
   if (user) {
     await dataService
       .recordAuditEvent({
@@ -115,8 +119,7 @@ export async function saveFeeCalculatorCost(input: unknown) {
         metadata: {
           name: parsed.name,
           type: parsed.type,
-          startPeriod: parsed.startPeriod,
-          endPeriod: parsed.endPeriod,
+          period: parsed.period,
         },
       })
       .catch(() => undefined);

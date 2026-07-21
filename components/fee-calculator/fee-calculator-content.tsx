@@ -43,23 +43,16 @@ interface FeeCalculatorContentProps {
   data: FeeCalculatorData;
 }
 
-const costSchema = z
-  .object({
-    id: z.string().optional(),
-    name: z.string().trim().min(2, "Ingresá un nombre.").max(120),
-    type: z.enum(["fixed", "court", "coach", "custom"]),
-    startPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes de inicio."),
-    endPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes de fin."),
-    amount: z.number().min(0, "El monto no puede ser negativo."),
-    repeatsMonthly: z.boolean(),
-    splitBetween: z.number().int().min(1, "Debe dividirse por al menos 1."),
-    forecastUnits: z.number().min(0, "La cantidad no puede ser negativa."),
-    notes: z.string().trim().max(500).optional(),
-  })
-  .refine((value) => value.endPeriod >= value.startPeriod, {
-    message: "El mes de fin no puede ser anterior al inicio.",
-    path: ["endPeriod"],
-  });
+const costSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(2, "Ingresá un nombre.").max(120),
+  type: z.enum(["fixed", "court", "coach", "custom"]),
+  period: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes del costo."),
+  amount: z.number().min(0, "El monto no puede ser negativo."),
+  splitBetween: z.number().int().min(1, "Debe dividirse por al menos 1."),
+  forecastUnits: z.number().min(0, "La cantidad no puede ser negativa."),
+  notes: z.string().trim().max(500).optional(),
+});
 
 type CostFormValues = z.infer<typeof costSchema>;
 
@@ -107,8 +100,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
   });
   const selectedType = watch("type");
   const trackedActualCosts = useMemo(
-    () => getTrackedActualCosts(data.costs, data.previousPeriod, data.period),
-    [data.costs, data.period, data.previousPeriod],
+    () => getTrackedActualCosts(data.costs, data.previousPeriod),
+    [data.costs, data.previousPeriod],
   );
   const repeatableCosts = useMemo(
     () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
@@ -214,10 +207,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
       id: cost.id,
       name: cost.name,
       type: cost.type,
-      startPeriod: cost.startPeriod,
-      endPeriod: cost.endPeriod,
+      period: cost.startPeriod,
       amount: cost.amount,
-      repeatsMonthly: cost.repeatsMonthly,
       splitBetween: cost.splitBetween,
       forecastUnits: cost.forecastUnits,
       notes: cost.notes,
@@ -254,10 +245,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
         await saveFeeCalculatorCost({
           name: cost.name,
           type: cost.type,
-          startPeriod: period,
-          endPeriod: period,
+          period,
           amount: cost.amount,
-          repeatsMonthly: false,
           splitBetween: cost.splitBetween,
           forecastUnits: cost.forecastUnits,
           notes: cost.notes,
@@ -388,6 +377,14 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
                   </select>
                 </Field>
 
+                <Field label="Mes del costo" error={errors.period?.message}>
+                  <input
+                    type="month"
+                    {...register("period")}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  />
+                </Field>
+
                 <Field
                   label={
                     selectedType === "court"
@@ -417,22 +414,6 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
                   />
                 </Field>
 
-                <Field label="Vigencia desde" error={errors.startPeriod?.message}>
-                  <input
-                    type="month"
-                    {...register("startPeriod")}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
-                <Field label="Vigencia hasta" error={errors.endPeriod?.message}>
-                  <input
-                    type="month"
-                    {...register("endPeriod")}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
                 <Field
                   label={
                     selectedType === "court"
@@ -451,15 +432,6 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
                     className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
                   />
                 </Field>
-
-                <label className="border-border bg-background flex min-h-10 items-center justify-between gap-3 rounded-md border px-3">
-                  <span className="text-sm font-medium">Repite todos los meses</span>
-                  <input
-                    type="checkbox"
-                    {...register("repeatsMonthly")}
-                    className="accent-primary size-5"
-                  />
-                </label>
               </div>
 
               <Field label="Notas" error={errors.notes?.message}>
@@ -719,7 +691,7 @@ function CostList({
           <div>
             <h2 className="text-lg font-semibold">Costos cargados</h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Estos costos alimentan la cuota base según su vigencia.
+              Estos costos alimentan la cuota base del mes en el que fueron cargados.
             </p>
           </div>
           {canMaintain ? (
@@ -771,7 +743,7 @@ function CostList({
         <div>
           <h2 className="text-lg font-semibold">Costos cargados</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Estos costos alimentan la cuota base según su vigencia.
+            Estos costos alimentan la cuota base del mes en el que fueron cargados.
           </p>
         </div>
         {canMaintain ? (
@@ -797,8 +769,7 @@ function CostList({
                     <Badge variant="secondary">{getCostTypeLabel(cost)}</Badge>
                   </div>
                   <p className="text-muted-foreground mt-1 text-sm">
-                    {cost.startPeriod} a {cost.endPeriod} ·{" "}
-                    {cost.repeatsMonthly ? "mensual" : "una vez"}
+                    {formatPeriod(cost.startPeriod)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -1130,9 +1101,9 @@ function ActualUnitsPanel({
           <div className="border-border rounded-lg border border-dashed p-4">
             <h3 className="font-semibold">Sin cantidades reales para cargar</h3>
             <p className="text-muted-foreground mt-2 text-sm">
-              No hay costos de cancha o DT vigentes en {formatPeriod(data.previousPeriod)}
-              . Para generar ajustes en {formatPeriod(data.period)}, primero tiene que
-              existir ese costo en el mes anterior.
+              No hay costos de cancha o DT cargados en {formatPeriod(data.previousPeriod)}
+              {"."} Para generar ajustes en {formatPeriod(data.period)}, primero copiá o
+              cargá esa estructura en el mes anterior.
             </p>
           </div>
         ) : (
@@ -1551,10 +1522,8 @@ function getDefaultCostValues(data: FeeCalculatorData): CostFormValues {
   return {
     name: "",
     type: "fixed",
-    startPeriod: data.period,
-    endPeriod: data.period,
+    period: data.period,
     amount: 0,
-    repeatsMonthly: true,
     splitBetween: data.summary.players || 1,
     forecastUnits: 1,
     notes: "",
@@ -1574,44 +1543,14 @@ function ruleToEditablePolicyRow(
 }
 
 function isCostActiveInPeriod(cost: FeeCalculatorCost, period: string) {
-  if (cost.repeatsMonthly) {
-    return period >= cost.startPeriod && period <= cost.endPeriod;
-  }
-
   return period === cost.startPeriod;
 }
 
-function getTrackedActualCosts(
-  costs: FeeCalculatorCost[],
-  previousPeriod: string,
-  currentPeriod: string,
-) {
-  const previousCosts = costs.filter(
+function getTrackedActualCosts(costs: FeeCalculatorCost[], previousPeriod: string) {
+  return costs.filter(
     (cost) =>
       Boolean(getAutoActualCostKind(cost)) && isCostActiveInPeriod(cost, previousPeriod),
   );
-  const usedKinds = new Set(
-    previousCosts
-      .map((cost) => getAutoActualCostKind(cost))
-      .filter((kind): kind is "court" | "coach" => Boolean(kind)),
-  );
-  const fallbackCosts = costs.filter((cost) => {
-    const autoActualKind = getAutoActualCostKind(cost);
-
-    if (
-      !autoActualKind ||
-      usedKinds.has(autoActualKind) ||
-      !isCostActiveInPeriod(cost, currentPeriod)
-    ) {
-      return false;
-    }
-
-    usedKinds.add(autoActualKind);
-
-    return true;
-  });
-
-  return [...previousCosts, ...fallbackCosts];
 }
 
 function getRepeatablePeriods(period: string) {

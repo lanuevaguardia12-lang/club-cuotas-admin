@@ -3152,64 +3152,55 @@ function mergeFeeRecords(primaryFees: FeeRecord[], paymentFees: FeeRecord[]) {
 }
 
 function mapRowsToFeeCalculatorCostRecords(rows: unknown[][]): FeeCalculatorCost[] {
-  return rowsToRecords(rows)
-    .map((record, index) => {
-      const startPeriod =
-        normalizePeriod(
-          pick(record, ["vigencia_desde", "desde", "periodo_desde", "start_period"]),
-        ) ?? getCurrentPeriod();
-      const endPeriod =
-        normalizePeriod(
-          pick(record, ["vigencia_hasta", "hasta", "periodo_hasta", "end_period"]),
-        ) ?? startPeriod;
-      const name =
-        pick(record, ["nombre", "name", "costo", "concepto"]) || `Costo ${index + 1}`;
+  return rowsToRecords(rows).map((record, index) => {
+    const startPeriod =
+      normalizePeriod(
+        pick(record, ["vigencia_desde", "desde", "periodo_desde", "start_period"]),
+      ) ?? getCurrentPeriod();
+    const name =
+      pick(record, ["nombre", "name", "costo", "concepto"]) || `Costo ${index + 1}`;
 
-      return {
-        id: pick(record, ["id", "costo_id", "cost_id"]) || `cost-${index + 1}`,
-        name,
-        type: normalizeFeeCalculatorCostType(pick(record, ["tipo", "type"])),
-        startPeriod,
-        endPeriod: endPeriod < startPeriod ? startPeriod : endPeriod,
-        amount: Math.max(
-          parseMoney(pick(record, ["monto", "importe", "amount", "valor"])),
-          0,
-        ),
-        repeatsMonthly: parseLooseBoolean(
-          pick(record, ["repite_mensual", "repite", "mensual", "repeats_monthly"]),
-          true,
-        ),
-        splitBetween: Math.max(
-          Math.round(
-            parseMoney(
-              pick(record, ["dividir_entre", "personas", "split_between", "jugadores"]),
-            ),
-          ),
-          1,
-        ),
-        forecastUnits: Math.max(
+    return {
+      id: pick(record, ["id", "costo_id", "cost_id"]) || `cost-${index + 1}`,
+      name,
+      type: normalizeFeeCalculatorCostType(pick(record, ["tipo", "type"])),
+      startPeriod,
+      endPeriod: startPeriod,
+      amount: Math.max(
+        parseMoney(pick(record, ["monto", "importe", "amount", "valor"])),
+        0,
+      ),
+      repeatsMonthly: false,
+      splitBetween: Math.max(
+        Math.round(
           parseMoney(
-            pick(record, [
-              "cantidad_estimada",
-              "canchas_estimadas",
-              "forecast_units",
-              "cantidad",
-            ]),
-          ) || 1,
-          0,
+            pick(record, ["dividir_entre", "personas", "split_between", "jugadores"]),
+          ),
         ),
-        notes: pick(record, ["notas", "notes", "observaciones", "detalle"]),
-        active: parseLooseBoolean(pick(record, ["activo", "active"]), true),
-        createdAt:
-          parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
-          new Date().toISOString(),
-        updatedAt:
-          parseDateTime(
-            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
-          ) ?? new Date().toISOString(),
-      } satisfies FeeCalculatorCost;
-    })
-    .filter((cost): cost is FeeCalculatorCost => Boolean(cost));
+        1,
+      ),
+      forecastUnits: Math.max(
+        parseMoney(
+          pick(record, [
+            "cantidad_estimada",
+            "canchas_estimadas",
+            "forecast_units",
+            "cantidad",
+          ]),
+        ) || 1,
+        0,
+      ),
+      notes: pick(record, ["notas", "notes", "observaciones", "detalle"]),
+      active: parseLooseBoolean(pick(record, ["activo", "active"]), true),
+      createdAt:
+        parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
+        new Date().toISOString(),
+      updatedAt:
+        parseDateTime(
+          pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+        ) ?? new Date().toISOString(),
+    } satisfies FeeCalculatorCost;
+  });
 }
 
 function mapRowsToFeeCalculatorCosts(rows: unknown[][]): FeeCalculatorCost[] {
@@ -3445,7 +3436,7 @@ function buildFeeCalculatorData({
   );
   const activePlayers = players.filter((player) => activePlayerIds.has(player.id));
   const activeCosts = costs.filter((cost) => cost.active);
-  let effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
+  const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
     (mergedActuals, actualPeriod) =>
       mergeInferredFeeCalculatorActuals(
         activeCosts,
@@ -3454,18 +3445,6 @@ function buildFeeCalculatorData({
         actualPeriod,
       ),
     actuals,
-  );
-  const fallbackActualCosts = getFallbackAutoActualCosts(
-    activeCosts,
-    previousPeriod,
-    period,
-  );
-  effectiveActuals = mergeInferredFeeCalculatorActuals(
-    fallbackActualCosts,
-    effectiveActuals,
-    matches,
-    previousPeriod,
-    false,
   );
   const plannedCurrentQuota = calculateBaseQuotaForPeriod(
     activeCosts,
@@ -3477,7 +3456,6 @@ function buildFeeCalculatorData({
     activeCosts,
     effectiveActuals,
     previousPeriod,
-    period,
   );
   const previousPeriodBaseQuota = calculateAppBaseQuotaForPeriod(
     activeCosts,
@@ -5091,10 +5069,11 @@ function normalizeFeeCalculatorCostInput(
 ): Omit<FeeCalculatorCost, "active" | "createdAt" | "updatedAt"> {
   const startPeriod = normalizePeriod(input.startPeriod);
   const endPeriod = normalizePeriod(input.endPeriod);
+  const period = startPeriod ?? endPeriod;
 
-  if (!startPeriod || !endPeriod) {
+  if (!period) {
     throw new DataServiceError(
-      "La vigencia del costo debe tener formato AAAA-MM.",
+      "El mes del costo debe tener formato AAAA-MM.",
       "CONFIGURATION_ERROR",
     );
   }
@@ -5103,10 +5082,10 @@ function normalizeFeeCalculatorCostInput(
     id: input.id?.trim() ?? "",
     name: input.name.trim(),
     type: input.type,
-    startPeriod,
-    endPeriod: endPeriod < startPeriod ? startPeriod : endPeriod,
+    startPeriod: period,
+    endPeriod: period,
     amount: Math.max(Number(input.amount), 0),
-    repeatsMonthly: Boolean(input.repeatsMonthly),
+    repeatsMonthly: false,
     splitBetween: Math.max(Math.round(Number(input.splitBetween)), 1),
     forecastUnits: Math.max(Number(input.forecastUnits), 0),
     notes: input.notes?.trim() ?? "",
@@ -5459,9 +5438,9 @@ function buildFeeCalculatorAdjustments(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
   period: string,
-  fallbackPeriod?: string,
 ): FeeCalculatorAdjustment[] {
-  return getAdjustmentReferenceCosts(costs, period, fallbackPeriod)
+  return costs
+    .filter((cost) => isCostActiveForPeriod(cost, period))
     .map((cost) => {
       const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
 
@@ -5595,52 +5574,6 @@ function isInferredFeeCalculatorActual(actual: FeeCalculatorActual) {
   );
 }
 
-function getAdjustmentReferenceCosts(
-  costs: FeeCalculatorCost[],
-  period: string,
-  fallbackPeriod?: string,
-) {
-  const periodCosts = costs.filter((cost) => isCostActiveForPeriod(cost, period));
-
-  if (!fallbackPeriod) {
-    return periodCosts;
-  }
-
-  const usedAutoKinds = new Set(
-    periodCosts
-      .map((cost) => getAutoActualCostKind(cost))
-      .filter((kind): kind is "court" | "coach" => Boolean(kind)),
-  );
-  const fallbackCosts = costs.filter((cost) => {
-    const autoActualKind = getAutoActualCostKind(cost);
-
-    if (
-      !autoActualKind ||
-      usedAutoKinds.has(autoActualKind) ||
-      !isCostActiveForPeriod(cost, fallbackPeriod)
-    ) {
-      return false;
-    }
-
-    usedAutoKinds.add(autoActualKind);
-
-    return true;
-  });
-
-  return [...periodCosts, ...fallbackCosts];
-}
-
-function getFallbackAutoActualCosts(
-  costs: FeeCalculatorCost[],
-  period: string,
-  fallbackPeriod: string,
-) {
-  return getAdjustmentReferenceCosts(costs, period, fallbackPeriod).filter(
-    (cost) =>
-      Boolean(getAutoActualCostKind(cost)) && !isCostActiveForPeriod(cost, period),
-  );
-}
-
 function findActualUnitsForCost(
   cost: FeeCalculatorCost,
   costs: FeeCalculatorCost[],
@@ -5751,10 +5684,6 @@ function isLocalMatch(match: MatchRecord) {
 function isCostActiveForPeriod(cost: FeeCalculatorCost, period: string) {
   if (!cost.active) {
     return false;
-  }
-
-  if (cost.repeatsMonthly) {
-    return period >= cost.startPeriod && period <= cost.endPeriod;
   }
 
   return period === cost.startPeriod;
