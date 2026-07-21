@@ -1072,19 +1072,13 @@ export class GoogleSheetsService implements IDataService {
     const headers = normalizeWritableHeaders(headerRow, feeCalculatorCostHeaders);
     const idIndex = findHeaderIndex(headers, ["id", "costo_id"]);
     const targetId = cost.id || createId("cost");
-    const targetRowIndexById =
+    const targetRowIndex =
       idIndex >= 0
         ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === targetId)
         : -1;
-    const targetRowIndex =
-      targetRowIndexById >= 0
-        ? targetRowIndexById
-        : cost.id
-          ? -1
-          : findFeeCalculatorCostRowIndex(headers, dataRows, cost);
 
     if (targetRowIndex >= 0) {
-      const existing = mapRowsToFeeCalculatorCosts([
+      const existing = mapRowsToFeeCalculatorCostRecords([
         headers,
         dataRows[targetRowIndex],
       ])[0];
@@ -3219,60 +3213,17 @@ function mapRowsToFeeCalculatorCostRecords(rows: unknown[][]): FeeCalculatorCost
 }
 
 function mapRowsToFeeCalculatorCosts(rows: unknown[][]): FeeCalculatorCost[] {
-  return dedupeFeeCalculatorCosts(
-    mapRowsToFeeCalculatorCostRecords(rows).filter((cost) => cost.active),
-  ).sort((left, right) => left.name.localeCompare(right.name, "es"));
-}
+  return mapRowsToFeeCalculatorCostRecords(rows)
+    .filter((cost) => cost.active)
+    .sort((left, right) => {
+      const periodComparison = left.startPeriod.localeCompare(right.startPeriod);
 
-function dedupeFeeCalculatorCosts(costs: FeeCalculatorCost[]) {
-  const costsByKey = new Map<string, FeeCalculatorCost>();
+      if (periodComparison !== 0) {
+        return periodComparison;
+      }
 
-  costs.forEach((cost) => {
-    const key = getFeeCalculatorCostNaturalKey(cost);
-    const existing = costsByKey.get(key);
-
-    if (!existing || cost.updatedAt >= existing.updatedAt) {
-      costsByKey.set(key, cost);
-    }
-  });
-
-  return Array.from(costsByKey.values());
-}
-
-function findFeeCalculatorCostRowIndex(
-  headers: string[],
-  rows: unknown[][],
-  cost: Omit<FeeCalculatorCost, "active" | "createdAt" | "updatedAt">,
-) {
-  const targetKey = getFeeCalculatorCostNaturalKey(cost);
-
-  return rows.findIndex((row) => {
-    const [candidate] = mapRowsToFeeCalculatorCostRecords([headers, row]);
-
-    return (
-      Boolean(candidate?.active) &&
-      getFeeCalculatorCostNaturalKey(candidate) === targetKey
-    );
-  });
-}
-
-function getFeeCalculatorCostNaturalKey({
-  endPeriod,
-  name,
-  repeatsMonthly,
-  startPeriod,
-  type,
-}: Pick<
-  FeeCalculatorCost,
-  "endPeriod" | "name" | "repeatsMonthly" | "startPeriod" | "type"
->) {
-  return [
-    normalizeText(name),
-    type,
-    startPeriod,
-    endPeriod,
-    repeatsMonthly ? "monthly" : "once",
-  ].join(":");
+      return left.createdAt.localeCompare(right.createdAt);
+    });
 }
 
 function mapRowsToFeeCalculatorActuals(rows: unknown[][]): FeeCalculatorActual[] {
