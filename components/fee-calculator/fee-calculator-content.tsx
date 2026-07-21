@@ -121,10 +121,13 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
 
   async function handleSaveCost(values: CostFormValues) {
     setSavingMessage("");
-    await saveFeeCalculatorCost(values);
+    const isEditing = Boolean(editingCostName && values.id);
+    const costInput = isEditing ? values : { ...values, id: undefined };
+
+    await saveFeeCalculatorCost(costInput);
     reset(getDefaultCostValues(data));
     setEditingCostName("");
-    setSavingMessage(values.id ? "Costo actualizado" : "Costo guardado");
+    setSavingMessage(isEditing ? "Costo actualizado" : "Costo guardado");
     router.refresh();
     window.setTimeout(() => setSavingMessage(""), 2200);
   }
@@ -1520,6 +1523,7 @@ function TableHead({ children }: { children: React.ReactNode }) {
 
 function getDefaultCostValues(data: FeeCalculatorData): CostFormValues {
   return {
+    id: "",
     name: "",
     type: "fixed",
     period: data.period,

@@ -90,6 +90,15 @@ type RevalidateTagWithProfile = (
 
 const revalidateTagWithProfile = revalidateTag as unknown as RevalidateTagWithProfile;
 
+function revalidateGoogleSheetsTag(tag: string) {
+  try {
+    revalidateTagWithProfile(tag, "max");
+  } catch {
+    // Revalidation is a cache optimization. Data writes must still succeed in
+    // scripts, tests, or server contexts where Next has no static generation store.
+  }
+}
+
 interface GoogleSheetsConfig {
   spreadsheetId?: string;
   clubSpreadsheetId?: string;
@@ -1103,7 +1112,7 @@ export class GoogleSheetsService implements IDataService {
     } else {
       await sheets.spreadsheets.values.append({
         spreadsheetId: feeCalculatorSpreadsheetId,
-        range: this.config.feeCalculatorCostsRange,
+        range: `${sheetPrefix}!A:${toColumnName(headers.length - 1)}`,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: {
@@ -6396,35 +6405,35 @@ function createId(prefix: string) {
 }
 
 function invalidateDashboardCache() {
-  revalidateTagWithProfile("google-sheets", "max");
-  revalidateTagWithProfile("google-sheets:dashboard", "max");
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:dashboard");
 }
 
 function invalidateSettingsCache() {
-  revalidateTagWithProfile("google-sheets", "max");
-  revalidateTagWithProfile("google-sheets:settings", "max");
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:settings");
 }
 
 function invalidatePremiumCache() {
-  revalidateTagWithProfile("google-sheets", "max");
-  revalidateTagWithProfile("google-sheets:premium", "max");
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:premium");
 }
 
 function invalidatePlayersCache() {
-  revalidateTagWithProfile("google-sheets", "max");
-  revalidateTagWithProfile("google-sheets:players", "max");
-  revalidateTagWithProfile("google-sheets:dashboard", "max");
-  revalidateTagWithProfile("google-sheets:fee-calculator", "max");
-  revalidateTagWithProfile("google-sheets:cash-flow", "max");
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:players");
+  revalidateGoogleSheetsTag("google-sheets:dashboard");
+  revalidateGoogleSheetsTag("google-sheets:fee-calculator");
+  revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
 
 function invalidateFeeCalculatorCache() {
-  revalidateTagWithProfile("google-sheets", "max");
-  revalidateTagWithProfile("google-sheets:fee-calculator", "max");
-  revalidateTagWithProfile("google-sheets:cash-flow", "max");
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:fee-calculator");
+  revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
 
 function invalidateCashFlowCache() {
-  revalidateTagWithProfile("google-sheets", "max");
-  revalidateTagWithProfile("google-sheets:cash-flow", "max");
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
