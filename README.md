@@ -194,7 +194,8 @@ STRIPE_SECRET_KEY="replace-with-stripe-secret-key"
 STRIPE_WEBHOOK_SECRET="replace-with-stripe-webhook-secret"
 STRIPE_AMOUNT_MULTIPLIER=100
 
-GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
+GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-app-spreadsheet-id"
+GOOGLE_SHEETS_CLUB_SPREADSHEET_ID="replace-with-club-spreadsheet-id"
 GOOGLE_SHEETS_CLIENT_EMAIL="replace-with-service-account-email"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
 GOOGLE_SHEETS_PLAYERS_RANGE="Jugadores!A:Z"
@@ -212,6 +213,8 @@ GOOGLE_SHEETS_FEE_CALCULATOR_PLAYER_STATUSES_RANGE="CalculadoraJugadores!A:Z"
 GOOGLE_SHEETS_REFUND_POLICY_RANGE="Politica devoluciones!A:C"
 GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_MATCHES_RANGE="Partidos jugados formulario!A:Z"
+GOOGLE_SHEETS_FORM_RESPONSES_RANGE="Respuestas de formulario!A:Z"
+GOOGLE_SHEETS_EXPENSES_RANGE="Gastos nueva guardia!A:Z"
 GOOGLE_SHEETS_CACHE_TTL_SECONDS=300
 ```
 
@@ -353,6 +356,8 @@ Rangos por defecto:
 - `Partidos jugados formulario!A:Z` en el Sheet definido por
   `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID`. Para el calculador actual, este Sheet
   tambien puede ser `GOOGLE_SHEETS_SPREADSHEET_ID`.
+- `Respuestas de formulario!A:Z` y `Gastos nueva guardia!A:Z` en el Sheet
+  definido por `GOOGLE_SHEETS_CLUB_SPREADSHEET_ID`.
 
 ### Planilla operativa La Nueva Guardia
 
@@ -380,6 +385,8 @@ En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
   `Gastos nueva guardia`.
 - El calculador resta al jugador los gastos que haya pagado en el mes anterior,
   matcheando la columna `Pagado por` contra el nombre del jugador.
+- El estado `Pagó` del dashboard sale de `Respuestas de formulario`: se busca el
+  jugador, el `Año` y el `Mes` vigente. Si coinciden con el periodo, figura pago.
 - Si no existe `Configuracion`, la app usa configuracion por defecto y no rompe
   la pantalla.
 
@@ -512,15 +519,21 @@ en `CalculadoraJugadores!A:Z`, asi un jugador puede no pagar un periodo sin qued
 dado de baja del listado general. Si un jugador no tiene override en ese mes, se
 considera activo por defecto.
 
-Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` es la base operativa. La
-app lee de ahi los partidos y tambien guarda ahi las hojas `Jugadores`,
-`CalculadoraCostos`, `CalculadoraReales` y `Politica devoluciones`.
+Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` define la hoja de
+partidos. `GOOGLE_SHEETS_CLUB_SPREADSHEET_ID` define la planilla operativa del
+club para pagos (`Respuestas de formulario`) y gastos (`Gastos nueva guardia`).
+La app guarda el ABM y el calculador en las hojas `Jugadores`, `CalculadoraCostos`,
+`CalculadoraReales` y `Politica devoluciones`.
 
 La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo
 divide por `dividir_entre`.
 
 Los montos de costos aceptan decimales finos, por ejemplo `1473.684211`.
+
+Los gastos personales cargados en `Gastos nueva guardia` se aplican siempre a mes
+vencido. Si el jugador pago un gasto en julio, el calculador lo descuenta como
+ajuste individual en la cuota de agosto.
 
 Los tipos especiales autocompletan la cantidad real del mes anterior al periodo
 seleccionado. Por ejemplo, al calcular agosto 2026, las canchas reales y horas

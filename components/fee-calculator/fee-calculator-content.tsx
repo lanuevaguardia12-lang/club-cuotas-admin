@@ -1286,13 +1286,14 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       ) : (
         <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead className="bg-muted/60">
                 <tr className="border-border border-b">
                   <TableHead>Jugador</TableHead>
                   <TableHead>Base</TableHead>
                   <TableHead>Partidos</TableHead>
                   <TableHead>Devolución</TableHead>
+                  <TableHead>Gastos</TableHead>
                   <TableHead>Cuota final</TableHead>
                 </tr>
               </thead>
@@ -1312,6 +1313,15 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                       <p className="text-muted-foreground text-xs">
                         {formatPercent(row.refundPercent / 100)}
                       </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.expenseCredit > 0 ? (
+                        <Badge variant="success">
+                          -{formatCurrency(row.expenseCredit)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-base font-semibold">
                       {formatCurrency(row.finalQuota)}
@@ -1346,6 +1356,14 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <Info label="Base" value={formatCurrency(row.baseQuota)} />
                   <Info label="Devolución" value={formatCurrency(row.refundAmount)} />
+                  <Info
+                    label="Gastos"
+                    value={
+                      row.expenseCredit > 0
+                        ? `-${formatCurrency(row.expenseCredit)}`
+                        : "-"
+                    }
+                  />
                   <Info label="Asistencia" value={formatPercent(row.attendanceRate)} />
                 </div>
                 <MatchDetails row={row} />

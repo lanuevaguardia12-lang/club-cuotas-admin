@@ -92,6 +92,7 @@ const revalidateTagWithProfile = revalidateTag as unknown as RevalidateTagWithPr
 
 interface GoogleSheetsConfig {
   spreadsheetId?: string;
+  clubSpreadsheetId?: string;
   clientEmail?: string;
   privateKey?: string;
   playersRange: string;
@@ -108,6 +109,8 @@ interface GoogleSheetsConfig {
   feeCalculatorPlayerStatusesRange: string;
   matchesSpreadsheetId?: string;
   matchesRange: string;
+  formResponsesRange: string;
+  expensesRange: string;
   refundPolicyRange: string;
   cacheTtlSeconds: number;
 }
@@ -191,14 +194,16 @@ const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
 const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
 const DEFAULT_MATCHES_RANGE = "Partidos jugados formulario!A:Z";
+const DEFAULT_FORM_RESPONSES_RANGE = "Respuestas de formulario!A:Z";
+const DEFAULT_EXPENSES_RANGE = "Gastos nueva guardia!A:Z";
 const DEFAULT_REFUND_POLICY_RANGE = "Politica devoluciones!A:C";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 const CLUB_PLAYERS_RANGE = "Listado jugadores!A:Z";
 const CLUB_TRACKING_RANGE = "Seguimiento!A:Z";
 const CLUB_FINAL_FEE_RANGE = "Cuota final por jugador!A:Z";
-const CLUB_FORM_RESPONSES_RANGE = "Respuestas de formulario!A:Z";
-const CLUB_EXPENSES_RANGE = "Gastos nueva guardia!A:Z";
+const CLUB_FORM_RESPONSES_RANGE = DEFAULT_FORM_RESPONSES_RANGE;
+const CLUB_FORM_RESPONSE_RANGE = "Respuesta de formulario!A:Z";
 
 const auditHeaders = [
   "id",
@@ -335,9 +340,15 @@ export class GoogleSheetsService implements IDataService {
       config.matchesSpreadsheetId ??
       process.env.GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID ??
       spreadsheetId;
+    const clubSpreadsheetId =
+      config.clubSpreadsheetId ??
+      process.env.GOOGLE_SHEETS_CLUB_SPREADSHEET_ID ??
+      process.env.GOOGLE_SHEETS_PAYMENTS_SPREADSHEET_ID ??
+      spreadsheetId;
 
     this.config = {
       spreadsheetId,
+      clubSpreadsheetId,
       clientEmail: config.clientEmail ?? process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
       privateKey: config.privateKey ?? process.env.GOOGLE_SHEETS_PRIVATE_KEY,
       playersRange:
@@ -387,6 +398,15 @@ export class GoogleSheetsService implements IDataService {
         config.matchesRange ??
         process.env.GOOGLE_SHEETS_MATCHES_RANGE ??
         DEFAULT_MATCHES_RANGE,
+      formResponsesRange:
+        config.formResponsesRange ??
+        process.env.GOOGLE_SHEETS_FORM_RESPONSES_RANGE ??
+        DEFAULT_FORM_RESPONSES_RANGE,
+      expensesRange:
+        config.expensesRange ??
+        process.env.GOOGLE_SHEETS_EXPENSES_RANGE ??
+        process.env.GOOGLE_SHEETS_CLUB_EXPENSES_RANGE ??
+        DEFAULT_EXPENSES_RANGE,
       refundPolicyRange:
         config.refundPolicyRange ??
         process.env.GOOGLE_SHEETS_REFUND_POLICY_RANGE ??
@@ -1005,10 +1025,16 @@ export class GoogleSheetsService implements IDataService {
     const headers = normalizeWritableHeaders(headerRow, feeCalculatorCostHeaders);
     const idIndex = findHeaderIndex(headers, ["id", "costo_id"]);
     const targetId = cost.id || createId("cost");
-    const targetRowIndex =
+    const targetRowIndexById =
       idIndex >= 0
         ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === targetId)
         : -1;
+    const targetRowIndex =
+      targetRowIndexById >= 0
+        ? targetRowIndexById
+        : cost.id
+          ? -1
+          : findFeeCalculatorCostRowIndex(headers, dataRows, cost);
 
     if (targetRowIndex >= 0) {
       const existing = mapRowsToFeeCalculatorCosts([
@@ -1025,7 +1051,7 @@ export class GoogleSheetsService implements IDataService {
           values: [
             buildFeeCalculatorCostWritableRow(headers, {
               ...cost,
-              id: targetId,
+              id: existing?.id || targetId,
               active: existing?.active ?? true,
               createdAt: existing?.createdAt || now,
               updatedAt: now,
@@ -1711,6 +1737,7 @@ export class GoogleSheetsService implements IDataService {
   private async readCachedDashboardRows() {
     const spreadsheetId = this.config.spreadsheetId;
     const playersSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const clubSpreadsheetId = this.getClubSpreadsheetId();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -1723,13 +1750,16 @@ export class GoogleSheetsService implements IDataService {
       async () => ({
         playersRows: await this.readPlayerDirectoryRows(playersSpreadsheetId),
         feesRows: await this.readOptionalValues(this.config.feesRange),
+        formResponseRows: await this.readFormResponseRows(clubSpreadsheetId),
       }),
       [
         "google-sheets-dashboard",
         spreadsheetId,
         playersSpreadsheetId,
+        clubSpreadsheetId,
         this.config.playersRange,
         this.config.feesRange,
+        this.config.formResponsesRange,
       ],
       {
         revalidate: this.config.cacheTtlSeconds,
@@ -1826,7 +1856,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedClubDashboardRows() {
-    const spreadsheetId = this.config.spreadsheetId;
+    const spreadsheetId = this.getClubSpreadsheetId();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -1837,10 +1867,19 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readValues(CLUB_PLAYERS_RANGE),
-        trackingRows: await this.readValues(CLUB_TRACKING_RANGE),
-        finalFeeRows: await this.readValues(CLUB_FINAL_FEE_RANGE),
-        formResponseRows: await this.readOptionalValues(CLUB_FORM_RESPONSES_RANGE),
+        playersRows: await this.readValuesFromSpreadsheet(
+          spreadsheetId,
+          CLUB_PLAYERS_RANGE,
+        ),
+        trackingRows: await this.readValuesFromSpreadsheet(
+          spreadsheetId,
+          CLUB_TRACKING_RANGE,
+        ),
+        finalFeeRows: await this.readValuesFromSpreadsheet(
+          spreadsheetId,
+          CLUB_FINAL_FEE_RANGE,
+        ),
+        formResponseRows: await this.readFormResponseRows(spreadsheetId),
       }),
       [
         "google-sheets-club-dashboard",
@@ -1848,7 +1887,7 @@ export class GoogleSheetsService implements IDataService {
         CLUB_PLAYERS_RANGE,
         CLUB_TRACKING_RANGE,
         CLUB_FINAL_FEE_RANGE,
-        CLUB_FORM_RESPONSES_RANGE,
+        this.config.formResponsesRange,
       ],
       {
         revalidate: this.config.cacheTtlSeconds,
@@ -1882,7 +1921,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedClubFinancialRows() {
-    const spreadsheetId = this.config.spreadsheetId;
+    const spreadsheetId = this.getClubSpreadsheetId();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -1893,11 +1932,23 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readValues(CLUB_PLAYERS_RANGE),
-        trackingRows: await this.readValues(CLUB_TRACKING_RANGE),
-        finalFeeRows: await this.readValues(CLUB_FINAL_FEE_RANGE),
-        formResponseRows: await this.readOptionalValues(CLUB_FORM_RESPONSES_RANGE),
-        expenseRows: await this.readOptionalValues(CLUB_EXPENSES_RANGE),
+        playersRows: await this.readValuesFromSpreadsheet(
+          spreadsheetId,
+          CLUB_PLAYERS_RANGE,
+        ),
+        trackingRows: await this.readValuesFromSpreadsheet(
+          spreadsheetId,
+          CLUB_TRACKING_RANGE,
+        ),
+        finalFeeRows: await this.readValuesFromSpreadsheet(
+          spreadsheetId,
+          CLUB_FINAL_FEE_RANGE,
+        ),
+        formResponseRows: await this.readFormResponseRows(spreadsheetId),
+        expenseRows: await this.readOptionalValuesFromSpreadsheet(
+          spreadsheetId,
+          this.config.expensesRange,
+        ),
       }),
       [
         "google-sheets-club-financial",
@@ -1905,8 +1956,8 @@ export class GoogleSheetsService implements IDataService {
         CLUB_PLAYERS_RANGE,
         CLUB_TRACKING_RANGE,
         CLUB_FINAL_FEE_RANGE,
-        CLUB_FORM_RESPONSES_RANGE,
-        CLUB_EXPENSES_RANGE,
+        this.config.formResponsesRange,
+        this.config.expensesRange,
       ],
       {
         revalidate: this.config.cacheTtlSeconds,
@@ -1919,6 +1970,7 @@ export class GoogleSheetsService implements IDataService {
     const spreadsheetId = this.config.spreadsheetId;
     const matchesSpreadsheetId = this.config.matchesSpreadsheetId;
     const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const clubSpreadsheetId = this.getClubSpreadsheetId();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -1952,19 +2004,24 @@ export class GoogleSheetsService implements IDataService {
               this.config.matchesRange,
             )
           : [],
-        expenseRows: [],
+        expenseRows: await this.readOptionalValuesFromSpreadsheet(
+          clubSpreadsheetId,
+          this.config.expensesRange,
+        ),
       }),
       [
         "google-sheets-fee-calculator",
         spreadsheetId,
         matchesSpreadsheetId ?? "",
         feeCalculatorSpreadsheetId,
+        clubSpreadsheetId,
         this.config.playersRange,
         this.config.feeCalculatorCostsRange,
         this.config.feeCalculatorActualsRange,
         this.config.feeCalculatorPlayerStatusesRange,
         this.config.refundPolicyRange,
         this.config.matchesRange,
+        this.config.expensesRange,
       ],
       {
         revalidate: this.config.cacheTtlSeconds,
@@ -2013,6 +2070,25 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
+  private async readFormResponseRows(spreadsheetId: string) {
+    const configuredRows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.formResponsesRange,
+    );
+
+    if (
+      configuredRows.length > 0 ||
+      this.config.formResponsesRange !== CLUB_FORM_RESPONSES_RANGE
+    ) {
+      return configuredRows;
+    }
+
+    return this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      CLUB_FORM_RESPONSE_RANGE,
+    );
+  }
+
   private async readPlayerDirectoryRows(spreadsheetId: string) {
     return this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
@@ -2022,6 +2098,19 @@ export class GoogleSheetsService implements IDataService {
 
   private getWritablePlayersRange() {
     return this.config.playersRange;
+  }
+
+  private getClubSpreadsheetId() {
+    const spreadsheetId = this.config.clubSpreadsheetId ?? this.config.spreadsheetId;
+
+    if (!spreadsheetId) {
+      throw new DataServiceError(
+        "GOOGLE_SHEETS_CLUB_SPREADSHEET_ID no esta configurado.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    return spreadsheetId;
   }
 
   private getFeeCalculatorSpreadsheetId() {
@@ -2085,12 +2174,15 @@ export class GoogleSheetsService implements IDataService {
     range: string,
     headers: string[],
     row: Array<string | number | boolean>,
+    spreadsheetId = this.config.spreadsheetId,
   ) {
-    const values = await this.readValues(range).catch(() => []);
+    const values = await this.readValuesFromSpreadsheet(spreadsheetId, range).catch(
+      () => [],
+    );
     const sheets = this.createSheetsClient();
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: this.config.spreadsheetId,
+      spreadsheetId,
       range,
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
@@ -2209,14 +2301,18 @@ export class GoogleSheetsService implements IDataService {
 
   private async readDashboardRecords(): Promise<DashboardRecords> {
     try {
-      const { playersRows, feesRows } = await this.readCachedDashboardRows();
+      const { playersRows, feesRows, formResponseRows } =
+        await this.readCachedDashboardRows();
       const players = mapRowsToPlayers(playersRows);
-      const fees = mapRowsToFees(feesRows);
+      const fees = mergeFeeRecords(
+        mapRowsToFees(feesRows),
+        mapFormResponsesToPaidFees(players, formResponseRows),
+      );
 
       return {
         players,
         fees,
-        message: "Datos obtenidos desde Google Sheets.",
+        message: "Datos obtenidos desde Google Sheets y pagos del formulario.",
       };
     } catch (error) {
       if (!shouldUseClubSheetLayout(error)) {
@@ -2303,7 +2399,7 @@ export class GoogleSheetsService implements IDataService {
     }
 
     await this.appendRowsWithHeaders(
-      CLUB_FORM_RESPONSES_RANGE,
+      this.config.formResponsesRange,
       [
         "Marca temporal ",
         "Nombren del jugador ",
@@ -2322,6 +2418,7 @@ export class GoogleSheetsService implements IDataService {
         "",
         "Marcado desde la app",
       ],
+      this.getClubSpreadsheetId(),
     );
 
     invalidateDashboardCache();
@@ -2770,9 +2867,10 @@ function mapClubRowsToFees({
         player?.monthlyFee ??
         0;
       const paidAt = paymentsByPlayerPeriod.get(`${normalizedName}:${period}`);
-      const status = isClubPaidStatus(rawStatus)
-        ? "paid"
-        : normalizeFeeStatus("pendiente", dueDate, today);
+      const status =
+        paidAt || isClubPaidStatus(rawStatus)
+          ? "paid"
+          : normalizeFeeStatus("pendiente", dueDate, today);
 
       playerFees.push({
         id: `fee-${playerId}-${period}`,
@@ -2884,11 +2982,22 @@ function mapClubPaymentsByPlayerPeriod(rows: unknown[][]) {
       "nombren_del_jugador",
       "nombre_del_jugador",
       "nombre_jugador",
+      "nombre_y_apellido",
       "jugador",
       "nombre",
+      "player",
     ]);
-    const year = Number(pick(record, ["ano", "anio", "year"]));
-    const month = monthNameToNumber(pick(record, ["mes", "month"]));
+    const year = Number(pick(record, ["ano", "anio", "year", "ano_vigente"]));
+    const month = monthNameToNumber(
+      pick(record, [
+        "mes",
+        "mes_vigente",
+        "mes_de_la_cuota",
+        "mes_cuota",
+        "mes_pago",
+        "month",
+      ]),
+    );
     const paidAt =
       parseClubDateTime(pick(record, ["marca_temporal", "timestamp", "fecha"])) ??
       getTodayIsoDate();
@@ -2904,7 +3013,59 @@ function mapClubPaymentsByPlayerPeriod(rows: unknown[][]) {
   return payments;
 }
 
-function mapRowsToFeeCalculatorCosts(rows: unknown[][]): FeeCalculatorCost[] {
+function mapFormResponsesToPaidFees(
+  players: PlayerRecord[],
+  rows: unknown[][],
+): FeeRecord[] {
+  const paymentsByPlayerPeriod = mapClubPaymentsByPlayerPeriod(rows);
+  const playersByName = new Map(
+    players.map((player) => [normalizeClubPlayerName(player.name), player]),
+  );
+
+  return Array.from(paymentsByPlayerPeriod.entries()).flatMap(([key, paidAt]) => {
+    const [normalizedName, period] = key.split(":");
+    const player = playersByName.get(normalizedName);
+
+    if (!player || !period) {
+      return [];
+    }
+
+    return {
+      id: `form-payment-${player.id}-${period}`,
+      playerId: player.id,
+      period,
+      amount: 0,
+      status: "paid",
+      dueDate: `${period}-10`,
+      paidAt,
+    } satisfies FeeRecord;
+  });
+}
+
+function mergeFeeRecords(primaryFees: FeeRecord[], paymentFees: FeeRecord[]) {
+  const feesByKey = new Map<string, FeeRecord>();
+
+  primaryFees.forEach((fee) => {
+    feesByKey.set(`${fee.playerId}:${fee.period}`, fee);
+  });
+
+  paymentFees.forEach((paymentFee) => {
+    const key = `${paymentFee.playerId}:${paymentFee.period}`;
+    const existing = feesByKey.get(key);
+
+    feesByKey.set(key, {
+      ...existing,
+      ...paymentFee,
+      amount: Math.max(existing?.amount ?? 0, paymentFee.amount),
+      status: "paid",
+      paidAt: paymentFee.paidAt || existing?.paidAt,
+    });
+  });
+
+  return Array.from(feesByKey.values());
+}
+
+function mapRowsToFeeCalculatorCostRecords(rows: unknown[][]): FeeCalculatorCost[] {
   return rowsToRecords(rows)
     .map((record, index) => {
       const startPeriod =
@@ -2962,8 +3123,64 @@ function mapRowsToFeeCalculatorCosts(rows: unknown[][]): FeeCalculatorCost[] {
           ) ?? new Date().toISOString(),
       } satisfies FeeCalculatorCost;
     })
-    .filter((cost) => cost.active)
-    .sort((left, right) => left.name.localeCompare(right.name, "es"));
+    .filter((cost): cost is FeeCalculatorCost => Boolean(cost));
+}
+
+function mapRowsToFeeCalculatorCosts(rows: unknown[][]): FeeCalculatorCost[] {
+  return dedupeFeeCalculatorCosts(
+    mapRowsToFeeCalculatorCostRecords(rows).filter((cost) => cost.active),
+  ).sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
+function dedupeFeeCalculatorCosts(costs: FeeCalculatorCost[]) {
+  const costsByKey = new Map<string, FeeCalculatorCost>();
+
+  costs.forEach((cost) => {
+    const key = getFeeCalculatorCostNaturalKey(cost);
+    const existing = costsByKey.get(key);
+
+    if (!existing || cost.updatedAt >= existing.updatedAt) {
+      costsByKey.set(key, cost);
+    }
+  });
+
+  return Array.from(costsByKey.values());
+}
+
+function findFeeCalculatorCostRowIndex(
+  headers: string[],
+  rows: unknown[][],
+  cost: Omit<FeeCalculatorCost, "active" | "createdAt" | "updatedAt">,
+) {
+  const targetKey = getFeeCalculatorCostNaturalKey(cost);
+
+  return rows.findIndex((row) => {
+    const [candidate] = mapRowsToFeeCalculatorCostRecords([headers, row]);
+
+    return (
+      Boolean(candidate?.active) &&
+      getFeeCalculatorCostNaturalKey(candidate) === targetKey
+    );
+  });
+}
+
+function getFeeCalculatorCostNaturalKey({
+  endPeriod,
+  name,
+  repeatsMonthly,
+  startPeriod,
+  type,
+}: Pick<
+  FeeCalculatorCost,
+  "endPeriod" | "name" | "repeatsMonthly" | "startPeriod" | "type"
+>) {
+  return [
+    normalizeText(name),
+    type,
+    startPeriod,
+    endPeriod,
+    repeatsMonthly ? "monthly" : "once",
+  ].join(":");
 }
 
 function mapRowsToFeeCalculatorActuals(rows: unknown[][]): FeeCalculatorActual[] {
@@ -4470,7 +4687,6 @@ function buildPlayerTableRows(
     const calculatedFee =
       feeCalculationsByPlayerId.get(player.id) ??
       feeCalculationsByPlayerName.get(normalizeClubPlayerName(player.name));
-    const status = getPlayerPaymentStatus(playerFees, currentFee, latestFee);
     const feeAmount =
       calculatedFee?.finalQuota ?? currentFee?.amount ?? player.monthlyFee ?? 0;
     const feeSource = calculatedFee
@@ -4480,6 +4696,12 @@ function buildPlayerTableRows(
         : player.monthlyFee
           ? "player"
           : "none";
+    const status = getPlayerPaymentStatus(
+      playerFees,
+      currentFee,
+      latestFee,
+      feeSource !== "none",
+    );
 
     return {
       id: player.id,
@@ -4608,12 +4830,21 @@ function getPlayerPaymentStatus(
   fees: FeeRecord[],
   currentFee?: FeeRecord,
   latestFee?: FeeRecord,
+  hasCurrentCharge = false,
 ): PlayerPaymentStatus {
+  if (currentFee?.status === "paid") {
+    return "paid";
+  }
+
+  if (hasCurrentCharge && !currentFee) {
+    return "pending";
+  }
+
   if (fees.some((fee) => fee.status === "overdue")) {
     return "debt";
   }
 
-  if (currentFee?.status === "paid" || (!currentFee && latestFee?.status === "paid")) {
+  if (!currentFee && latestFee?.status === "paid") {
     return "paid";
   }
 
@@ -5439,6 +5670,13 @@ function isChargeableClubStatus(value: string) {
 
 function monthNameToNumber(value: string) {
   const month = normalizeText(value);
+
+  if (/^\d{1,2}$/.test(month)) {
+    const parsed = Number(month);
+
+    return parsed >= 1 && parsed <= 12 ? parsed : undefined;
+  }
+
   const months = [
     "enero",
     "febrero",
