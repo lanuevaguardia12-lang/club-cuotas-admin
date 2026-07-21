@@ -744,7 +744,7 @@ export class GoogleSheetsService implements IDataService {
           description:
             players.length === 0
               ? "Cargá jugadores para que el calculador pueda calcular cuotas aunque todavía no hayan jugado partidos."
-              : "Jugadores administrados desde la hoja Listado jugadores.",
+              : "Jugadores administrados desde el ABM de la app.",
         },
         source: {
           provider: "google-sheets",
@@ -781,7 +781,7 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
-    const playersRange = await this.getWritablePlayersRange(spreadsheetId);
+    const playersRange = this.getWritablePlayersRange();
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
       playersRange,
@@ -859,7 +859,7 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
-    const playersRange = await this.getWritablePlayersRange(spreadsheetId);
+    const playersRange = this.getWritablePlayersRange();
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
       playersRange,
@@ -1721,14 +1721,13 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readPreferredPlayerRows(playersSpreadsheetId),
+        playersRows: await this.readPlayerDirectoryRows(playersSpreadsheetId),
         feesRows: await this.readOptionalValues(this.config.feesRange),
       }),
       [
         "google-sheets-dashboard",
         spreadsheetId,
         playersSpreadsheetId,
-        CLUB_PLAYERS_RANGE,
         this.config.playersRange,
         this.config.feesRange,
       ],
@@ -1743,13 +1742,8 @@ export class GoogleSheetsService implements IDataService {
     const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
 
     return unstable_cache(
-      async () => this.readPreferredPlayerRows(spreadsheetId),
-      [
-        "google-sheets-players",
-        spreadsheetId,
-        CLUB_PLAYERS_RANGE,
-        this.config.playersRange,
-      ],
+      async () => this.readPlayerDirectoryRows(spreadsheetId),
+      ["google-sheets-players", spreadsheetId, this.config.playersRange],
       {
         revalidate: this.config.cacheTtlSeconds,
         tags: ["google-sheets", "google-sheets:players"],
@@ -1935,7 +1929,7 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readPreferredPlayerRows(feeCalculatorSpreadsheetId),
+        playersRows: await this.readPlayerDirectoryRows(feeCalculatorSpreadsheetId),
         costsRows: await this.readOptionalValuesFromSpreadsheet(
           feeCalculatorSpreadsheetId,
           this.config.feeCalculatorCostsRange,
@@ -1965,7 +1959,6 @@ export class GoogleSheetsService implements IDataService {
         spreadsheetId,
         matchesSpreadsheetId ?? "",
         feeCalculatorSpreadsheetId,
-        CLUB_PLAYERS_RANGE,
         this.config.playersRange,
         this.config.feeCalculatorCostsRange,
         this.config.feeCalculatorActualsRange,
@@ -2020,39 +2013,15 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
-  private async readPreferredPlayerRows(spreadsheetId: string) {
-    if (this.config.playersRange === CLUB_PLAYERS_RANGE) {
-      return this.readOptionalValuesFromSpreadsheet(spreadsheetId, CLUB_PLAYERS_RANGE);
-    }
-
-    const clubPlayerRows = await this.readOptionalValuesFromSpreadsheet(
-      spreadsheetId,
-      CLUB_PLAYERS_RANGE,
-    );
-
-    if (hasUsablePlayerRows(clubPlayerRows)) {
-      return clubPlayerRows;
-    }
-
+  private async readPlayerDirectoryRows(spreadsheetId: string) {
     return this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
       this.config.playersRange,
     );
   }
 
-  private async getWritablePlayersRange(spreadsheetId: string) {
-    if (this.config.playersRange === CLUB_PLAYERS_RANGE) {
-      return CLUB_PLAYERS_RANGE;
-    }
-
-    const clubPlayerRows = await this.readOptionalValuesFromSpreadsheet(
-      spreadsheetId,
-      CLUB_PLAYERS_RANGE,
-    );
-
-    return clubPlayerRows.length > 0 || this.config.playersRange === DEFAULT_PLAYERS_RANGE
-      ? CLUB_PLAYERS_RANGE
-      : this.config.playersRange;
+  private getWritablePlayersRange() {
+    return this.config.playersRange;
   }
 
   private getFeeCalculatorSpreadsheetId() {
@@ -2221,7 +2190,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readPlayerMonthlyFee(playerId: string) {
-    const playersRows = await this.readPreferredPlayerRows(
+    const playersRows = await this.readPlayerDirectoryRows(
       this.getFeeCalculatorSpreadsheetId(),
     );
     const player = mapRowsToPlayers(playersRows).find(
@@ -2474,21 +2443,6 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
     })
     .filter((player): player is PlayerDirectoryItem => Boolean(player))
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
-}
-
-function hasUsablePlayerRows(rows: unknown[][]) {
-  return rowsToRecords(rows).some((record) =>
-    Boolean(
-      pick(record, [
-        "nombre_y_apellido",
-        "nombre_apellido",
-        "nombre",
-        "name",
-        "jugador",
-        "player",
-      ]).trim(),
-    ),
-  );
 }
 
 function findPlayerDirectoryRowIndex(

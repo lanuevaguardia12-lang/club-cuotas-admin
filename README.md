@@ -197,7 +197,7 @@ STRIPE_AMOUNT_MULTIPLIER=100
 GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_CLIENT_EMAIL="replace-with-service-account-email"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
-GOOGLE_SHEETS_PLAYERS_RANGE="Listado jugadores!A:Z"
+GOOGLE_SHEETS_PLAYERS_RANGE="Jugadores!A:Z"
 GOOGLE_SHEETS_FEES_RANGE="Cuotas!A:Z"
 GOOGLE_SHEETS_CASH_FLOW_RANGE="CashFlow!A:Z"
 GOOGLE_SHEETS_SETTINGS_RANGE="Configuracion!A:B"
@@ -337,7 +337,7 @@ Archivos principales:
 
 Rangos por defecto:
 
-- `Listado jugadores!A:Z` como padron editable de jugadores
+- `Jugadores!A:Z` como persistencia del ABM de jugadores
 - `Cuotas!A:Z` para estados de pago heredados, opcional para el calculador
 - `CashFlow!A:Z`
 - `Configuracion!A:B`
@@ -357,10 +357,11 @@ Rangos por defecto:
 ### Planilla operativa La Nueva Guardia
 
 La aplicacion soporta la planilla operativa actual del club sin duplicar carga
-manual. El padron principal se lee desde `Listado jugadores`; si existen hojas
-normalizadas adicionales como `Cuotas` o `CashFlow`, tambien puede combinarlas:
+manual. El padron principal es el ABM de la app, persistido por defecto en
+`Jugadores!A:Z`; si existen hojas legacy adicionales como `Listado jugadores`,
+`Cuotas` o `CashFlow`, tambien puede combinarlas:
 
-- `Listado jugadores!A:Z`: nombres, telefonos y emails.
+- `Listado jugadores!A:Z`: fallback legacy de nombres, telefonos y emails.
 - `Seguimiento!A:Z`: matriz anual con estados `Pago`, `Pagó`,
   `Enviar recordatorio` y `No se cobra`.
 - `Cuota final por jugador!A:Z`: matriz anual con el importe calculado por mes.
@@ -370,9 +371,9 @@ normalizadas adicionales como `Cuotas` o `CashFlow`, tambien puede combinarlas:
 
 En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
 
-- La app arma los jugadores desde `Listado jugadores`.
-- El calculador actual usa `Listado jugadores` como padron y deja de depender del
-  Sheet viejo de cuotas.
+- La app arma los jugadores desde el ABM `/players`.
+- El calculador actual usa ese mismo padron del ABM y deja de depender del Sheet
+  viejo de cuotas.
 - Los telefonos locales como `1154012398` se normalizan internamente a formato
   WhatsApp Argentina (`549...`).
 - Los ingresos de Cash Flow salen de cuotas pagadas y los gastos de
@@ -502,9 +503,9 @@ cuota final =
   - devolucion por asistencia del mes anterior sobre la cuota base anterior
 ```
 
-El calculador toma el padron desde `Listado jugadores`, editable desde
-`/players`, y usa la hoja de partidos solo para asistencia, rivales, canchas
-locales reales y asistencia del DT.
+El calculador toma el padron desde el ABM `/players`, persistido por
+`GOOGLE_SHEETS_PLAYERS_RANGE`, y usa la hoja de partidos solo para asistencia,
+rivales, canchas locales reales y asistencia del DT.
 
 El estado `activo` o `inactivo` no pertenece al padron global. Se guarda por mes
 en `CalculadoraJugadores!A:Z`, asi un jugador puede no pagar un periodo sin quedar

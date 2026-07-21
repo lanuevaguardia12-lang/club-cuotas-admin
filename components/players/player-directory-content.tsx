@@ -129,7 +129,7 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
           icon={UsersRound}
           label="Total jugadores"
           value={String(data.players.length)}
-          detail="Listado jugadores"
+          detail="ABM de la app"
         />
         <MetricCard
           icon={Mail}

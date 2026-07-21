@@ -534,8 +534,8 @@ function FeeCalculatorNotice({
         <CardContent className="p-5">
           <h2 className="text-destructive font-semibold">No hay jugadores activos</h2>
           <p className="text-destructive/90 mt-2 text-sm">
-            El calculador usa la base de la hoja Listado jugadores. Cargá jugadores en la
-            sección Jugadores y verificá que la Service Account tenga acceso al Sheet.
+            El calculador usa la base cargada en la sección Jugadores. Cargá jugadores
+            desde ese ABM y verificá que la Service Account tenga acceso al Sheet.
           </p>
         </CardContent>
       </Card>
