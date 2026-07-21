@@ -48,10 +48,11 @@ const refundPolicySchema = z.object({
 });
 
 const calculatorPlayerStatusSchema = z.object({
-  id: z.string().trim().min(1),
-  name: z.string().trim().min(2).max(120),
-  category: z.string().trim().max(80).optional(),
+  playerId: z.string().trim().min(1),
+  playerName: z.string().trim().min(2).max(120),
+  period: periodSchema,
   status: z.enum(["active", "inactive"]),
+  notes: z.string().trim().max(500).optional(),
 });
 
 export async function saveFeeCalculatorCost(input: unknown) {
@@ -177,12 +178,7 @@ export async function updateFeeCalculatorPlayerStatus(input: unknown) {
   const parsed = calculatorPlayerStatusSchema.parse(input);
   const dataService = getDataService();
 
-  await dataService.upsertPlayer({
-    id: parsed.id,
-    name: parsed.name,
-    category: parsed.category,
-    status: parsed.status,
-  });
+  await dataService.updateFeeCalculatorPlayerStatus(parsed);
 
   if (user) {
     await dataService
@@ -190,10 +186,11 @@ export async function updateFeeCalculatorPlayerStatus(input: unknown) {
         actor: userToAuditActor(user),
         action: "api.request",
         entityType: "player",
-        entityId: parsed.id,
-        summary: "Estado de jugador actualizado desde el calculador.",
+        entityId: `${parsed.playerId}:${parsed.period}`,
+        summary: "Estado mensual del jugador actualizado desde el calculador.",
         metadata: {
-          name: parsed.name,
+          name: parsed.playerName,
+          period: parsed.period,
           status: parsed.status,
         },
       })

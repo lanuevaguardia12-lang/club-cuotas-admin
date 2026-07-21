@@ -280,6 +280,13 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async updateFeeCalculatorPlayerStatus(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async updateFeeRefundPolicy(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",

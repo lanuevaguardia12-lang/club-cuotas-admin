@@ -9,9 +9,9 @@ import {
   Save,
   Search,
   Trash2,
-  UserCheck,
   UsersRound,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -19,14 +19,9 @@ import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 import { deletePlayer, savePlayer } from "@/app/(dashboard)/players/actions";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type {
-  PlayerDirectoryData,
-  PlayerDirectoryItem,
-  PlayerDirectoryStatus,
-} from "@/types/players";
+import type { PlayerDirectoryData, PlayerDirectoryItem } from "@/types/players";
 
 interface PlayerDirectoryContentProps {
   canWrite: boolean;
@@ -40,25 +35,13 @@ const playerSchema = z.object({
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),
-  status: z.enum(["active", "inactive"]),
 });
 
 type PlayerFormValues = z.infer<typeof playerSchema>;
 
-const statusLabels: Record<PlayerDirectoryStatus, string> = {
-  active: "Activo",
-  inactive: "Inactivo",
-};
-
-const statusVariants: Record<PlayerDirectoryStatus, "success" | "danger"> = {
-  active: "success",
-  inactive: "danger",
-};
-
 export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryContentProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | PlayerDirectoryStatus>("all");
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [message, setMessage] = useState("");
@@ -76,24 +59,20 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
     const normalizedQuery = normalize(query);
 
     return data.players.filter((player) => {
-      const matchesStatus = statusFilter === "all" || player.status === statusFilter;
       const matchesQuery =
         !normalizedQuery ||
         [player.name, player.phone, player.email, player.category, player.notes]
           .map(normalize)
           .some((value) => value.includes(normalizedQuery));
 
-      return matchesStatus && matchesQuery;
+      return matchesQuery;
     });
-  }, [data.players, query, statusFilter]);
+  }, [data.players, query]);
 
-  const activePlayers = data.players.filter(
-    (player) => player.status === "active",
-  ).length;
-  const inactivePlayers = data.players.length - activePlayers;
   const withContact = data.players.filter(
     (player) => player.phone || player.email,
   ).length;
+  const withEmail = data.players.filter((player) => player.email).length;
 
   async function onSubmit(values: PlayerFormValues) {
     setMessage("");
@@ -114,7 +93,6 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
       email: player.email,
       category: player.category,
       notes: player.notes,
-      status: player.status,
     });
   }
 
@@ -124,14 +102,14 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
   }
 
   async function handleDelete(player: PlayerDirectoryItem) {
-    if (!window.confirm(`¿Marcar inactivo a ${player.name}?`)) {
+    if (!window.confirm(`¿Eliminar a ${player.name} del listado de jugadores?`)) {
       return;
     }
 
     setDeletingId(player.id);
     await deletePlayer(player.id);
     setDeletingId("");
-    setMessage(`${player.name} marcado inactivo`);
+    setMessage(`${player.name} eliminado`);
     router.refresh();
     window.setTimeout(() => setMessage(""), 2200);
   }
@@ -151,19 +129,19 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
           icon={UsersRound}
           label="Total jugadores"
           value={String(data.players.length)}
-          detail="Base Jugadores"
+          detail="Listado jugadores"
         />
         <MetricCard
-          icon={UserCheck}
-          label="Activos"
-          value={String(activePlayers)}
-          detail="Entran al calculador"
+          icon={Mail}
+          label="Con email"
+          value={String(withEmail)}
+          detail="Contacto digital"
         />
         <MetricCard
           icon={Phone}
           label="Con contacto"
           value={String(withContact)}
-          detail={`${inactivePlayers} inactivos`}
+          detail="Teléfono o email"
         />
       </div>
 
@@ -205,26 +183,13 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
                 />
               </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Categoría" error={errors.category?.message}>
-                  <input
-                    {...register("category")}
-                    disabled={!canWrite}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
-                <Field label="Estado" error={errors.status?.message}>
-                  <select
-                    {...register("status")}
-                    disabled={!canWrite}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  >
-                    <option value="active">Activo</option>
-                    <option value="inactive">Inactivo</option>
-                  </select>
-                </Field>
-              </div>
+              <Field label="Categoría" error={errors.category?.message}>
+                <input
+                  {...register("category")}
+                  disabled={!canWrite}
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
 
               <Field label="Observaciones" error={errors.notes?.message}>
                 <textarea
@@ -259,11 +224,11 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
             <div>
               <h2 className="text-lg font-semibold">Base de jugadores</h2>
               <p className="text-muted-foreground mt-1 text-sm">
-                Alta, edición y estado activo/inactivo sobre la hoja Jugadores.
+                Alta y edición del padrón que alimenta el calculador de cuota.
               </p>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_160px] lg:w-[520px]">
+            <div className="grid gap-2 lg:w-[360px]">
               <label className="relative">
                 <span className="sr-only">Buscar jugadores</span>
                 <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
@@ -273,21 +238,6 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
                   placeholder="Buscar nombre, teléfono..."
                   className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 pl-9 text-sm outline-none focus:ring-2"
                 />
-              </label>
-
-              <label>
-                <span className="sr-only">Filtrar por estado</span>
-                <select
-                  value={statusFilter}
-                  onChange={(event) =>
-                    setStatusFilter(event.target.value as "all" | PlayerDirectoryStatus)
-                  }
-                  className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm outline-none focus:ring-2"
-                >
-                  <option value="all">Todos</option>
-                  <option value="active">Activos</option>
-                  <option value="inactive">Inactivos</option>
-                </select>
               </label>
             </div>
           </div>
@@ -308,7 +258,7 @@ export function PlayerDirectoryContent({ canWrite, data }: PlayerDirectoryConten
           />
 
           <p className="text-muted-foreground text-sm">
-            {filteredPlayers.length} resultados · {activePlayers} activos
+            {filteredPlayers.length} resultados
           </p>
         </section>
       </div>
@@ -339,7 +289,6 @@ function PlayersDesktopTable({
               <TableHead>Teléfono</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Categoría</TableHead>
-              <TableHead>Estado</TableHead>
               <TableHead>Observaciones</TableHead>
               <TableHead>Acciones</TableHead>
             </tr>
@@ -352,9 +301,6 @@ function PlayersDesktopTable({
                   <td className="px-4 py-3">{player.phone || "-"}</td>
                   <td className="px-4 py-3">{player.email || "-"}</td>
                   <td className="px-4 py-3">{player.category}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={player.status} />
-                  </td>
                   <td className="px-4 py-3">
                     <span className="line-clamp-2">{player.notes || "-"}</span>
                   </td>
@@ -371,7 +317,7 @@ function PlayersDesktopTable({
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="text-muted-foreground h-24 px-4 text-center">
+                <td colSpan={6} className="text-muted-foreground h-24 px-4 text-center">
                   No hay jugadores para mostrar.
                 </td>
               </tr>
@@ -407,7 +353,6 @@ function PlayersMobileList({
                   <h3 className="truncate font-semibold">{player.name}</h3>
                   <p className="text-muted-foreground mt-1 text-sm">{player.category}</p>
                 </div>
-                <StatusBadge status={player.status} />
               </div>
 
               <div className="grid gap-2 text-sm">
@@ -469,11 +414,11 @@ function PlayerActions({
         type="button"
         variant="outline"
         size="sm"
-        disabled={!canWrite || player.status === "inactive" || deletingId === player.id}
+        disabled={!canWrite || deletingId === player.id}
         onClick={() => onDelete(player)}
       >
         <Trash2 />
-        Marcar inactivo
+        Eliminar
       </Button>
     </div>
   );
@@ -486,7 +431,7 @@ function MetricCard({
   value,
 }: {
   detail: string;
-  icon: typeof UsersRound;
+  icon: LucideIcon;
   label: string;
   value: string;
 }) {
@@ -526,17 +471,13 @@ function Field({
   );
 }
 
-function ContactLine({ icon: Icon, value }: { icon: typeof Phone; value: string }) {
+function ContactLine({ icon: Icon, value }: { icon: LucideIcon; value: string }) {
   return (
     <p className="text-muted-foreground inline-flex min-w-0 items-center gap-2">
       <Icon className="size-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{value}</span>
     </p>
   );
-}
-
-function StatusBadge({ status }: { status: PlayerDirectoryStatus }) {
-  return <Badge variant={statusVariants[status]}>{statusLabels[status]}</Badge>;
 }
 
 function TableHead({ children }: { children: React.ReactNode }) {
@@ -555,7 +496,6 @@ function getDefaultValues(): PlayerFormValues {
     email: "",
     category: "Plantel",
     notes: "",
-    status: "active",
   };
 }
 

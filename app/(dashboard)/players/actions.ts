@@ -15,7 +15,6 @@ const playerSchema = z.object({
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),
-  status: z.enum(["active", "inactive"]).default("active"),
 });
 
 export async function savePlayer(input: unknown) {
@@ -40,7 +39,6 @@ export async function savePlayer(input: unknown) {
         summary: parsed.id ? "Jugador actualizado." : "Jugador creado.",
         metadata: {
           name: parsed.name,
-          status: parsed.status,
         },
       })
       .catch(() => undefined);
@@ -68,7 +66,7 @@ export async function deletePlayer(playerId: string) {
         action: "api.request",
         entityType: "player",
         entityId: playerId,
-        summary: "Jugador dado de baja.",
+        summary: "Jugador eliminado del padrón.",
         metadata: {
           playerId,
         },

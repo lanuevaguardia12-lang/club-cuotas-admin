@@ -197,7 +197,7 @@ STRIPE_AMOUNT_MULTIPLIER=100
 GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_CLIENT_EMAIL="replace-with-service-account-email"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
-GOOGLE_SHEETS_PLAYERS_RANGE="Jugadores!A:Z"
+GOOGLE_SHEETS_PLAYERS_RANGE="Listado jugadores!A:Z"
 GOOGLE_SHEETS_FEES_RANGE="Cuotas!A:Z"
 GOOGLE_SHEETS_CASH_FLOW_RANGE="CashFlow!A:Z"
 GOOGLE_SHEETS_SETTINGS_RANGE="Configuracion!A:B"
@@ -208,6 +208,7 @@ GOOGLE_SHEETS_REMINDERS_RANGE="Recordatorios!A:Z"
 GOOGLE_SHEETS_PAYMENTS_RANGE="Pagos!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE="CalculadoraCostos!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE="CalculadoraReales!A:Z"
+GOOGLE_SHEETS_FEE_CALCULATOR_PLAYER_STATUSES_RANGE="CalculadoraJugadores!A:Z"
 GOOGLE_SHEETS_REFUND_POLICY_RANGE="Politica devoluciones!A:C"
 GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_MATCHES_RANGE="Partidos jugados formulario!A:Z"
@@ -336,10 +337,11 @@ Archivos principales:
 
 Rangos por defecto:
 
-- `Jugadores!A:Z` como base canonica editable de jugadores
+- `Listado jugadores!A:Z` como padron editable de jugadores
 - `Cuotas!A:Z` para estados de pago heredados, opcional para el calculador
 - `CashFlow!A:Z`
 - `Configuracion!A:B`
+- `CalculadoraJugadores!A:Z` para estado activo/inactivo por periodo
 - `Auditoria!A:Z`
 - `Logs!A:Z`
 - `Notificaciones!A:Z`
@@ -354,9 +356,9 @@ Rangos por defecto:
 
 ### Planilla operativa La Nueva Guardia
 
-La aplicacion tambien soporta la planilla operativa actual del club sin duplicar
-carga manual. Si no existen las hojas normalizadas `Jugadores`, `Cuotas` y
-`CashFlow`, `GoogleSheetsService` intenta leer automaticamente estas hojas:
+La aplicacion soporta la planilla operativa actual del club sin duplicar carga
+manual. El padron principal se lee desde `Listado jugadores`; si existen hojas
+normalizadas adicionales como `Cuotas` o `CashFlow`, tambien puede combinarlas:
 
 - `Listado jugadores!A:Z`: nombres, telefonos y emails.
 - `Seguimiento!A:Z`: matriz anual con estados `Pago`, `Pagó`,
@@ -369,8 +371,8 @@ carga manual. Si no existen las hojas normalizadas `Jugadores`, `Cuotas` y
 En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
 
 - La app arma los jugadores desde `Listado jugadores`.
-- Las cuotas se calculan combinando `Seguimiento`, `Cuota final por jugador` y
-  `Respuestas de formulario`.
+- El calculador actual usa `Listado jugadores` como padron y deja de depender del
+  Sheet viejo de cuotas.
 - Los telefonos locales como `1154012398` se normalizan internamente a formato
   WhatsApp Argentina (`549...`).
 - Los ingresos de Cash Flow salen de cuotas pagadas y los gastos de
@@ -500,15 +502,14 @@ cuota final =
   - devolucion por asistencia del mes anterior sobre la cuota base anterior
 ```
 
-El calculador ya no depende del Sheet viejo de cuotas ni de `Listado jugadores`.
-La lista de jugadores se arma desde la base canonica `Jugadores`, editable desde
-`/players`. La hoja de partidos se usa solo para asistencia, rivales, canchas
+El calculador toma el padron desde `Listado jugadores`, editable desde
+`/players`, y usa la hoja de partidos solo para asistencia, rivales, canchas
 locales reales y asistencia del DT.
 
-Cada jugador tiene estado `activo` o `inactivo`. Los jugadores inactivos no se
-incluyen en la cuota por jugador ni en el ingreso esperado del Cash Flow. Ese
-estado puede cambiarse desde `Jugadores` o desde el panel de jugadores del
-calculador.
+El estado `activo` o `inactivo` no pertenece al padron global. Se guarda por mes
+en `CalculadoraJugadores!A:Z`, asi un jugador puede no pagar un periodo sin quedar
+dado de baja del listado general. Si un jugador no tiene override en ese mes, se
+considera activo por defecto.
 
 Para este modulo, `GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID` es la base operativa. La
 app lee de ahi los partidos y tambien guarda ahi las hojas `Jugadores`,

@@ -534,8 +534,8 @@ function FeeCalculatorNotice({
         <CardContent className="p-5">
           <h2 className="text-destructive font-semibold">No hay jugadores activos</h2>
           <p className="text-destructive/90 mt-2 text-sm">
-            El calculador usa la base de la hoja Jugadores. Cargá jugadores activos desde
-            la sección Jugadores y verificá que la Service Account tenga acceso al Sheet.
+            El calculador usa la base de la hoja Listado jugadores. Cargá jugadores en la
+            sección Jugadores y verificá que la Service Account tenga acceso al Sheet.
           </p>
         </CardContent>
       </Card>
@@ -919,9 +919,9 @@ function CalculatorPlayersPanel({ data }: { data: FeeCalculatorData }) {
   ) {
     setSavingId(player.id);
     await updateFeeCalculatorPlayerStatus({
-      id: player.id,
-      name: player.name,
-      category: player.category,
+      playerId: player.id,
+      playerName: player.name,
+      period: data.period,
       status,
     });
     router.refresh();
@@ -933,7 +933,8 @@ function CalculatorPlayersPanel({ data }: { data: FeeCalculatorData }) {
       <div>
         <h2 className="text-lg font-semibold">Jugadores del calculador</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Solo los activos entran en la cuota y en el ingreso esperado del Cash Flow.
+          El estado se configura solo para {formatPeriod(data.period)}. Solo los activos
+          de ese mes entran en la cuota y en el ingreso esperado del Cash Flow.
           {data.players.length > 0
             ? ` ${activePlayers} activos · ${inactivePlayers} inactivos.`
             : ""}

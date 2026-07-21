@@ -51,6 +51,7 @@ import type {
   FeePlayerCalculation,
   FeeRefundPolicyRule,
   UpdateFeeCalculatorActualInput,
+  UpdateFeeCalculatorPlayerStatusInput,
   UpdateFeeRefundPolicyInput,
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
@@ -104,6 +105,7 @@ interface GoogleSheetsConfig {
   paymentsRange: string;
   feeCalculatorCostsRange: string;
   feeCalculatorActualsRange: string;
+  feeCalculatorPlayerStatusesRange: string;
   matchesSpreadsheetId?: string;
   matchesRange: string;
   refundPolicyRange: string;
@@ -160,6 +162,16 @@ interface PlayerExpenseCredit {
   amount: number;
 }
 
+interface FeeCalculatorPlayerStatusRecord {
+  id: string;
+  playerId: string;
+  playerName: string;
+  period: string;
+  status: PlayerDirectoryStatus;
+  notes: string;
+  updatedAt: string;
+}
+
 interface DashboardRecords {
   players: PlayerRecord[];
   fees: FeeRecord[];
@@ -177,6 +189,7 @@ const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
 const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
+const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
 const DEFAULT_MATCHES_RANGE = "Partidos jugados formulario!A:Z";
 const DEFAULT_REFUND_POLICY_RANGE = "Politica devoluciones!A:C";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
@@ -297,6 +310,16 @@ const feeCalculatorActualHeaders = [
   "actualizado_en",
 ];
 
+const feeCalculatorPlayerStatusHeaders = [
+  "id",
+  "jugador_id",
+  "jugador",
+  "periodo",
+  "estado",
+  "notas",
+  "actualizado_en",
+];
+
 const feeRefundPolicyHeaders = ["desde", "hasta", "devolucion"];
 
 export class GoogleSheetsService implements IDataService {
@@ -355,6 +378,10 @@ export class GoogleSheetsService implements IDataService {
         config.feeCalculatorActualsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE ??
         DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE,
+      feeCalculatorPlayerStatusesRange:
+        config.feeCalculatorPlayerStatusesRange ??
+        process.env.GOOGLE_SHEETS_FEE_CALCULATOR_PLAYER_STATUSES_RANGE ??
+        DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE,
       matchesSpreadsheetId,
       matchesRange:
         config.matchesRange ??
@@ -535,9 +562,9 @@ export class GoogleSheetsService implements IDataService {
       spreadsheetId,
       this.config.cashFlowRange,
     );
-    const now = new Date().toISOString();
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
+    const now = new Date().toISOString();
 
     await this.ensureSheetForRange(this.config.cashFlowRange, spreadsheetId);
 
@@ -717,7 +744,7 @@ export class GoogleSheetsService implements IDataService {
           description:
             players.length === 0
               ? "Cargá jugadores para que el calculador pueda calcular cuotas aunque todavía no hayan jugado partidos."
-              : "Jugadores administrados desde la hoja Jugadores.",
+              : "Jugadores administrados desde la hoja Listado jugadores.",
         },
         source: {
           provider: "google-sheets",
@@ -754,15 +781,16 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const playersRange = await this.getWritablePlayersRange(spreadsheetId);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
-      this.config.playersRange,
+      playersRange,
     );
     const sheets = this.createSheetsClient();
-    const sheetPrefix = getSheetPrefix(this.config.playersRange);
+    const sheetPrefix = getSheetPrefix(playersRange);
     const now = new Date().toISOString();
 
-    await this.ensureSheetForRange(this.config.playersRange, spreadsheetId);
+    await this.ensureSheetForRange(playersRange, spreadsheetId);
 
     if (rows.length === 0) {
       const player = normalizePlayerInput(input, new Set(), now);
@@ -784,16 +812,17 @@ export class GoogleSheetsService implements IDataService {
 
     const [headerRow = [], ...dataRows] = rows;
     const headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
-    const idIndex = findHeaderIndex(headers, ["id", "jugador_id", "player_id"]);
     const existingPlayers = mapRowsToPlayerDirectoryItems([headers, ...dataRows]);
     const existingIds = new Set(existingPlayers.map((player) => player.id));
     const targetId =
       input.id?.trim() ||
       createUniqueClubPlayerId(createClubPlayerId(input.name) || "player", existingIds);
-    const targetRowIndex =
-      idIndex >= 0
-        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === targetId)
-        : -1;
+    const targetRowIndex = findPlayerDirectoryRowIndex(
+      headers,
+      dataRows,
+      targetId,
+      input.name,
+    );
     const existing =
       targetRowIndex >= 0
         ? mapRowsToPlayerDirectoryItems([headers, dataRows[targetRowIndex]])[0]
@@ -814,7 +843,7 @@ export class GoogleSheetsService implements IDataService {
     } else {
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: this.config.playersRange,
+        range: playersRange,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: {
@@ -830,9 +859,10 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const playersRange = await this.getWritablePlayersRange(spreadsheetId);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
-      this.config.playersRange,
+      playersRange,
     );
 
     if (rows.length === 0) {
@@ -841,11 +871,7 @@ export class GoogleSheetsService implements IDataService {
 
     const [headerRow = [], ...dataRows] = rows;
     const headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
-    const idIndex = findHeaderIndex(headers, ["id", "jugador_id", "player_id"]);
-    const targetRowIndex =
-      idIndex >= 0
-        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === playerId)
-        : -1;
+    const targetRowIndex = findPlayerDirectoryRowIndex(headers, dataRows, playerId);
 
     if (targetRowIndex < 0) {
       return;
@@ -860,25 +886,13 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    const now = new Date().toISOString();
     const sheets = this.createSheetsClient();
-    const sheetPrefix = getSheetPrefix(this.config.playersRange);
+    const sheetPrefix = getSheetPrefix(playersRange);
     const spreadsheetRow = targetRowIndex + 2;
 
-    await sheets.spreadsheets.values.update({
+    await sheets.spreadsheets.values.clear({
       spreadsheetId,
       range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [
-          buildPlayerDirectoryWritableRow(headers, {
-            ...existing,
-            status: "inactive",
-            leftAt: existing.leftAt || now.slice(0, 10),
-            updatedAt: now,
-          }),
-        ],
-      },
     });
 
     invalidatePlayersCache();
@@ -895,6 +909,7 @@ export class GoogleSheetsService implements IDataService {
         playersRows,
         costsRows,
         actualsRows,
+        playerStatusRows,
         refundPolicyRows,
         matchRows,
         expenseRows,
@@ -902,6 +917,7 @@ export class GoogleSheetsService implements IDataService {
       const players = mapRowsToPlayers(playersRows);
       const costs = mapRowsToFeeCalculatorCosts(costsRows);
       const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
+      const playerStatuses = mapRowsToFeeCalculatorPlayerStatuses(playerStatusRows);
       const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
       const matches = mapRowsToMatches(matchRows);
       const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
@@ -911,6 +927,7 @@ export class GoogleSheetsService implements IDataService {
         players,
         costs,
         actuals,
+        playerStatuses,
         refundPolicy,
         matches,
         expenseCredits,
@@ -930,6 +947,7 @@ export class GoogleSheetsService implements IDataService {
         players: [],
         costs: [],
         actuals: [],
+        playerStatuses: [],
         refundPolicy: getDefaultRefundPolicy(),
         matches: [],
         expenseCredits: [],
@@ -1180,6 +1198,123 @@ export class GoogleSheetsService implements IDataService {
             buildFeeCalculatorActualWritableRow(headers, {
               ...actual,
               id: createId("actual"),
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    }
+
+    invalidateFeeCalculatorCache();
+  }
+
+  async updateFeeCalculatorPlayerStatus(
+    input: UpdateFeeCalculatorPlayerStatusInput,
+  ): Promise<void> {
+    this.assertConfigured();
+    assertValidPeriod(input.period);
+
+    const feeCalculatorSpreadsheetId = this.getFeeCalculatorSpreadsheetId();
+    const playerStatus = normalizeFeeCalculatorPlayerStatusInput(input);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      feeCalculatorSpreadsheetId,
+      this.config.feeCalculatorPlayerStatusesRange,
+    );
+    const now = new Date().toISOString();
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.feeCalculatorPlayerStatusesRange);
+
+    await this.ensureSheetForRange(
+      this.config.feeCalculatorPlayerStatusesRange,
+      feeCalculatorSpreadsheetId,
+    );
+
+    if (rows.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: feeCalculatorSpreadsheetId,
+        range: `${sheetPrefix}!A:G`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            feeCalculatorPlayerStatusHeaders,
+            buildFeeCalculatorPlayerStatusWritableRow(feeCalculatorPlayerStatusHeaders, {
+              ...playerStatus,
+              id: createId("player-status"),
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+      invalidateFeeCalculatorCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    const headers = normalizeWritableHeaders(headerRow, feeCalculatorPlayerStatusHeaders);
+    const playerIdIndex = findHeaderIndex(headers, [
+      "jugador_id",
+      "player_id",
+      "id_jugador",
+    ]);
+    const playerNameIndex = findHeaderIndex(headers, [
+      "jugador",
+      "nombre",
+      "player",
+      "name",
+    ]);
+    const periodIndex = findHeaderIndex(headers, ["periodo", "period", "mes"]);
+    const normalizedPlayerName = normalizeClubPlayerName(playerStatus.playerName);
+    const targetRowIndex =
+      periodIndex >= 0
+        ? dataRows.findIndex((row) => {
+            const rowPeriod = normalizePeriod(String(row[periodIndex] ?? "").trim());
+            const rowPlayerId =
+              playerIdIndex >= 0 ? String(row[playerIdIndex] ?? "").trim() : "";
+            const rowPlayerName =
+              playerNameIndex >= 0
+                ? normalizeClubPlayerName(String(row[playerNameIndex] ?? ""))
+                : "";
+
+            return (
+              rowPeriod === playerStatus.period &&
+              (rowPlayerId === playerStatus.playerId ||
+                (!!rowPlayerName && rowPlayerName === normalizedPlayerName))
+            );
+          })
+        : -1;
+
+    if (targetRowIndex >= 0) {
+      const existing = mapRowsToFeeCalculatorPlayerStatuses([
+        headers,
+        dataRows[targetRowIndex],
+      ])[0];
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: feeCalculatorSpreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            buildFeeCalculatorPlayerStatusWritableRow(headers, {
+              ...playerStatus,
+              id: existing?.id || createId("player-status"),
+              updatedAt: now,
+            }),
+          ],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: feeCalculatorSpreadsheetId,
+        range: this.config.feeCalculatorPlayerStatusesRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [
+            buildFeeCalculatorPlayerStatusWritableRow(headers, {
+              ...playerStatus,
+              id: createId("player-status"),
               updatedAt: now,
             }),
           ],
@@ -1586,16 +1721,14 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readValuesFromSpreadsheet(
-          playersSpreadsheetId,
-          this.config.playersRange,
-        ),
+        playersRows: await this.readPreferredPlayerRows(playersSpreadsheetId),
         feesRows: await this.readOptionalValues(this.config.feesRange),
       }),
       [
         "google-sheets-dashboard",
         spreadsheetId,
         playersSpreadsheetId,
+        CLUB_PLAYERS_RANGE,
         this.config.playersRange,
         this.config.feesRange,
       ],
@@ -1610,9 +1743,13 @@ export class GoogleSheetsService implements IDataService {
     const spreadsheetId = this.getFeeCalculatorSpreadsheetId();
 
     return unstable_cache(
-      async () =>
-        this.readOptionalValuesFromSpreadsheet(spreadsheetId, this.config.playersRange),
-      ["google-sheets-players", spreadsheetId, this.config.playersRange],
+      async () => this.readPreferredPlayerRows(spreadsheetId),
+      [
+        "google-sheets-players",
+        spreadsheetId,
+        CLUB_PLAYERS_RANGE,
+        this.config.playersRange,
+      ],
       {
         revalidate: this.config.cacheTtlSeconds,
         tags: ["google-sheets", "google-sheets:players"],
@@ -1798,10 +1935,7 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.playersRange,
-        ),
+        playersRows: await this.readPreferredPlayerRows(feeCalculatorSpreadsheetId),
         costsRows: await this.readOptionalValuesFromSpreadsheet(
           feeCalculatorSpreadsheetId,
           this.config.feeCalculatorCostsRange,
@@ -1809,6 +1943,10 @@ export class GoogleSheetsService implements IDataService {
         actualsRows: await this.readOptionalValuesFromSpreadsheet(
           feeCalculatorSpreadsheetId,
           this.config.feeCalculatorActualsRange,
+        ),
+        playerStatusRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
+          this.config.feeCalculatorPlayerStatusesRange,
         ),
         refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
           feeCalculatorSpreadsheetId,
@@ -1827,9 +1965,11 @@ export class GoogleSheetsService implements IDataService {
         spreadsheetId,
         matchesSpreadsheetId ?? "",
         feeCalculatorSpreadsheetId,
+        CLUB_PLAYERS_RANGE,
         this.config.playersRange,
         this.config.feeCalculatorCostsRange,
         this.config.feeCalculatorActualsRange,
+        this.config.feeCalculatorPlayerStatusesRange,
         this.config.refundPolicyRange,
         this.config.matchesRange,
       ],
@@ -1878,6 +2018,41 @@ export class GoogleSheetsService implements IDataService {
     } catch {
       return [];
     }
+  }
+
+  private async readPreferredPlayerRows(spreadsheetId: string) {
+    if (this.config.playersRange === CLUB_PLAYERS_RANGE) {
+      return this.readOptionalValuesFromSpreadsheet(spreadsheetId, CLUB_PLAYERS_RANGE);
+    }
+
+    const clubPlayerRows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      CLUB_PLAYERS_RANGE,
+    );
+
+    if (hasUsablePlayerRows(clubPlayerRows)) {
+      return clubPlayerRows;
+    }
+
+    return this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.playersRange,
+    );
+  }
+
+  private async getWritablePlayersRange(spreadsheetId: string) {
+    if (this.config.playersRange === CLUB_PLAYERS_RANGE) {
+      return CLUB_PLAYERS_RANGE;
+    }
+
+    const clubPlayerRows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      CLUB_PLAYERS_RANGE,
+    );
+
+    return clubPlayerRows.length > 0 || this.config.playersRange === DEFAULT_PLAYERS_RANGE
+      ? CLUB_PLAYERS_RANGE
+      : this.config.playersRange;
   }
 
   private getFeeCalculatorSpreadsheetId() {
@@ -2046,9 +2221,8 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readPlayerMonthlyFee(playerId: string) {
-    const playersRows = await this.readValuesFromSpreadsheet(
+    const playersRows = await this.readPreferredPlayerRows(
       this.getFeeCalculatorSpreadsheetId(),
-      this.config.playersRange,
     );
     const player = mapRowsToPlayers(playersRows).find(
       (candidate) => candidate.id === playerId,
@@ -2187,7 +2361,14 @@ export class GoogleSheetsService implements IDataService {
 
 function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
   return rowsToRecords(rows).map((record, index) => {
-    const name = pick(record, ["nombre", "name", "jugador", "player"]);
+    const name = pick(record, [
+      "nombre_y_apellido",
+      "nombre_apellido",
+      "nombre",
+      "name",
+      "jugador",
+      "player",
+    ]);
 
     return {
       id:
@@ -2242,7 +2423,14 @@ function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
 function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[] {
   return rowsToRecords(rows)
     .map((record, index) => {
-      const name = pick(record, ["nombre", "name", "jugador", "player"]).trim();
+      const name = pick(record, [
+        "nombre_y_apellido",
+        "nombre_apellido",
+        "nombre",
+        "name",
+        "jugador",
+        "player",
+      ]).trim();
 
       if (!name) {
         return null;
@@ -2288,6 +2476,82 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
 }
 
+function hasUsablePlayerRows(rows: unknown[][]) {
+  return rowsToRecords(rows).some((record) =>
+    Boolean(
+      pick(record, [
+        "nombre_y_apellido",
+        "nombre_apellido",
+        "nombre",
+        "name",
+        "jugador",
+        "player",
+      ]).trim(),
+    ),
+  );
+}
+
+function findPlayerDirectoryRowIndex(
+  headers: string[],
+  rows: unknown[][],
+  playerId: string,
+  playerName = "",
+) {
+  const idIndex = findHeaderIndex(headers, [
+    "id",
+    "jugador_id",
+    "player_id",
+    "id_jugador",
+  ]);
+  const nameIndex = findHeaderIndex(headers, [
+    "nombre_y_apellido",
+    "nombre_apellido",
+    "nombre",
+    "name",
+    "jugador",
+    "player",
+  ]);
+  const normalizedName = normalizeClubPlayerName(playerName);
+
+  if (idIndex >= 0) {
+    const byId = rows.findIndex((row) => String(row[idIndex] ?? "").trim() === playerId);
+
+    if (byId >= 0) {
+      return byId;
+    }
+  }
+
+  const records = rowsToRecords([headers, ...rows]);
+  const byMappedId = records.findIndex((record, index) => {
+    const name = pick(record, [
+      "nombre_y_apellido",
+      "nombre_apellido",
+      "nombre",
+      "name",
+      "jugador",
+      "player",
+    ]);
+    const recordId =
+      pick(record, ["id", "jugador_id", "id_jugador", "player_id"]) ||
+      createClubPlayerId(name) ||
+      `player-${index + 1}`;
+
+    return recordId === playerId;
+  });
+
+  if (byMappedId >= 0) {
+    return byMappedId;
+  }
+
+  if (nameIndex < 0 || !normalizedName) {
+    return -1;
+  }
+
+  return rows.findIndex(
+    (row) => normalizeClubPlayerName(String(row[nameIndex] ?? "")) === normalizedName,
+  );
+}
+
 function normalizePlayerInput(
   input: UpsertPlayerInput,
   existingIds: Set<string>,
@@ -2324,6 +2588,8 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     id_jugador: player.id,
     player_id: player.id,
     nombre: player.name,
+    nombre_y_apellido: player.name,
+    nombre_apellido: player.name,
     name: player.name,
     jugador: player.name,
     player: player.name,
@@ -2777,6 +3043,44 @@ function mapRowsToFeeCalculatorActuals(rows: unknown[][]): FeeCalculatorActual[]
     .filter((actual): actual is FeeCalculatorActual => Boolean(actual));
 }
 
+function mapRowsToFeeCalculatorPlayerStatuses(
+  rows: unknown[][],
+): FeeCalculatorPlayerStatusRecord[] {
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const playerName = pick(record, [
+        "jugador",
+        "nombre",
+        "nombre_y_apellido",
+        "name",
+        "player",
+      ]);
+      const playerId =
+        pick(record, ["jugador_id", "player_id", "id_jugador"]) ||
+        createClubPlayerId(playerName);
+      const period = normalizePeriod(pick(record, ["periodo", "period", "mes"]));
+
+      if (!playerId || !period) {
+        return null;
+      }
+
+      return {
+        id:
+          pick(record, ["id", "estado_id", "status_id"]) || `player-status-${index + 1}`,
+        playerId,
+        playerName,
+        period,
+        status: normalizePlayerDirectoryStatus(pick(record, ["estado", "status"])),
+        notes: pick(record, ["notas", "notes", "observaciones"]),
+        updatedAt:
+          parseDateTime(
+            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+          ) ?? new Date().toISOString(),
+      } satisfies FeeCalculatorPlayerStatusRecord;
+    })
+    .filter((status): status is FeeCalculatorPlayerStatusRecord => status !== null);
+}
+
 function mapRowsToRefundPolicy(rows: unknown[][]): FeeRefundPolicyRule[] {
   const rules = rowsToRecords(rows)
     .map((record) => {
@@ -2892,6 +3196,7 @@ function buildFeeCalculatorData({
   players,
   costs,
   actuals,
+  playerStatuses,
   refundPolicy,
   matches,
   expenseCredits,
@@ -2904,6 +3209,7 @@ function buildFeeCalculatorData({
   players: PlayerRecord[];
   costs: FeeCalculatorCost[];
   actuals: FeeCalculatorActual[];
+  playerStatuses: FeeCalculatorPlayerStatusRecord[];
   refundPolicy: FeeRefundPolicyRule[];
   matches: MatchRecord[];
   expenseCredits: Array<PlayerExpenseCredit & { period: string }>;
@@ -2914,8 +3220,16 @@ function buildFeeCalculatorData({
 }): FeeCalculatorData {
   const previousPeriod = getPreviousPeriod(period);
   const periodBeforePrevious = getPreviousPeriod(previousPeriod);
-  const activePlayers = players.filter((player) => !isDroppedPlayer(player));
-  const calculatorPlayers = players.map(mapPlayerToFeeCalculatorPlayer);
+  const playerStatusMap = buildFeeCalculatorPlayerStatusMap(playerStatuses, period);
+  const calculatorPlayers = players.map((player) =>
+    mapPlayerToFeeCalculatorPlayer(player, playerStatusMap),
+  );
+  const activePlayerIds = new Set(
+    calculatorPlayers
+      .filter((player) => player.status === "active")
+      .map((player) => player.id),
+  );
+  const activePlayers = players.filter((player) => activePlayerIds.has(player.id));
   const activeCosts = costs.filter((cost) => cost.active);
   const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
     (mergedActuals, actualPeriod) =>
@@ -3092,13 +3406,40 @@ function buildPlayerFeeCalculation({
   };
 }
 
-function mapPlayerToFeeCalculatorPlayer(player: PlayerRecord): FeeCalculatorPlayer {
+function mapPlayerToFeeCalculatorPlayer(
+  player: PlayerRecord,
+  statusMap: Map<string, PlayerDirectoryStatus>,
+): FeeCalculatorPlayer {
+  const status =
+    statusMap.get(player.id) ??
+    statusMap.get(normalizeClubPlayerName(player.name)) ??
+    "active";
+
   return {
     id: player.id,
     name: player.name,
     category: player.category,
-    status: isDroppedPlayer(player) ? "inactive" : "active",
+    status,
   };
+}
+
+function buildFeeCalculatorPlayerStatusMap(
+  playerStatuses: FeeCalculatorPlayerStatusRecord[],
+  period: string,
+) {
+  return playerStatuses
+    .filter((status) => status.period === period)
+    .reduce<Map<string, PlayerDirectoryStatus>>((map, status) => {
+      map.set(status.playerId, status.status);
+
+      const normalizedName = normalizeClubPlayerName(status.playerName);
+
+      if (normalizedName) {
+        map.set(normalizedName, status.status);
+      }
+
+      return map;
+    }, new Map());
 }
 
 function mapRowsToAppSettings(rows: unknown[][]): AppSettings {
@@ -4734,6 +5075,58 @@ function buildFeeCalculatorActualWritableRow(
     observaciones: actual.notes,
     actualizado_en: actual.updatedAt,
     updated_at: actual.updatedAt,
+  };
+
+  return headers.map((header) => values[header] ?? "");
+}
+
+function normalizeFeeCalculatorPlayerStatusInput(
+  input: UpdateFeeCalculatorPlayerStatusInput,
+): Omit<FeeCalculatorPlayerStatusRecord, "id" | "updatedAt"> {
+  const period = normalizePeriod(input.period);
+
+  if (!period) {
+    throw new DataServiceError(
+      "El periodo del jugador debe tener formato AAAA-MM.",
+      "CONFIGURATION_ERROR",
+    );
+  }
+
+  return {
+    playerId: input.playerId.trim(),
+    playerName: input.playerName.trim(),
+    period,
+    status: input.status,
+    notes: input.notes?.trim() ?? "",
+  };
+}
+
+function buildFeeCalculatorPlayerStatusWritableRow(
+  headers: string[],
+  status: FeeCalculatorPlayerStatusRecord,
+) {
+  const values: Record<string, string> = {
+    id: status.id,
+    estado_id: status.id,
+    status_id: status.id,
+    jugador_id: status.playerId,
+    player_id: status.playerId,
+    id_jugador: status.playerId,
+    jugador: status.playerName,
+    nombre: status.playerName,
+    nombre_y_apellido: status.playerName,
+    name: status.playerName,
+    player: status.playerName,
+    periodo: status.period,
+    period: status.period,
+    mes: status.period,
+    estado: status.status === "active" ? "activo" : "inactivo",
+    status: status.status,
+    notas: status.notes,
+    notes: status.notes,
+    observaciones: status.notes,
+    actualizado_en: status.updatedAt,
+    updated_at: status.updatedAt,
   };
 
   return headers.map((header) => values[header] ?? "");

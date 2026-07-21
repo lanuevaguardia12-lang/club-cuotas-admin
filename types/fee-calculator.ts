@@ -144,6 +144,14 @@ export interface UpdateFeeCalculatorActualInput {
   notes?: string;
 }
 
+export interface UpdateFeeCalculatorPlayerStatusInput {
+  playerId: string;
+  playerName: string;
+  period: string;
+  status: PlayerDirectoryStatus;
+  notes?: string;
+}
+
 export interface UpdateFeeRefundPolicyInput {
   rules: FeeRefundPolicyRule[];
 }
