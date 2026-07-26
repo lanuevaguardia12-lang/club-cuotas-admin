@@ -15,6 +15,8 @@ import type { IDataService } from "@/services/IDataService";
 import type {
   AnnualComparisonPoint,
   CashFlowAnnualPoint,
+  CashFlowConceptBreakdownPoint,
+  CashFlowConceptSeries,
   CashFlowData,
   CashFlowMetric,
   CashFlowMonthlyPoint,
@@ -4284,6 +4286,10 @@ function buildCashFlowData({
   );
   const feeTransactions = buildFeeIncomeTransactions(feeIncomeByPeriod);
   const projectedTransactions = [...expandedTransactions, ...feeTransactions];
+  const monthlySeries = buildCashFlowMonthlySeries(
+    projectedTransactions,
+    projectionPeriods,
+  );
   const currentManualTransactions = expandedTransactions.filter(
     (transaction) => transaction.period === period,
   );
@@ -4308,8 +4314,10 @@ function buildCashFlowData({
       additionalIncome,
     }),
     charts: {
-      monthly: buildCashFlowMonthlyChart(projectedTransactions, period),
+      monthly: buildCashFlowMonthlyChart(projectedTransactions, period, monthlySeries),
       annual: buildCashFlowAnnualChart(projectedTransactions),
+      monthlySeries,
+      conceptBreakdown: buildCashFlowConceptBreakdown(projectedTransactions, period),
     },
     transactions,
     expectedFeeIncome,
@@ -4357,8 +4365,10 @@ function buildFallbackCashFlowData({
       additionalIncome: 0,
     }),
     charts: {
-      monthly: buildCashFlowMonthlyChart([], period),
+      monthly: buildCashFlowMonthlyChart([], period, []),
       annual: buildCashFlowAnnualChart([]),
+      monthlySeries: [],
+      conceptBreakdown: [],
     },
     transactions: [],
     expectedFeeIncome: 0,
@@ -4427,25 +4437,180 @@ function buildCashFlowMetrics({
   ];
 }
 
+const cashFlowExpenseColors = [
+  "#c10202",
+  "#f4ce0f",
+  "#8b1a1a",
+  "#b45309",
+  "#be123c",
+  "#7f1d1d",
+  "#64748b",
+];
+
+const maxCashFlowExpenseSeries = 6;
+const otherExpensesKey = "expense_otros_gastos";
+
+function buildCashFlowMonthlySeries(
+  transactions: CashFlowTransactionRecord[],
+  periods: string[],
+): CashFlowConceptSeries[] {
+  const periodSet = new Set(periods);
+  const totalsByKey = transactions
+    .filter(
+      (transaction) =>
+        transaction.type === "expense" && periodSet.has(transaction.period),
+    )
+    .reduce<
+      Map<
+        string,
+        {
+          label: string;
+          total: number;
+        }
+      >
+    >((totals, transaction) => {
+      const key = getCashFlowExpenseKey(transaction.concept);
+      const current = totals.get(key);
+
+      totals.set(key, {
+        label: current?.label ?? transaction.concept,
+        total: (current?.total ?? 0) + transaction.amount,
+      });
+
+      return totals;
+    }, new Map());
+  const sorted = Array.from(totalsByKey.entries()).sort(
+    ([, left], [, right]) => right.total - left.total,
+  );
+  const topSeries = sorted
+    .slice(0, maxCashFlowExpenseSeries)
+    .map<CashFlowConceptSeries>(([key, item], index) => ({
+      key,
+      label: item.label,
+      type: "expense",
+      color: cashFlowExpenseColors[index % cashFlowExpenseColors.length],
+    }));
+
+  if (sorted.length > maxCashFlowExpenseSeries) {
+    topSeries.push({
+      key: otherExpensesKey,
+      label: "Otros gastos",
+      type: "expense",
+      color: cashFlowExpenseColors[cashFlowExpenseColors.length - 1],
+    });
+  }
+
+  return topSeries;
+}
+
 function buildCashFlowMonthlyChart(
   transactions: CashFlowTransactionRecord[],
   selectedPeriod = getCurrentPeriod(),
+  expenseSeries: CashFlowConceptSeries[],
 ): CashFlowMonthlyPoint[] {
-  return getCashFlowProjectionPeriods(selectedPeriod).map((period) => {
+  const periods = getCashFlowProjectionPeriods(selectedPeriod);
+  const expenseSeriesKeys = new Set(expenseSeries.map((series) => series.key));
+  const hasOtherExpenses = expenseSeriesKeys.has(otherExpensesKey);
+  let cashBalance = 0;
+
+  return periods.map((period) => {
     const periodTransactions = transactions.filter(
       (transaction) => transaction.period === period,
     );
+    const feeIncome = periodTransactions
+      .filter((transaction) => transaction.source === "fee-calculator")
+      .reduce((total, transaction) => total + transaction.amount, 0);
+    const additionalIncome = sumCashFlow(periodTransactions, "income") - feeIncome;
     const ingresos = sumCashFlow(periodTransactions, "income");
     const gastos = sumCashFlow(periodTransactions, "expense");
+    const balance = ingresos - gastos;
+    cashBalance += balance;
+    const expenseValues = expenseSeries.reduce<Record<string, number>>(
+      (values, series) => {
+        values[series.key] = 0;
+
+        return values;
+      },
+      {},
+    );
+
+    periodTransactions
+      .filter((transaction) => transaction.type === "expense")
+      .forEach((transaction) => {
+        const key = getCashFlowExpenseKey(transaction.concept);
+        const targetKey =
+          expenseSeriesKeys.has(key) || !hasOtherExpenses ? key : otherExpensesKey;
+
+        if (targetKey in expenseValues) {
+          expenseValues[targetKey] -= transaction.amount;
+        }
+      });
 
     return {
       period,
       label: formatPeriodLabel(period),
+      feeIncome,
+      additionalIncome,
       ingresos,
       gastos,
-      balance: ingresos - gastos,
+      balance,
+      cashBalance,
+      negativeCashBalance: cashBalance < 0 ? cashBalance : null,
+      ...expenseValues,
     };
   });
+}
+
+function buildCashFlowConceptBreakdown(
+  transactions: CashFlowTransactionRecord[],
+  period: string,
+): CashFlowConceptBreakdownPoint[] {
+  const conceptMap = transactions
+    .filter((transaction) => transaction.period === period)
+    .reduce<
+      Map<
+        string,
+        {
+          amount: number;
+          concept: string;
+          type: CashFlowTransactionType;
+        }
+      >
+    >((items, transaction) => {
+      const concept =
+        transaction.source === "fee-calculator"
+          ? "Cuotas de jugadores"
+          : transaction.concept;
+      const key = `${transaction.type}:${normalizeHeader(concept) || "sin_concepto"}`;
+      const current = items.get(key);
+
+      items.set(key, {
+        amount: (current?.amount ?? 0) + transaction.amount,
+        concept: current?.concept ?? concept,
+        type: transaction.type,
+      });
+
+      return items;
+    }, new Map());
+
+  return Array.from(conceptMap.values())
+    .map<CashFlowConceptBreakdownPoint>((item) => ({
+      concept: item.concept,
+      type: item.type,
+      amount: item.amount,
+      signedAmount: item.type === "income" ? item.amount : -item.amount,
+    }))
+    .sort((left, right) => {
+      if (left.type !== right.type) {
+        return left.type === "income" ? -1 : 1;
+      }
+
+      return right.amount - left.amount;
+    });
+}
+
+function getCashFlowExpenseKey(concept: string) {
+  return `expense_${normalizeHeader(concept) || "sin_concepto"}`;
 }
 
 function buildCashFlowAnnualChart(

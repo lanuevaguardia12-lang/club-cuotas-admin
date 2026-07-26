@@ -150,6 +150,8 @@ export class DatabaseService implements IDataService {
       charts: {
         monthly: [],
         annual: [],
+        monthlySeries: [],
+        conceptBreakdown: [],
       },
       transactions: [],
       expectedFeeIncome: 0,

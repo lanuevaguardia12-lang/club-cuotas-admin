@@ -84,11 +84,16 @@ export interface CashFlowMetric {
 }
 
 export interface CashFlowMonthlyPoint {
+  [key: string]: string | number | null;
   period: string;
   label: string;
+  feeIncome: number;
+  additionalIncome: number;
   ingresos: number;
   gastos: number;
   balance: number;
+  cashBalance: number;
+  negativeCashBalance: number | null;
 }
 
 export interface CashFlowAnnualPoint {
@@ -98,9 +103,25 @@ export interface CashFlowAnnualPoint {
   balance: number;
 }
 
+export interface CashFlowConceptSeries {
+  key: string;
+  label: string;
+  type: CashFlowTransactionType;
+  color: string;
+}
+
+export interface CashFlowConceptBreakdownPoint {
+  concept: string;
+  type: CashFlowTransactionType;
+  amount: number;
+  signedAmount: number;
+}
+
 export interface CashFlowChartsData {
   monthly: CashFlowMonthlyPoint[];
   annual: CashFlowAnnualPoint[];
+  monthlySeries: CashFlowConceptSeries[];
+  conceptBreakdown: CashFlowConceptBreakdownPoint[];
 }
 
 export interface CashFlowData {
