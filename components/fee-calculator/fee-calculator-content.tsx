@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
+  FeeCalculatorActual,
   FeeCalculatorAdjustment,
   FeeCalculatorCost,
   FeeCalculatorCostType,
@@ -99,14 +100,15 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     defaultValues: getDefaultCostValues(data),
   });
   const selectedType = watch("type");
+  const currentPeriodCosts = useMemo(
+    () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
+    [data.costs, data.period],
+  );
   const trackedActualCosts = useMemo(
     () => getTrackedActualCosts(data.costs, data.previousPeriod),
     [data.costs, data.previousPeriod],
   );
-  const repeatableCosts = useMemo(
-    () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
-    [data.costs, data.period],
-  );
+  const repeatableCosts = currentPeriodCosts;
   const repeatablePeriods = useMemo(
     () => getRepeatablePeriods(data.period),
     [data.period],
@@ -245,7 +247,10 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
 
     for (const period of repeatMonths) {
       for (const cost of repeatableCosts) {
+        const existingCost = findEquivalentCostForPeriod(data.costs, cost, period);
+
         await saveFeeCalculatorCost({
+          id: existingCost?.id,
           name: cost.name,
           type: cost.type,
           period,
@@ -463,7 +468,12 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
         <RefundPolicyEditor rules={data.refundPolicy} />
       </div>
 
-      <CostList canMaintain={canMaintain} data={data} onEditCost={handleEditCost} />
+      <CostList
+        canMaintain={canMaintain}
+        costs={currentPeriodCosts}
+        onEditCost={handleEditCost}
+        period={data.period}
+      />
 
       <AdjustmentList data={data} />
 
@@ -676,25 +686,28 @@ function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
 
 function CostList({
   canMaintain,
-  data,
+  costs,
   onEditCost,
+  period,
 }: {
   canMaintain: boolean;
-  data: FeeCalculatorData;
+  costs: FeeCalculatorCost[];
   onEditCost: (cost: FeeCalculatorCost) => void;
+  period: string;
 }) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState("");
   const [resettingCosts, setResettingCosts] = useState(false);
 
-  if (data.costs.length === 0) {
+  if (costs.length === 0) {
     return (
       <section className="grid gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Costos cargados</h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Estos costos alimentan la cuota base del mes en el que fueron cargados.
+              Costos de {formatPeriod(period)}. Cada mes mantiene su estructura
+              independiente.
             </p>
           </div>
           {canMaintain ? (
@@ -711,7 +724,7 @@ function CostList({
         </div>
         <Card>
           <CardContent className="text-muted-foreground p-5 text-sm">
-            Todavía no hay costos activos para calcular la cuota base.
+            Todavía no hay costos cargados para {formatPeriod(period)}.
           </CardContent>
         </Card>
       </section>
@@ -746,7 +759,8 @@ function CostList({
         <div>
           <h2 className="text-lg font-semibold">Costos cargados</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Estos costos alimentan la cuota base del mes en el que fueron cargados.
+            Costos de {formatPeriod(period)}. Cada mes mantiene su estructura
+            independiente.
           </p>
         </div>
         {canMaintain ? (
@@ -762,7 +776,7 @@ function CostList({
         ) : null}
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
-        {data.costs.map((cost) => (
+        {costs.map((cost) => (
           <Card key={cost.id}>
             <CardContent className="grid gap-4 p-5">
               <div className="flex items-start justify-between gap-3">
@@ -1093,16 +1107,16 @@ function ActualUnitsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Cantidades reales</CardTitle>
+        <CardTitle>Reales automáticos</CardTitle>
         <p className="text-muted-foreground text-sm">
-          Se autocompletan desde el formulario para {formatPeriod(data.previousPeriod)}.
-          Podés editarlas si necesitás corregirlas.
+          Se calculan desde partidos de {formatPeriod(data.previousPeriod)}. Usá el lápiz
+          solo si necesitás corregir un valor puntual.
         </p>
       </CardHeader>
       <CardContent>
         {costs.length === 0 ? (
           <div className="border-border rounded-lg border border-dashed p-4">
-            <h3 className="font-semibold">Sin cantidades reales para cargar</h3>
+            <h3 className="font-semibold">Sin reales automáticos</h3>
             <p className="text-muted-foreground mt-2 text-sm">
               No hay costos de cancha o DT cargados en {formatPeriod(data.previousPeriod)}
               {"."} Para generar ajustes en {formatPeriod(data.period)}, primero copiá o
@@ -1112,7 +1126,7 @@ function ActualUnitsPanel({
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             {costs.map((cost) => (
-              <ActualUnitsForm key={cost.id} cost={cost} data={data} />
+              <ActualUnitsCard key={cost.id} cost={cost} data={data} />
             ))}
           </div>
         )}
@@ -1121,7 +1135,7 @@ function ActualUnitsPanel({
   );
 }
 
-function ActualUnitsForm({
+function ActualUnitsCard({
   cost,
   data,
 }: {
@@ -1132,11 +1146,14 @@ function ActualUnitsForm({
   const actual = data.actuals.find(
     (item) => item.costId === cost.id && item.period === data.previousPeriod,
   );
-  const [actualUnits, setActualUnits] = useState(
-    String(actual?.actualUnits ?? cost.forecastUnits),
-  );
+  const inferredUnits = getInferredActualUnits(cost, data);
+  const finalActualUnits = actual?.actualUnits ?? inferredUnits ?? cost.forecastUnits;
+  const [isEditing, setIsEditing] = useState(false);
+  const [actualUnits, setActualUnits] = useState(String(finalActualUnits));
   const [notes, setNotes] = useState(actual?.notes ?? "");
   const [saving, setSaving] = useState(false);
+  const sourceLabel = getActualSourceLabel(actual);
+  const unitDifference = finalActualUnits - cost.forecastUnits;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1148,44 +1165,70 @@ function ActualUnitsForm({
       notes,
     });
     router.refresh();
+    setIsEditing(false);
     setSaving(false);
   }
 
   return (
-    <form
-      className="border-border bg-background grid gap-3 rounded-lg border p-4"
-      onSubmit={handleSubmit}
-    >
-      <div>
-        <p className="font-medium">{cost.name}</p>
-        <p className="text-muted-foreground mt-1 text-xs">
-          {getForecastLabel(cost)}: {formatNumber(cost.forecastUnits)}
-        </p>
+    <div className="border-border bg-background grid gap-4 rounded-lg border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">{cost.name}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {getActualDetail(cost, data)}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={`Editar real de ${cost.name}`}
+          onClick={() => {
+            setActualUnits(String(finalActualUnits));
+            setNotes(actual?.notes ?? "");
+            setIsEditing((current) => !current);
+          }}
+        >
+          {isEditing ? <X /> : <Pencil />}
+        </Button>
       </div>
-      <label className="grid gap-2">
-        <span className="text-sm font-medium">{getActualLabel(cost)}</span>
-        <input
-          type="number"
-          min={0}
-          step={0.5}
-          value={actualUnits}
-          onChange={(event) => setActualUnits(event.target.value)}
-          className="border-input bg-card focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-        />
-      </label>
-      <label className="grid gap-2">
-        <span className="text-sm font-medium">Nota</span>
-        <input
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          className="border-input bg-card focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-        />
-      </label>
-      <Button type="submit" size="sm" disabled={saving}>
-        <Save />
-        Guardar real
-      </Button>
-    </form>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <Info label={getForecastLabel(cost)} value={formatNumber(cost.forecastUnits)} />
+        <Info label={getActualLabel(cost)} value={formatNumber(finalActualUnits)} />
+        <Info label="Diferencia" value={formatSignedNumber(unitDifference)} />
+        <Info label="Origen" value={sourceLabel} />
+      </div>
+
+      {isEditing ? (
+        <form className="grid gap-3" onSubmit={handleSubmit}>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium">{getActualLabel(cost)}</span>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={actualUnits}
+              onChange={(event) => setActualUnits(event.target.value)}
+              className="border-input bg-card focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium">Nota</span>
+            <input
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Corrección manual"
+              className="border-input bg-card focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+            />
+          </label>
+          <Button type="submit" size="sm" disabled={saving}>
+            <Save />
+            Guardar corrección
+          </Button>
+        </form>
+      ) : null}
+    </div>
   );
 }
 
@@ -1557,6 +1600,21 @@ function getTrackedActualCosts(costs: FeeCalculatorCost[], previousPeriod: strin
   );
 }
 
+function findEquivalentCostForPeriod(
+  costs: FeeCalculatorCost[],
+  sourceCost: FeeCalculatorCost,
+  period: string,
+) {
+  const normalizedSourceName = normalizeText(sourceCost.name);
+
+  return costs.find(
+    (cost) =>
+      cost.startPeriod === period &&
+      cost.type === sourceCost.type &&
+      normalizeText(cost.name) === normalizedSourceName,
+  );
+}
+
 function getRepeatablePeriods(period: string) {
   return Array.from({ length: 11 }, (_, index) => addMonths(period, index + 1));
 }
@@ -1660,6 +1718,54 @@ function getActualLabel(cost: FeeCalculatorCost) {
   }
 
   return "Cantidad real";
+}
+
+function getInferredActualUnits(cost: FeeCalculatorCost, data: FeeCalculatorData) {
+  const autoActualKind = getAutoActualCostKind(cost);
+
+  if (autoActualKind === "court") {
+    return data.summary.totalLocalMatchesPreviousPeriod;
+  }
+
+  if (autoActualKind === "coach") {
+    return data.summary.coachHoursPreviousPeriod;
+  }
+
+  return undefined;
+}
+
+function getActualDetail(cost: FeeCalculatorCost, data: FeeCalculatorData) {
+  const autoActualKind = getAutoActualCostKind(cost);
+  const period = formatPeriod(data.previousPeriod);
+
+  if (autoActualKind === "court") {
+    return `${data.summary.totalLocalMatchesPreviousPeriod} partidos Local detectados en ${period}.`;
+  }
+
+  if (autoActualKind === "coach") {
+    return `${formatNumber(data.summary.coachHoursPreviousPeriod / 3)} jornadas con DT x 3 horas en ${period}.`;
+  }
+
+  return `Valor real de ${period}.`;
+}
+
+function getActualSourceLabel(actual?: FeeCalculatorActual) {
+  if (!actual || isInferredActual(actual)) {
+    return "Automático";
+  }
+
+  return "Editado";
+}
+
+function isInferredActual(actual: FeeCalculatorActual) {
+  const normalizedNotes = normalizeText(actual.notes);
+
+  return (
+    actual.id.startsWith("auto-") ||
+    normalizedNotes.includes("autocalculado") ||
+    normalizedNotes.includes("partidos local") ||
+    normalizedNotes.includes("asistio joaco")
+  );
 }
 
 function parseLocalizedNumberInput(value: unknown) {

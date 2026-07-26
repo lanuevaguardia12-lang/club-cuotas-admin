@@ -981,15 +981,26 @@ export class GoogleSheetsService implements IDataService {
       this.assertConfigured();
       assertValidPeriod(period);
 
-      const {
-        playersRows,
-        costsRows,
-        actualsRows,
-        playerStatusRows,
-        refundPolicyRows,
-        matchRows,
-        expenseRows,
-      } = await this.readFeeCalculatorRows();
+      const [
+        {
+          costsRows,
+          actualsRows,
+          playerStatusRows,
+          refundPolicyRows,
+          matchRows,
+          expenseRows,
+        },
+        cachedPlayersRows,
+      ] = await Promise.all([
+        this.readFeeCalculatorRows(),
+        this.readCachedPlayerDirectoryRows(),
+      ]);
+      const playersRows =
+        cachedPlayersRows.length > 0
+          ? cachedPlayersRows
+          : await this.readPlayerDirectoryRows(this.getAppSpreadsheetId()).catch(
+              () => cachedPlayersRows,
+            );
       const players = mapRowsToPlayers(playersRows);
       const costs = mapRowsToFeeCalculatorCosts(costsRows);
       const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
@@ -2078,7 +2089,6 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        playersRows: await this.readPlayerDirectoryRows(feeCalculatorSpreadsheetId),
         costsRows: await this.readOptionalValuesFromSpreadsheet(
           feeCalculatorSpreadsheetId,
           this.config.feeCalculatorCostsRange,
@@ -2112,7 +2122,6 @@ export class GoogleSheetsService implements IDataService {
         matchesSpreadsheetId ?? "",
         feeCalculatorSpreadsheetId,
         clubSpreadsheetId,
-        this.config.playersRange,
         this.config.feeCalculatorCostsRange,
         this.config.feeCalculatorActualsRange,
         this.config.feeCalculatorPlayerStatusesRange,
@@ -3445,6 +3454,9 @@ function buildFeeCalculatorData({
   );
   const activePlayers = players.filter((player) => activePlayerIds.has(player.id));
   const activeCosts = costs.filter((cost) => cost.active);
+  const currentPeriodCosts = activeCosts.filter((cost) =>
+    isCostActiveForPeriod(cost, period),
+  );
   const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
     (mergedActuals, actualPeriod) =>
       mergeInferredFeeCalculatorActuals(
@@ -3525,7 +3537,7 @@ function buildFeeCalculatorData({
       previousBaseQuota: previousPeriodBaseQuota,
       previousCostVariance,
       baseQuota,
-      activeCosts: activeCosts.length,
+      activeCosts: currentPeriodCosts.length,
       players: activePlayers.length,
       totalMatchesPreviousPeriod,
       totalLocalMatchesPreviousPeriod,
