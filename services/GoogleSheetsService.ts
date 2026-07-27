@@ -541,12 +541,12 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
       assertValidPeriod(period);
-      const chartPeriods = getCashFlowChartPeriods(period);
+      const ledgerPeriods = getCashFlowLedgerPeriods(period);
       const [transactions, feeIncomeByPeriod, operatingCostTransactions] =
         await Promise.all([
           this.readCashFlowTransactions(),
-          this.readFeeIncomeByPeriod(chartPeriods),
-          this.readFeeCalculatorOperatingCostTransactions(chartPeriods),
+          this.readFeeIncomeByPeriod(ledgerPeriods),
+          this.readFeeCalculatorOperatingCostTransactions(ledgerPeriods),
         ]);
       const cashFlowTransactions = [...transactions, ...operatingCostTransactions];
       const expectedFeeIncome = feeIncomeByPeriod.get(period) ?? 0;
@@ -4296,10 +4296,19 @@ function buildCashFlowData({
   const chartPeriods = Array.from(
     new Set([...projectionPeriods, ...annualPeriods]),
   ).sort();
-  const expandedTransactions = expandCashFlowTransactions(transactions, chartPeriods);
+  const ledgerPeriods = getCashFlowLedgerPeriods(period);
+  const expandedTransactions = expandCashFlowTransactions(transactions, ledgerPeriods);
   const feeTransactions = buildFeeIncomeTransactions(feeIncomeByPeriod);
   const projectedTransactions = [...expandedTransactions, ...feeTransactions];
   const monthlySeries = buildCashFlowMonthlySeries(projectedTransactions, chartPeriods);
+  const monthlyOpeningBalance = calculateCashFlowOpeningBalance(
+    projectedTransactions,
+    projectionPeriods[0] ?? period,
+  );
+  const annualOpeningBalance = calculateCashFlowOpeningBalance(
+    projectedTransactions,
+    annualPeriods[0] ?? period,
+  );
   const currentManualTransactions = expandedTransactions.filter(
     (transaction) => transaction.period === period,
   );
@@ -4329,12 +4338,14 @@ function buildCashFlowData({
         period,
         monthlySeries,
         projectionPeriods,
+        monthlyOpeningBalance,
       ),
       annual: buildCashFlowMonthlyChart(
         projectedTransactions,
         period,
         monthlySeries,
         annualPeriods,
+        annualOpeningBalance,
       ),
       monthlySeries,
       conceptBreakdown: buildCashFlowConceptBreakdown(projectedTransactions, period),
@@ -4528,10 +4539,11 @@ function buildCashFlowMonthlyChart(
   selectedPeriod = getCurrentPeriod(),
   expenseSeries: CashFlowConceptSeries[],
   periods = getCashFlowProjectionPeriods(selectedPeriod),
+  openingCashBalance = 0,
 ): CashFlowMonthlyPoint[] {
   const expenseSeriesKeys = new Set(expenseSeries.map((series) => series.key));
   const hasOtherExpenses = expenseSeriesKeys.has(otherExpensesKey);
-  let cashBalance = 0;
+  let cashBalance = openingCashBalance;
 
   return periods.map((period) => {
     const periodTransactions = transactions.filter(
@@ -4634,6 +4646,19 @@ function buildCashFlowConceptBreakdown(
 
 function getCashFlowExpenseKey(concept: string) {
   return `expense_${normalizeHeader(concept) || "sin_concepto"}`;
+}
+
+function calculateCashFlowOpeningBalance(
+  transactions: CashFlowTransactionRecord[],
+  firstPeriod: string,
+) {
+  return transactions
+    .filter((transaction) => transaction.period < firstPeriod)
+    .reduce((total, transaction) => {
+      return (
+        total + (transaction.type === "income" ? transaction.amount : -transaction.amount)
+      );
+    }, 0);
 }
 
 function expandCashFlowTransactions(
@@ -4763,6 +4788,19 @@ function getCashFlowChartPeriods(period: string) {
   return Array.from(
     new Set([...getCashFlowProjectionPeriods(period), ...getYearPeriods(period)]),
   ).sort();
+}
+
+function getCashFlowLedgerPeriods(period: string) {
+  const chartPeriods = getCashFlowChartPeriods(period);
+  const firstChartPeriod = chartPeriods[0] ?? period;
+  const historyEndPeriod = getPreviousPeriod(firstChartPeriod);
+  const historyStartPeriod = addMonthsToPeriod(firstChartPeriod, -12);
+  const historyPeriods =
+    historyStartPeriod <= historyEndPeriod
+      ? getPeriodsBetween(historyStartPeriod, historyEndPeriod)
+      : [];
+
+  return Array.from(new Set([...historyPeriods, ...chartPeriods])).sort();
 }
 
 function getYearPeriods(period: string) {

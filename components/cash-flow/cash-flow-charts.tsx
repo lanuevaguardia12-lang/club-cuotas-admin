@@ -157,6 +157,14 @@ export function CashFlowCharts({ charts }: CashFlowChartsProps) {
                 />
                 <Line
                   type="monotone"
+                  dataKey="cashBalance"
+                  name="Saldo acumulado"
+                  stroke={chartColors.cashBalance}
+                  strokeWidth={3}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
                   dataKey="negativeCashBalance"
                   name="Saldo bajo 0"
                   stroke={chartColors.expenses}
