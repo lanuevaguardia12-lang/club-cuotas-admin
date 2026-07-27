@@ -541,19 +541,26 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
       assertValidPeriod(period);
-      const transactions = await this.readCashFlowTransactions();
-      const feeIncomeByPeriod = await this.readFeeIncomeByPeriod(
-        getCashFlowProjectionPeriods(period),
-      );
+      const chartPeriods = getCashFlowChartPeriods(period);
+      const [transactions, feeIncomeByPeriod, operatingCostTransactions] =
+        await Promise.all([
+          this.readCashFlowTransactions(),
+          this.readFeeIncomeByPeriod(chartPeriods),
+          this.readFeeCalculatorOperatingCostTransactions(chartPeriods),
+        ]);
+      const cashFlowTransactions = [...transactions, ...operatingCostTransactions];
       const expectedFeeIncome = feeIncomeByPeriod.get(period) ?? 0;
 
       return buildCashFlowData({
         period,
-        transactions,
+        transactions: cashFlowTransactions,
         feeIncomeByPeriod,
-        status: transactions.length === 0 && expectedFeeIncome === 0 ? "empty" : "ready",
+        status:
+          cashFlowTransactions.length === 0 && expectedFeeIncome === 0
+            ? "empty"
+            : "ready",
         message:
-          transactions.length === 0 && expectedFeeIncome === 0
+          cashFlowTransactions.length === 0 && expectedFeeIncome === 0
             ? "Google Sheets conectado, sin movimientos ni cuotas calculadas."
             : "Cash Flow obtenido desde Google Sheets y calculador de cuota.",
         cachedAt,
@@ -2466,6 +2473,29 @@ export class GoogleSheetsService implements IDataService {
     );
 
     return new Map(entries);
+  }
+
+  private async readFeeCalculatorOperatingCostTransactions(periods: string[]) {
+    const targetPeriods = new Set(periods);
+    const sourcePeriods = Array.from(
+      new Set([...periods, ...periods.map(getPreviousPeriod)]),
+    ).sort();
+    const { costsRows, actualsRows, matchRows } = await this.readFeeCalculatorRows();
+    const costs = mapRowsToFeeCalculatorCosts(costsRows);
+    const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
+    const matches = mapRowsToMatches(matchRows);
+    const effectiveActuals = sourcePeriods.reduce(
+      (mergedActuals, sourcePeriod) =>
+        mergeInferredFeeCalculatorActuals(costs, mergedActuals, matches, sourcePeriod),
+      actuals,
+    );
+
+    return buildFeeCalculatorOperatingCostCashFlowTransactions({
+      costs,
+      actuals: effectiveActuals,
+      sourcePeriods,
+      targetPeriods,
+    });
   }
 
   private async updateClubSheetFeeStatus(input: UpdatePlayerFeeStatusInput) {
@@ -4508,7 +4538,10 @@ function buildCashFlowMonthlyChart(
       (transaction) => transaction.period === period,
     );
     const feeIncome = periodTransactions
-      .filter((transaction) => transaction.source === "fee-calculator")
+      .filter(
+        (transaction) =>
+          transaction.source === "fee-calculator" && transaction.type === "income",
+      )
       .reduce((total, transaction) => total + transaction.amount, 0);
     const additionalIncome = sumCashFlow(periodTransactions, "income") - feeIncome;
     const ingresos = sumCashFlow(periodTransactions, "income");
@@ -4568,7 +4601,7 @@ function buildCashFlowConceptBreakdown(
       >
     >((items, transaction) => {
       const concept =
-        transaction.source === "fee-calculator"
+        transaction.source === "fee-calculator" && transaction.type === "income"
           ? "Cuotas de jugadores"
           : transaction.concept;
       const key = `${transaction.type}:${normalizeHeader(concept) || "sin_concepto"}`;
@@ -4649,8 +4682,87 @@ function buildFeeIncomeTransactions(
     }));
 }
 
+function buildFeeCalculatorOperatingCostCashFlowTransactions({
+  costs,
+  actuals,
+  sourcePeriods,
+  targetPeriods,
+}: {
+  costs: FeeCalculatorCost[];
+  actuals: FeeCalculatorActual[];
+  sourcePeriods: string[];
+  targetPeriods: Set<string>;
+}): CashFlowTransactionRecord[] {
+  return sourcePeriods
+    .flatMap((sourcePeriod) =>
+      costs
+        .filter((cost) => isCostActiveForPeriod(cost, sourcePeriod))
+        .flatMap((cost) => {
+          const autoActualKind = getAutoActualCostKind(cost);
+
+          if (autoActualKind !== "court" && autoActualKind !== "coach") {
+            return [];
+          }
+
+          const actualUnits = findActualUnitsForCost(cost, costs, actuals, sourcePeriod);
+
+          if (typeof actualUnits !== "number" || actualUnits <= 0) {
+            return [];
+          }
+
+          const paymentPeriod =
+            autoActualKind === "coach"
+              ? addMonthsToPeriod(sourcePeriod, 1)
+              : sourcePeriod;
+
+          if (!targetPeriods.has(paymentPeriod)) {
+            return [];
+          }
+
+          const amount = cost.amount * actualUnits;
+
+          if (amount <= 0) {
+            return [];
+          }
+
+          const concept = autoActualKind === "coach" ? "Horas DT reales" : "Cancha real";
+          const unitLabel = autoActualKind === "coach" ? "horas" : "canchas";
+          const paymentRule =
+            autoActualKind === "coach"
+              ? "Pago a mes vencido."
+              : "Pago en el mes del partido.";
+
+          return {
+            id: `fee-calculator-operating-${autoActualKind}-${cost.id}-${sourcePeriod}`,
+            date: `${paymentPeriod}-01`,
+            period: paymentPeriod,
+            type: "expense",
+            concept,
+            amount,
+            repeatsMonthly: false,
+            startPeriod: paymentPeriod,
+            endPeriod: paymentPeriod,
+            notes: `${paymentRule} ${formatPeriodLabel(sourcePeriod)}: ${formatInteger(actualUnits)} ${unitLabel} x ${formatCurrency(cost.amount)}.`,
+            active: true,
+            source: "fee-calculator",
+          } satisfies CashFlowTransactionRecord;
+        }),
+    )
+    .sort((left, right) => {
+      const dateComparison = (left.date ?? "").localeCompare(right.date ?? "");
+
+      return dateComparison || left.concept.localeCompare(right.concept, "es");
+    });
+}
+
 function getCashFlowProjectionPeriods(period: string) {
   return Array.from(new Set([...getLastPeriods(12), period])).sort();
+}
+
+function getCashFlowChartPeriods(period: string) {
+  return Array.from(
+    new Set([...getCashFlowProjectionPeriods(period), ...getYearPeriods(period)]),
+  ).sort();
 }
 
 function getYearPeriods(period: string) {
