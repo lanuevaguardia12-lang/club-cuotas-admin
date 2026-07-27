@@ -1,33 +1,11 @@
-import {
-  ArrowDownCircle,
-  ArrowUpCircle,
-  BarChart3,
-  Database,
-  Scale,
-  WalletCards,
-} from "lucide-react";
+import { Database, WalletCards } from "lucide-react";
 
 import { CashFlowContent } from "@/components/cash-flow/cash-flow-content";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
 export const dynamic = "force-dynamic";
-
-const metricIcons = {
-  income: ArrowDownCircle,
-  expenses: ArrowUpCircle,
-  balance: Scale,
-  cash: WalletCards,
-};
-
-const metricTones = {
-  neutral: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  warning: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  danger: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
-};
 
 export default async function CashFlowPage({
   searchParams,
@@ -71,29 +49,6 @@ export default async function CashFlowPage({
           </div>
         </div>
       </header>
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cashFlow.metrics.map((item) => {
-          const Icon = metricIcons[item.id] ?? BarChart3;
-
-          return (
-            <Card key={item.id}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                <CardTitle className="text-muted-foreground text-sm font-medium">
-                  {item.title}
-                </CardTitle>
-                <div className={`rounded-md p-2 ${metricTones[item.tone]}`}>
-                  <Icon className="size-4" aria-hidden="true" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold">{item.value}</div>
-                <p className="text-muted-foreground mt-1 text-sm">{item.detail}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </section>
 
       <CashFlowContent
         canWrite={hasPermission(user, "cash-flow:write")}

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
   CashFlowData,
+  CashFlowMatrixRow,
   CashFlowMonthlyPoint,
   CashFlowTransaction,
   CashFlowTransactionType,
@@ -194,29 +195,11 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
         </CardHeader>
       </Card>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <DetailCard
-          label="Cuotas esperadas"
-          value={formatCurrency(data.expectedFeeIncome)}
-          detail="Suma de jugadores activos"
-        />
-        <DetailCard
-          label="Ingresos adicionales"
-          value={formatCurrency(data.additionalIncome)}
-          detail="Movimientos cargados"
-        />
-        <DetailCard
-          label="Gastos adicionales"
-          value={formatCurrency(data.additionalExpenses)}
-          detail="Movimientos cargados"
-        />
-      </section>
+      <CashFlowCharts charts={data.charts} />
 
-      <CashFlowExecutiveSummary
-        canWrite={canWrite}
+      <CashFlowGeneralSummary
+        annual={data.charts.annual}
         nextCriticalMonth={nextCriticalMonth}
-        onInitialBalance={startInitialBalance}
-        selectedMonth={selectedMonth}
       />
 
       <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
@@ -224,7 +207,7 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
           <CardHeader>
             <CardTitle>{editingId ? "Editar movimiento" : "Nuevo movimiento"}</CardTitle>
             <p className="text-muted-foreground text-sm">
-              Cargá ingresos y gastos adicionales al cálculo de cuotas.
+              Cargá ingresos y gastos adicionales para simular escenarios.
             </p>
           </CardHeader>
           <CardContent>
@@ -356,7 +339,12 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
         />
       </div>
 
-      <CashFlowCharts charts={data.charts} />
+      <CashFlowMonthSummary
+        canWrite={canWrite}
+        matrixRows={data.charts.matrixRows}
+        onInitialBalance={startInitialBalance}
+        selectedMonth={selectedMonth}
+      />
     </section>
   );
 }
@@ -454,14 +442,75 @@ function CashFlowTransactionsList({
   );
 }
 
-function CashFlowExecutiveSummary({
-  canWrite,
+function CashFlowGeneralSummary({
+  annual,
   nextCriticalMonth,
+}: {
+  annual: CashFlowMonthlyPoint[];
+  nextCriticalMonth?: CashFlowMonthlyPoint;
+}) {
+  const totalIncome = annual.reduce((total, point) => total + point.ingresos, 0);
+  const totalExpenses = annual.reduce((total, point) => total + point.gastos, 0);
+  const annualBalance = totalIncome - totalExpenses;
+  const finalBalance = annual.at(-1)?.cashBalance ?? 0;
+  const positiveMonths = annual.filter((point) => point.balance >= 0).length;
+  const state =
+    finalBalance < 0
+      ? {
+          detail: "El año proyecta caja negativa si se mantiene este escenario.",
+          label: "Riesgo de caja",
+          variant: "danger" as const,
+        }
+      : annualBalance < 0
+        ? {
+            detail: "El año pierde plata, pero la caja final sigue positiva.",
+            label: "Año deficitario",
+            variant: "warning" as const,
+          }
+        : {
+            detail: "El año cierra con resultado positivo.",
+            label: "Caja sana",
+            variant: "success" as const,
+          };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle>Resumen operativo general</CardTitle>
+          <Badge variant={state.variant}>{state.label}</Badge>
+        </div>
+        <p className="text-muted-foreground text-sm">{state.detail}</p>
+      </CardHeader>
+      <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <SummaryItem label="Ingresos año" value={totalIncome} />
+        <SummaryItem label="Gastos año" value={totalExpenses} mode="expense" />
+        <SummaryItem label="Resultado año" value={annualBalance} mode="signed" />
+        <SummaryItem label="Saldo final año" value={finalBalance} mode="signed" strong />
+        <div className="border-border bg-background rounded-md border p-3">
+          <p className="text-muted-foreground text-xs font-medium">Meses positivos</p>
+          <p className="mt-2 text-lg font-semibold">
+            {positiveMonths}/{annual.length}
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {nextCriticalMonth
+              ? `Primer alerta: ${formatPeriod(nextCriticalMonth.period)}`
+              : "Sin meses con caja negativa"}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CashFlowMonthSummary({
+  canWrite,
+  matrixRows,
   onInitialBalance,
   selectedMonth,
 }: {
   canWrite: boolean;
-  nextCriticalMonth?: CashFlowMonthlyPoint;
+  matrixRows: CashFlowMatrixRow[];
   onInitialBalance: (type: CashFlowTransactionType) => void;
   selectedMonth?: CashFlowMonthlyPoint;
 }) {
@@ -470,13 +519,17 @@ function CashFlowExecutiveSummary({
   }
 
   const state = getFinancialState(selectedMonth);
+  const incomeRows = getRowsForPeriod(matrixRows, selectedMonth.period, "income");
+  const expenseRows = getRowsForPeriod(matrixRows, selectedMonth.period, "expense");
 
   return (
     <Card>
       <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>Resumen ejecutivo</CardTitle>
+            <CardTitle>
+              Resumen operativo de {formatPeriod(selectedMonth.period)}
+            </CardTitle>
             <Badge variant={state.variant}>{state.label}</Badge>
           </div>
           <p className="text-muted-foreground mt-2 text-sm">{state.detail}</p>
@@ -502,34 +555,75 @@ function CashFlowExecutiveSummary({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <SummaryItem
-          label="Saldo inicial"
-          value={selectedMonth.openingCashBalance}
-          mode="signed"
-        />
-        <SummaryItem label="Ingresos" value={selectedMonth.ingresos} />
-        <SummaryItem label="Gastos" value={selectedMonth.gastos} mode="expense" />
-        <SummaryItem label="Balance mes" value={selectedMonth.balance} mode="signed" />
-        <SummaryItem
-          label="Saldo final"
-          value={selectedMonth.cashBalance}
-          mode="signed"
-          strong
-        />
-        <div className="border-border bg-background rounded-md border p-3">
-          <p className="text-muted-foreground text-xs font-medium">Próximo mes crítico</p>
-          <p className="mt-2 text-lg font-semibold">
-            {nextCriticalMonth ? formatPeriod(nextCriticalMonth.period) : "Sin alerta"}
-          </p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {nextCriticalMonth
-              ? formatCurrency(nextCriticalMonth.cashBalance)
-              : "Caja positiva en el año"}
-          </p>
-        </div>
+      <CardContent className="grid gap-4">
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <SummaryItem
+            label="Saldo inicial"
+            value={selectedMonth.openingCashBalance}
+            mode="signed"
+          />
+          <SummaryItem label="Ingresos" value={selectedMonth.ingresos} />
+          <SummaryItem label="Gastos" value={selectedMonth.gastos} mode="expense" />
+          <SummaryItem
+            label="Resultado mes"
+            value={selectedMonth.balance}
+            mode="signed"
+          />
+          <SummaryItem
+            label="Saldo final"
+            value={selectedMonth.cashBalance}
+            mode="signed"
+            strong
+          />
+        </section>
+        <section className="grid gap-4 lg:grid-cols-2">
+          <ConceptBreakdown title="Ingresos del mes" rows={incomeRows} />
+          <ConceptBreakdown title="Gastos del mes" rows={expenseRows} isExpense />
+        </section>
       </CardContent>
     </Card>
+  );
+}
+
+function ConceptBreakdown({
+  isExpense = false,
+  rows,
+  title,
+}: {
+  isExpense?: boolean;
+  rows: Array<{ amount: number; concept: string }>;
+  title: string;
+}) {
+  return (
+    <div className="border-border bg-background rounded-md border">
+      <div className="border-border flex items-center justify-between border-b px-3 py-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="text-muted-foreground text-xs">{rows.length} conceptos</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground px-3 py-4 text-sm">Sin movimientos.</p>
+      ) : (
+        <div className="divide-border divide-y">
+          {rows.map((row) => (
+            <div
+              key={row.concept}
+              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 truncate">{row.concept}</span>
+              <span
+                className={
+                  isExpense
+                    ? "text-destructive font-semibold"
+                    : "font-semibold text-emerald-700 dark:text-emerald-300"
+                }
+              >
+                {formatCurrency(isExpense ? -row.amount : row.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -571,6 +665,21 @@ function SummaryItem({
   );
 }
 
+function getRowsForPeriod(
+  rows: CashFlowMatrixRow[],
+  period: string,
+  type: CashFlowTransactionType,
+) {
+  return rows
+    .filter((row) => row.type === type)
+    .map((row) => ({
+      amount: row.values[period] ?? 0,
+      concept: row.concept,
+    }))
+    .filter((row) => row.amount > 0)
+    .sort((left, right) => right.amount - left.amount);
+}
+
 function getFinancialState(month: CashFlowMonthlyPoint) {
   if (month.cashBalance < 0) {
     return {
@@ -595,26 +704,6 @@ function getFinancialState(month: CashFlowMonthlyPoint) {
   };
 }
 
-function DetailCard({
-  detail,
-  label,
-  value,
-}: {
-  detail: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-5">
-        <p className="text-muted-foreground text-sm">{label}</p>
-        <p className="mt-2 text-2xl font-semibold">{value}</p>
-        <p className="text-muted-foreground mt-1 text-sm">{detail}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
 function Field({
   children,
   error,
@@ -635,17 +724,15 @@ function Field({
 
 function CashFlowChartsLoading() {
   return (
-    <section className="grid gap-4 xl:grid-cols-2">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <Card key={index}>
-          <CardHeader>
-            <div className="bg-muted h-5 w-36 animate-pulse rounded" />
-          </CardHeader>
-          <CardContent>
-            <div className="bg-muted h-80 w-full animate-pulse rounded-md" />
-          </CardContent>
-        </Card>
-      ))}
+    <section className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <div className="bg-muted h-5 w-44 animate-pulse rounded" />
+        </CardHeader>
+        <CardContent>
+          <div className="bg-muted h-[420px] w-full animate-pulse rounded-md" />
+        </CardContent>
+      </Card>
     </section>
   );
 }
