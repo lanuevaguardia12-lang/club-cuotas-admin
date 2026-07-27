@@ -2461,12 +2461,15 @@ export class GoogleSheetsService implements IDataService {
 
   private async readFeeIncomeByPeriod(periods: string[]) {
     const uniquePeriods = Array.from(new Set(periods));
+    const playerDirectory = await this.getPlayersData().catch(() => null);
+    const activePlayersFromDirectory =
+      playerDirectory?.players.filter((player) => player.status === "active").length ?? 0;
     const entries = await Promise.all(
       uniquePeriods.map(async (period) => {
         const data = await this.getFeeCalculatorData(period);
-        const total = data.playerCalculations.reduce(
-          (sum, calculation) => sum + calculation.finalQuota,
-          0,
+        const total = calculateExpectedFeeIncomeForCashFlow(
+          data,
+          activePlayersFromDirectory,
         );
 
         return [period, total] as const;
@@ -4273,6 +4276,34 @@ function buildDashboardData({
       revalidateSeconds,
     },
   };
+}
+
+function calculateExpectedFeeIncomeForCashFlow(
+  data: FeeCalculatorData,
+  activePlayersFromDirectory: number,
+) {
+  const calculatedTotal = data.playerCalculations.reduce(
+    (sum, calculation) => sum + calculation.finalQuota,
+    0,
+  );
+  const calculatedPlayers = data.playerCalculations.length;
+  const activePlayersFromCalculator =
+    data.players.filter((player) => player.status === "active").length ||
+    data.summary.players;
+  const expectedPlayers = Math.max(
+    activePlayersFromCalculator,
+    activePlayersFromDirectory,
+  );
+
+  if (
+    calculatedTotal > 0 &&
+    calculatedPlayers > 0 &&
+    expectedPlayers > calculatedPlayers
+  ) {
+    return (calculatedTotal / calculatedPlayers) * expectedPlayers;
+  }
+
+  return calculatedTotal;
 }
 
 function buildCashFlowData({
