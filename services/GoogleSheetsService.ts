@@ -4287,20 +4287,18 @@ function calculateExpectedFeeIncomeForCashFlow(
     0,
   );
   const calculatedPlayers = data.playerCalculations.length;
+  const adjustedQuota = data.summary.baseQuota;
   const activePlayersFromCalculator =
     data.players.filter((player) => player.status === "active").length ||
     data.summary.players;
   const expectedPlayers = Math.max(
     activePlayersFromCalculator,
     activePlayersFromDirectory,
+    data.summary.players,
   );
 
-  if (
-    calculatedTotal > 0 &&
-    calculatedPlayers > 0 &&
-    expectedPlayers > calculatedPlayers
-  ) {
-    return (calculatedTotal / calculatedPlayers) * expectedPlayers;
+  if (adjustedQuota > 0 && expectedPlayers > calculatedPlayers) {
+    return calculatedTotal + (expectedPlayers - calculatedPlayers) * adjustedQuota;
   }
 
   return calculatedTotal;
