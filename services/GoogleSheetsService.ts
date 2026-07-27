@@ -14,7 +14,6 @@ import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type {
   AnnualComparisonPoint,
-  CashFlowAnnualPoint,
   CashFlowConceptBreakdownPoint,
   CashFlowConceptSeries,
   CashFlowData,
@@ -4263,16 +4262,14 @@ function buildCashFlowData({
   revalidateSeconds: number;
 }): CashFlowData {
   const projectionPeriods = getCashFlowProjectionPeriods(period);
-  const expandedTransactions = expandCashFlowTransactions(
-    transactions,
-    projectionPeriods,
-  );
+  const annualPeriods = getYearPeriods(period);
+  const chartPeriods = Array.from(
+    new Set([...projectionPeriods, ...annualPeriods]),
+  ).sort();
+  const expandedTransactions = expandCashFlowTransactions(transactions, chartPeriods);
   const feeTransactions = buildFeeIncomeTransactions(feeIncomeByPeriod);
   const projectedTransactions = [...expandedTransactions, ...feeTransactions];
-  const monthlySeries = buildCashFlowMonthlySeries(
-    projectedTransactions,
-    projectionPeriods,
-  );
+  const monthlySeries = buildCashFlowMonthlySeries(projectedTransactions, chartPeriods);
   const currentManualTransactions = expandedTransactions.filter(
     (transaction) => transaction.period === period,
   );
@@ -4297,8 +4294,18 @@ function buildCashFlowData({
       additionalIncome,
     }),
     charts: {
-      monthly: buildCashFlowMonthlyChart(projectedTransactions, period, monthlySeries),
-      annual: buildCashFlowAnnualChart(projectedTransactions),
+      monthly: buildCashFlowMonthlyChart(
+        projectedTransactions,
+        period,
+        monthlySeries,
+        projectionPeriods,
+      ),
+      annual: buildCashFlowMonthlyChart(
+        projectedTransactions,
+        period,
+        monthlySeries,
+        annualPeriods,
+      ),
       monthlySeries,
       conceptBreakdown: buildCashFlowConceptBreakdown(projectedTransactions, period),
     },
@@ -4349,7 +4356,7 @@ function buildFallbackCashFlowData({
     }),
     charts: {
       monthly: buildCashFlowMonthlyChart([], period, []),
-      annual: buildCashFlowAnnualChart([]),
+      annual: buildCashFlowMonthlyChart([], period, [], getYearPeriods(period)),
       monthlySeries: [],
       conceptBreakdown: [],
     },
@@ -4490,8 +4497,8 @@ function buildCashFlowMonthlyChart(
   transactions: CashFlowTransactionRecord[],
   selectedPeriod = getCurrentPeriod(),
   expenseSeries: CashFlowConceptSeries[],
+  periods = getCashFlowProjectionPeriods(selectedPeriod),
 ): CashFlowMonthlyPoint[] {
-  const periods = getCashFlowProjectionPeriods(selectedPeriod);
   const expenseSeriesKeys = new Set(expenseSeries.map((series) => series.key));
   const hasOtherExpenses = expenseSeriesKeys.has(otherExpensesKey);
   let cashBalance = 0;
@@ -4596,25 +4603,6 @@ function getCashFlowExpenseKey(concept: string) {
   return `expense_${normalizeHeader(concept) || "sin_concepto"}`;
 }
 
-function buildCashFlowAnnualChart(
-  transactions: CashFlowTransactionRecord[],
-): CashFlowAnnualPoint[] {
-  return getLastYears(5).map((year) => {
-    const yearTransactions = transactions.filter((transaction) =>
-      transaction.period.startsWith(`${year}-`),
-    );
-    const ingresos = sumCashFlow(yearTransactions, "income");
-    const gastos = sumCashFlow(yearTransactions, "expense");
-
-    return {
-      year: String(year),
-      ingresos,
-      gastos,
-      balance: ingresos - gastos,
-    };
-  });
-}
-
 function expandCashFlowTransactions(
   transactions: CashFlowTransactionRecord[],
   periods: string[],
@@ -4663,6 +4651,14 @@ function buildFeeIncomeTransactions(
 
 function getCashFlowProjectionPeriods(period: string) {
   return Array.from(new Set([...getLastPeriods(12), period])).sort();
+}
+
+function getYearPeriods(period: string) {
+  const [year] = period.split("-");
+
+  return Array.from({ length: 12 }, (_, index) => {
+    return `${year}-${String(index + 1).padStart(2, "0")}`;
+  });
 }
 
 function getPeriodsBetween(startPeriod: string, endPeriod: string) {

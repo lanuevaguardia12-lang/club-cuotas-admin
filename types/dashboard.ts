@@ -96,13 +96,6 @@ export interface CashFlowMonthlyPoint {
   negativeCashBalance: number | null;
 }
 
-export interface CashFlowAnnualPoint {
-  year: string;
-  ingresos: number;
-  gastos: number;
-  balance: number;
-}
-
 export interface CashFlowConceptSeries {
   key: string;
   label: string;
@@ -119,7 +112,7 @@ export interface CashFlowConceptBreakdownPoint {
 
 export interface CashFlowChartsData {
   monthly: CashFlowMonthlyPoint[];
-  annual: CashFlowAnnualPoint[];
+  annual: CashFlowMonthlyPoint[];
   monthlySeries: CashFlowConceptSeries[];
   conceptBreakdown: CashFlowConceptBreakdownPoint[];
 }

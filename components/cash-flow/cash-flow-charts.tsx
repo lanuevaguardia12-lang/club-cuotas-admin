@@ -103,14 +103,17 @@ export function CashFlowCharts({ charts }: CashFlowChartsProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Gráfico anual</CardTitle>
+          <CardTitle>Mes a mes del año</CardTitle>
+          <p className="text-muted-foreground text-sm">
+            Evolución mensual con ingresos, gastos por concepto y alerta bajo cero.
+          </p>
         </CardHeader>
         <CardContent>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={charts.annual} margin={{ left: 0, right: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="year" tickLine={false} axisLine={false} fontSize={12} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis
                   tickLine={false}
                   axisLine={false}
@@ -120,14 +123,46 @@ export function CashFlowCharts({ charts }: CashFlowChartsProps) {
                 <Tooltip contentStyle={tooltipStyle} formatter={tooltipFormatter} />
                 <Legend formatter={legendFormatter} />
                 <ReferenceLine y={0} stroke={chartColors.zero} strokeDasharray="4 4" />
-                <Bar dataKey="ingresos" fill={chartColors.income} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="gastos" fill={chartColors.expenses} radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey="feeIncome"
+                  name="Cuotas jugadores"
+                  stackId="income"
+                  fill={chartColors.feeIncome}
+                  radius={[4, 4, 0, 0]}
+                />
+                <Bar
+                  dataKey="additionalIncome"
+                  name="Ingresos extra"
+                  stackId="income"
+                  fill={chartColors.additionalIncome}
+                  radius={[4, 4, 0, 0]}
+                />
+                {charts.monthlySeries.map((series) => (
+                  <Bar
+                    key={series.key}
+                    dataKey={series.key}
+                    name={series.label}
+                    stackId="expenses"
+                    fill={series.color}
+                    radius={[0, 0, 4, 4]}
+                  />
+                ))}
                 <Line
                   type="monotone"
                   dataKey="balance"
+                  name="Balance mensual"
                   stroke={chartColors.balance}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="negativeCashBalance"
+                  name="Saldo bajo 0"
+                  stroke={chartColors.expenses}
                   strokeWidth={3}
-                  dot
+                  dot={{ r: 4 }}
+                  connectNulls={false}
                 />
               </ComposedChart>
             </ResponsiveContainer>
