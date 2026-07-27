@@ -1072,7 +1072,7 @@ export class GoogleSheetsService implements IDataService {
       await sheets.spreadsheets.values.update({
         spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A:M`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: {
           values: [
             feeCalculatorCostHeaders,
@@ -1109,7 +1109,7 @@ export class GoogleSheetsService implements IDataService {
       await sheets.spreadsheets.values.update({
         spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: {
           values: [
             buildFeeCalculatorCostWritableRow(headers, {
@@ -1126,7 +1126,7 @@ export class GoogleSheetsService implements IDataService {
       await sheets.spreadsheets.values.append({
         spreadsheetId: feeCalculatorSpreadsheetId,
         range: `${sheetPrefix}!A:${toColumnName(headers.length - 1)}`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: {
           values: [
@@ -2089,53 +2089,34 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
-    return unstable_cache(
-      async () => ({
-        costsRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.feeCalculatorCostsRange,
-        ),
-        actualsRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.feeCalculatorActualsRange,
-        ),
-        playerStatusRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.feeCalculatorPlayerStatusesRange,
-        ),
-        refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.refundPolicyRange,
-        ),
-        matchRows: matchesSpreadsheetId
-          ? await this.readOptionalValuesFromSpreadsheet(
-              matchesSpreadsheetId,
-              this.config.matchesRange,
-            )
-          : [],
-        expenseRows: await this.readOptionalValuesFromSpreadsheet(
-          clubSpreadsheetId,
-          this.config.expensesRange,
-        ),
-      }),
-      [
-        "google-sheets-fee-calculator",
-        spreadsheetId,
-        matchesSpreadsheetId ?? "",
+    return {
+      costsRows: await this.readOptionalValuesFromSpreadsheet(
         feeCalculatorSpreadsheetId,
-        clubSpreadsheetId,
         this.config.feeCalculatorCostsRange,
+      ),
+      actualsRows: await this.readOptionalValuesFromSpreadsheet(
+        feeCalculatorSpreadsheetId,
         this.config.feeCalculatorActualsRange,
+      ),
+      playerStatusRows: await this.readOptionalValuesFromSpreadsheet(
+        feeCalculatorSpreadsheetId,
         this.config.feeCalculatorPlayerStatusesRange,
+      ),
+      refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
+        feeCalculatorSpreadsheetId,
         this.config.refundPolicyRange,
-        this.config.matchesRange,
+      ),
+      matchRows: matchesSpreadsheetId
+        ? await this.readOptionalValuesFromSpreadsheet(
+            matchesSpreadsheetId,
+            this.config.matchesRange,
+          )
+        : [],
+      expenseRows: await this.readOptionalValuesFromSpreadsheet(
+        clubSpreadsheetId,
         this.config.expensesRange,
-      ],
-      {
-        revalidate: this.config.cacheTtlSeconds,
-        tags: ["google-sheets", "google-sheets:fee-calculator"],
-      },
-    )();
+      ),
+    };
   }
 
   private async readValues(range: string) {
@@ -2157,6 +2138,8 @@ export class GoogleSheetsService implements IDataService {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range,
+      dateTimeRenderOption: "FORMATTED_STRING",
+      valueRenderOption: "FORMATTED_VALUE",
     });
 
     return response.data.values ?? [];
@@ -5927,20 +5910,22 @@ function monthNameToNumber(value: string) {
   }
 
   const months = [
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
+    ["enero", "ene", "january", "jan"],
+    ["febrero", "feb", "february"],
+    ["marzo", "mar", "march"],
+    ["abril", "abr", "april", "apr"],
+    ["mayo", "may"],
+    ["junio", "jun", "june"],
+    ["julio", "jul", "july"],
+    ["agosto", "ago", "august", "aug"],
+    ["septiembre", "setiembre", "sep", "september"],
+    ["octubre", "oct", "october"],
+    ["noviembre", "nov", "november"],
+    ["diciembre", "dic", "december", "dec"],
   ];
-  const index = months.findIndex((candidate) => month.startsWith(candidate));
+  const index = months.findIndex((aliases) =>
+    aliases.some((candidate) => month.startsWith(candidate)),
+  );
 
   return index >= 0 ? index + 1 : undefined;
 }
@@ -6073,17 +6058,89 @@ function parseDate(value: string) {
 }
 
 function normalizePeriod(value: string) {
-  if (!value) {
+  const trimmed = String(value ?? "").trim();
+
+  if (!trimmed) {
     return undefined;
   }
 
-  if (/^\d{4}-\d{2}$/.test(value)) {
-    return value;
+  const exactPeriod = trimmed.match(/^(\d{4})[-/](\d{1,2})$/);
+
+  if (exactPeriod) {
+    const [, year, month] = exactPeriod;
+
+    return `${year}-${month.padStart(2, "0")}`;
   }
 
-  const parsedDate = parseDate(value);
+  const isoDatePeriod = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+
+  if (isoDatePeriod) {
+    const [, year, month] = isoDatePeriod;
+
+    return `${year}-${month.padStart(2, "0")}`;
+  }
+
+  const numericDatePeriod = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+
+  if (numericDatePeriod) {
+    const [, first, second, rawYear] = numericDatePeriod;
+    const firstNumber = Number(first);
+    const secondNumber = Number(second);
+    const year = normalizeYear(rawYear);
+    const month = firstNumber > 12 || secondNumber > 1 ? secondNumber : firstNumber;
+
+    if (year && month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  const monthYear = trimmed.match(/^(\d{1,2})[-/](\d{4})$/);
+
+  if (monthYear) {
+    const [, month, year] = monthYear;
+
+    return `${year}-${month.padStart(2, "0")}`;
+  }
+
+  const normalized = normalizeText(trimmed)
+    .replace(/\bde\b/g, " ")
+    .replace(/[.,/_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const namedMonth = normalized.match(
+    /(?:^|\s)([a-z]+)\.?\s+(\d{2,4})(?:\s|$)|(?:^|\s)(\d{2,4})\s+([a-z]+)\.?(?:\s|$)/,
+  );
+
+  if (namedMonth) {
+    const rawMonth = namedMonth[1] ?? namedMonth[4] ?? "";
+    const rawYear = namedMonth[2] ?? namedMonth[3] ?? "";
+    const month = monthNameToNumber(rawMonth);
+    const year = normalizeYear(rawYear);
+
+    if (month && year) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  const numericSerial = Number(trimmed);
+
+  if (/^\d+(\.\d+)?$/.test(trimmed) && numericSerial > 20000 && numericSerial < 80000) {
+    const serialDate = new Date(Date.UTC(1899, 11, 30 + Math.floor(numericSerial)));
+
+    return `${serialDate.getUTCFullYear()}-${String(serialDate.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+
+  const parsedDate = parseDate(trimmed);
 
   return getPeriodFromDate(parsedDate);
+}
+
+function normalizeYear(value: string) {
+  if (!/^\d{2,4}$/.test(value)) {
+    return undefined;
+  }
+
+  return value.length === 2 ? `20${value}` : value;
 }
 
 function getCurrentPeriod(date = new Date()) {

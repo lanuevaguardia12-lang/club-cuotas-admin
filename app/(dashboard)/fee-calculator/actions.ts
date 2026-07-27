@@ -126,6 +126,8 @@ export async function saveFeeCalculatorCost(input: unknown) {
   }
 
   revalidatePath("/fee-calculator");
+  revalidatePath("/cash-flow");
+  revalidatePath("/");
 
   return { ok: true };
 }
