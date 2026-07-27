@@ -4317,9 +4317,11 @@ function buildCashFlowData({
   const currentIncome = expectedFeeIncome + additionalIncome;
   const currentExpenses = sumCashFlow(currentManualTransactions, "expense");
   const currentBalance = currentIncome - currentExpenses;
-  const totalCash =
-    sumCashFlow(projectedTransactions, "income") -
-    sumCashFlow(projectedTransactions, "expense");
+  const currentOpeningBalance = calculateCashFlowOpeningBalance(
+    projectedTransactions,
+    period,
+  );
+  const currentCashBalance = currentOpeningBalance + currentBalance;
 
   return {
     period,
@@ -4327,7 +4329,7 @@ function buildCashFlowData({
       currentIncome,
       currentExpenses,
       currentBalance,
-      totalCash,
+      currentCashBalance,
       currentPeriod: period,
       expectedFeeIncome,
       additionalIncome,
@@ -4390,7 +4392,7 @@ function buildFallbackCashFlowData({
       currentIncome: 0,
       currentExpenses: 0,
       currentBalance: 0,
-      totalCash: 0,
+      currentCashBalance: 0,
       currentPeriod: period,
       expectedFeeIncome: 0,
       additionalIncome: 0,
@@ -4423,7 +4425,7 @@ function buildCashFlowMetrics({
   currentIncome,
   currentExpenses,
   currentBalance,
-  totalCash,
+  currentCashBalance,
   currentPeriod,
   expectedFeeIncome,
   additionalIncome,
@@ -4431,7 +4433,7 @@ function buildCashFlowMetrics({
   currentIncome: number;
   currentExpenses: number;
   currentBalance: number;
-  totalCash: number;
+  currentCashBalance: number;
   currentPeriod: string;
   expectedFeeIncome: number;
   additionalIncome: number;
@@ -4461,9 +4463,9 @@ function buildCashFlowMetrics({
     {
       id: "cash",
       title: "Saldo",
-      value: formatCurrency(totalCash),
-      detail: "Acumulado total",
-      tone: totalCash < 0 ? "danger" : "neutral",
+      value: formatCurrency(currentCashBalance),
+      detail: `Saldo final de ${formatPeriodLabel(currentPeriod)}`,
+      tone: currentCashBalance < 0 ? "danger" : "neutral",
     },
   ];
 }
@@ -4559,6 +4561,7 @@ function buildCashFlowMonthlyChart(
     const ingresos = sumCashFlow(periodTransactions, "income");
     const gastos = sumCashFlow(periodTransactions, "expense");
     const balance = ingresos - gastos;
+    const openingCashBalance = cashBalance;
     cashBalance += balance;
     const expenseValues = expenseSeries.reduce<Record<string, number>>(
       (values, series) => {
@@ -4589,6 +4592,7 @@ function buildCashFlowMonthlyChart(
       ingresos,
       gastos,
       balance,
+      openingCashBalance,
       cashBalance,
       negativeCashBalance: cashBalance < 0 ? cashBalance : null,
       ...expenseValues,

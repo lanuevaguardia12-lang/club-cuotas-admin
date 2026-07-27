@@ -231,7 +231,61 @@ export function CashFlowCharts({ charts }: CashFlowChartsProps) {
           )}
         </CardContent>
       </Card>
+
+      <Card className="xl:col-span-2">
+        <CardHeader>
+          <CardTitle>Resumen mensual</CardTitle>
+          <p className="text-muted-foreground text-sm">
+            Saldo inicial, ingresos, gastos, balance del mes y saldo final.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="border-border overflow-x-auto rounded-lg border">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-muted/60 text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Mes</th>
+                  <th className="px-3 py-2 text-right font-medium">Saldo inicial</th>
+                  <th className="px-3 py-2 text-right font-medium">Cuotas</th>
+                  <th className="px-3 py-2 text-right font-medium">Ingresos extra</th>
+                  <th className="px-3 py-2 text-right font-medium">Gastos</th>
+                  <th className="px-3 py-2 text-right font-medium">Balance</th>
+                  <th className="px-3 py-2 text-right font-medium">Saldo final</th>
+                </tr>
+              </thead>
+              <tbody>
+                {charts.annual.map((point) => (
+                  <tr key={point.period} className="border-border border-t">
+                    <td className="px-3 py-2 font-medium">{point.label}</td>
+                    <CurrencyCell value={point.openingCashBalance} />
+                    <CurrencyCell value={point.feeIncome} />
+                    <CurrencyCell value={point.additionalIncome} />
+                    <CurrencyCell value={-point.gastos} />
+                    <CurrencyCell value={point.balance} />
+                    <CurrencyCell value={point.cashBalance} strong />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </section>
+  );
+}
+
+function CurrencyCell({ strong = false, value }: { strong?: boolean; value: number }) {
+  const tone =
+    value < 0
+      ? "text-destructive"
+      : value > 0
+        ? "text-emerald-700 dark:text-emerald-300"
+        : "text-muted-foreground";
+
+  return (
+    <td className={`px-3 py-2 text-right ${strong ? "font-semibold" : ""} ${tone}`}>
+      {formatCurrency(value)}
+    </td>
   );
 }
 

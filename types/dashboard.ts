@@ -92,6 +92,7 @@ export interface CashFlowMonthlyPoint {
   ingresos: number;
   gastos: number;
   balance: number;
+  openingCashBalance: number;
   cashBalance: number;
   negativeCashBalance: number | null;
 }
