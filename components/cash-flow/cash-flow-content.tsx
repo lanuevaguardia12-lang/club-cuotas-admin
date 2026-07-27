@@ -6,7 +6,15 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleDollarSign,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import {
   deleteCashFlowTransaction,
@@ -17,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
   CashFlowData,
+  CashFlowMonthlyPoint,
   CashFlowTransaction,
   CashFlowTransactionType,
 } from "@/types/dashboard";
@@ -83,6 +92,10 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
         .sort((left, right) => right.period.localeCompare(left.period)),
     [data.transactions],
   );
+  const selectedMonth =
+    data.charts.annual.find((point) => point.period === data.period) ??
+    data.charts.monthly.find((point) => point.period === data.period);
+  const nextCriticalMonth = data.charts.annual.find((point) => point.cashBalance < 0);
 
   function handlePeriodChange(period: string) {
     router.push(`/cash-flow?period=${period}`);
@@ -128,6 +141,22 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
   function cancelEdit() {
     setEditingId("");
     reset(getDefaultValues(data.period));
+  }
+
+  function startInitialBalance(type: CashFlowTransactionType) {
+    setEditingId("");
+    reset({
+      ...getDefaultValues(data.period),
+      concept:
+        type === "income" ? "Saldo inicial de caja" : "Ajuste saldo inicial negativo",
+      date: `${data.period}-01`,
+      period: data.period,
+      type,
+      notes: "Saldo real de caja cargado como punto de partida.",
+    });
+    document
+      .getElementById("cash-flow-form")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function handleDelete(transaction: CashFlowTransaction) {
@@ -182,6 +211,13 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
           detail="Movimientos cargados"
         />
       </section>
+
+      <CashFlowExecutiveSummary
+        canWrite={canWrite}
+        nextCriticalMonth={nextCriticalMonth}
+        onInitialBalance={startInitialBalance}
+        selectedMonth={selectedMonth}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
         <Card>
@@ -416,6 +452,147 @@ function CashFlowTransactionsList({
       </CardContent>
     </Card>
   );
+}
+
+function CashFlowExecutiveSummary({
+  canWrite,
+  nextCriticalMonth,
+  onInitialBalance,
+  selectedMonth,
+}: {
+  canWrite: boolean;
+  nextCriticalMonth?: CashFlowMonthlyPoint;
+  onInitialBalance: (type: CashFlowTransactionType) => void;
+  selectedMonth?: CashFlowMonthlyPoint;
+}) {
+  if (!selectedMonth) {
+    return null;
+  }
+
+  const state = getFinancialState(selectedMonth);
+
+  return (
+    <Card>
+      <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>Resumen ejecutivo</CardTitle>
+            <Badge variant={state.variant}>{state.label}</Badge>
+          </div>
+          <p className="text-muted-foreground mt-2 text-sm">{state.detail}</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canWrite}
+            onClick={() => onInitialBalance("income")}
+          >
+            <CircleDollarSign />
+            Saldo inicial
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canWrite}
+            onClick={() => onInitialBalance("expense")}
+          >
+            <AlertTriangle />
+            Deuda inicial
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <SummaryItem
+          label="Saldo inicial"
+          value={selectedMonth.openingCashBalance}
+          mode="signed"
+        />
+        <SummaryItem label="Ingresos" value={selectedMonth.ingresos} />
+        <SummaryItem label="Gastos" value={selectedMonth.gastos} mode="expense" />
+        <SummaryItem label="Balance mes" value={selectedMonth.balance} mode="signed" />
+        <SummaryItem
+          label="Saldo final"
+          value={selectedMonth.cashBalance}
+          mode="signed"
+          strong
+        />
+        <div className="border-border bg-background rounded-md border p-3">
+          <p className="text-muted-foreground text-xs font-medium">Próximo mes crítico</p>
+          <p className="mt-2 text-lg font-semibold">
+            {nextCriticalMonth ? formatPeriod(nextCriticalMonth.period) : "Sin alerta"}
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {nextCriticalMonth
+              ? formatCurrency(nextCriticalMonth.cashBalance)
+              : "Caja positiva en el año"}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SummaryItem({
+  label,
+  mode = "positive",
+  strong = false,
+  value,
+}: {
+  label: string;
+  mode?: "positive" | "expense" | "signed";
+  strong?: boolean;
+  value: number;
+}) {
+  const signedTone =
+    value < 0
+      ? "text-destructive"
+      : value > 0
+        ? "text-emerald-700 dark:text-emerald-300"
+        : "text-muted-foreground";
+  const tone =
+    mode === "expense"
+      ? value > 0
+        ? "text-destructive"
+        : "text-muted-foreground"
+      : mode === "signed"
+        ? signedTone
+        : value > 0
+          ? "text-emerald-700 dark:text-emerald-300"
+          : "text-muted-foreground";
+
+  return (
+    <div className="border-border bg-background rounded-md border p-3">
+      <p className="text-muted-foreground text-xs font-medium">{label}</p>
+      <p className={`mt-2 text-lg ${strong ? "font-bold" : "font-semibold"} ${tone}`}>
+        {formatCurrency(mode === "expense" ? -value : value)}
+      </p>
+    </div>
+  );
+}
+
+function getFinancialState(month: CashFlowMonthlyPoint) {
+  if (month.cashBalance < 0) {
+    return {
+      detail: "El saldo final del mes queda negativo.",
+      label: "Caja negativa",
+      variant: "danger" as const,
+    };
+  }
+
+  if (month.balance < 0) {
+    return {
+      detail: "El mes pierde plata, pero el saldo acumulado sigue positivo.",
+      label: "Mes deficitario",
+      variant: "warning" as const,
+    };
+  }
+
+  return {
+    detail: "El mes cierra positivo y la caja queda a favor.",
+    label: "Caja positiva",
+    variant: "success" as const,
+  };
 }
 
 function DetailCard({
