@@ -152,6 +152,7 @@ export class DatabaseService implements IDataService {
         annual: [],
         monthlySeries: [],
         conceptBreakdown: [],
+        matrixRows: [],
       },
       transactions: [],
       expectedFeeIncome: 0,

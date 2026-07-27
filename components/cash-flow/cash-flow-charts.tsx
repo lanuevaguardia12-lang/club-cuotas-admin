@@ -35,6 +35,8 @@ const chartColors = {
 export function CashFlowCharts({ charts }: CashFlowChartsProps) {
   return (
     <section className="grid gap-4 xl:grid-cols-2">
+      <CashFlowMatrix charts={charts} />
+
       <Card className="xl:col-span-2">
         <CardHeader>
           <CardTitle>Cash flow mensual</CardTitle>
@@ -231,61 +233,183 @@ export function CashFlowCharts({ charts }: CashFlowChartsProps) {
           )}
         </CardContent>
       </Card>
-
-      <Card className="xl:col-span-2">
-        <CardHeader>
-          <CardTitle>Resumen mensual</CardTitle>
-          <p className="text-muted-foreground text-sm">
-            Saldo inicial, ingresos, gastos, balance del mes y saldo final.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="border-border overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-muted/60 text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">Mes</th>
-                  <th className="px-3 py-2 text-right font-medium">Saldo inicial</th>
-                  <th className="px-3 py-2 text-right font-medium">Cuotas</th>
-                  <th className="px-3 py-2 text-right font-medium">Ingresos extra</th>
-                  <th className="px-3 py-2 text-right font-medium">Gastos</th>
-                  <th className="px-3 py-2 text-right font-medium">Balance</th>
-                  <th className="px-3 py-2 text-right font-medium">Saldo final</th>
-                </tr>
-              </thead>
-              <tbody>
-                {charts.annual.map((point) => (
-                  <tr key={point.period} className="border-border border-t">
-                    <td className="px-3 py-2 font-medium">{point.label}</td>
-                    <CurrencyCell value={point.openingCashBalance} />
-                    <CurrencyCell value={point.feeIncome} />
-                    <CurrencyCell value={point.additionalIncome} />
-                    <CurrencyCell value={-point.gastos} />
-                    <CurrencyCell value={point.balance} />
-                    <CurrencyCell value={point.cashBalance} strong />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
     </section>
   );
 }
 
-function CurrencyCell({ strong = false, value }: { strong?: boolean; value: number }) {
-  const tone =
-    value < 0
-      ? "text-destructive"
-      : value > 0
-        ? "text-emerald-700 dark:text-emerald-300"
-        : "text-muted-foreground";
+function CashFlowMatrix({ charts }: CashFlowChartsProps) {
+  const periods = charts.annual.map((point) => point.period);
+  const incomeRows = charts.matrixRows.filter((row) => row.type === "income");
+  const expenseRows = charts.matrixRows.filter((row) => row.type === "expense");
 
   return (
-    <td className={`px-3 py-2 text-right ${strong ? "font-semibold" : ""} ${tone}`}>
-      {formatCurrency(value)}
-    </td>
+    <Card className="xl:col-span-2">
+      <CardHeader>
+        <CardTitle>Cash flow anual</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          Ingresos, gastos y saldo final mes a mes.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="border-border overflow-x-auto rounded-lg border">
+          <table className="w-full min-w-[1180px] border-collapse text-sm">
+            <thead>
+              <tr className="bg-[#012f77] text-white">
+                <th className="w-44 border px-3 py-2 text-left font-semibold">
+                  Concepto
+                </th>
+                {charts.annual.map((point) => (
+                  <th
+                    key={point.period}
+                    className="min-w-32 border px-3 py-2 text-right font-semibold"
+                  >
+                    {point.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <SectionTitle label="Ingresos" tone="income" colSpan={periods.length + 1} />
+              {incomeRows.length > 0 ? (
+                incomeRows.map((row) => (
+                  <MatrixConceptRow
+                    key={`income-${row.concept}`}
+                    row={row}
+                    periods={periods}
+                  />
+                ))
+              ) : (
+                <EmptyMatrixRow label="Sin ingresos" periods={periods} />
+              )}
+              <MatrixTotalRow
+                label="Total ingresos"
+                periods={periods}
+                values={Object.fromEntries(
+                  charts.annual.map((point) => [point.period, point.ingresos]),
+                )}
+                tone="income"
+              />
+
+              <SectionTitle label="Gastos" tone="expense" colSpan={periods.length + 1} />
+              {expenseRows.length > 0 ? (
+                expenseRows.map((row) => (
+                  <MatrixConceptRow
+                    key={`expense-${row.concept}`}
+                    row={row}
+                    periods={periods}
+                  />
+                ))
+              ) : (
+                <EmptyMatrixRow label="Sin gastos" periods={periods} />
+              )}
+              <MatrixTotalRow
+                label="Total gastos"
+                periods={periods}
+                values={Object.fromEntries(
+                  charts.annual.map((point) => [point.period, point.gastos]),
+                )}
+                tone="expense"
+              />
+              <MatrixTotalRow
+                label="Total cashflow"
+                periods={periods}
+                values={Object.fromEntries(
+                  charts.annual.map((point) => [point.period, point.cashBalance]),
+                )}
+                tone="cash"
+              />
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SectionTitle({
+  colSpan,
+  label,
+  tone,
+}: {
+  colSpan: number;
+  label: string;
+  tone: "income" | "expense";
+}) {
+  return (
+    <tr>
+      <td
+        colSpan={colSpan}
+        className={`border px-3 py-2 text-center text-sm font-bold uppercase ${
+          tone === "income"
+            ? "bg-emerald-100 text-emerald-950"
+            : "bg-rose-100 text-rose-950"
+        }`}
+      >
+        {label}
+      </td>
+    </tr>
+  );
+}
+
+function MatrixConceptRow({
+  periods,
+  row,
+}: {
+  periods: string[];
+  row: CashFlowChartsData["matrixRows"][number];
+}) {
+  return (
+    <tr>
+      <td className="bg-background border px-3 py-2 font-medium">{row.concept}</td>
+      {periods.map((period) => (
+        <td key={period} className="border px-3 py-2 text-right">
+          {formatMatrixCurrency(row.values[period] ?? 0)}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function EmptyMatrixRow({ label, periods }: { label: string; periods: string[] }) {
+  return (
+    <tr>
+      <td className="text-muted-foreground border px-3 py-2">{label}</td>
+      {periods.map((period) => (
+        <td key={period} className="text-muted-foreground border px-3 py-2 text-right">
+          -
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function MatrixTotalRow({
+  label,
+  periods,
+  tone,
+  values,
+}: {
+  label: string;
+  periods: string[];
+  tone: "income" | "expense" | "cash";
+  values: Record<string, number>;
+}) {
+  const rowTone =
+    tone === "income"
+      ? "bg-emerald-100 text-emerald-950"
+      : tone === "expense"
+        ? "bg-rose-100 text-rose-950"
+        : "bg-blue-100 text-blue-950";
+
+  return (
+    <tr className={rowTone}>
+      <td className="border px-3 py-2 font-bold uppercase">{label}</td>
+      {periods.map((period) => (
+        <td key={period} className="border px-3 py-2 text-right font-semibold">
+          {formatMatrixCurrency(values[period] ?? 0)}
+        </td>
+      ))}
+    </tr>
   );
 }
 
@@ -342,4 +466,12 @@ function formatCurrency(value: number) {
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatMatrixCurrency(value: number) {
+  if (Math.abs(value) < 0.01) {
+    return "-";
+  }
+
+  return formatCurrency(value);
 }

@@ -111,11 +111,18 @@ export interface CashFlowConceptBreakdownPoint {
   signedAmount: number;
 }
 
+export interface CashFlowMatrixRow {
+  concept: string;
+  type: CashFlowTransactionType;
+  values: Record<string, number>;
+}
+
 export interface CashFlowChartsData {
   monthly: CashFlowMonthlyPoint[];
   annual: CashFlowMonthlyPoint[];
   monthlySeries: CashFlowConceptSeries[];
   conceptBreakdown: CashFlowConceptBreakdownPoint[];
+  matrixRows: CashFlowMatrixRow[];
 }
 
 export interface CashFlowData {

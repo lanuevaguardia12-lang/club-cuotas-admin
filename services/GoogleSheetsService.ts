@@ -17,6 +17,7 @@ import type {
   CashFlowConceptBreakdownPoint,
   CashFlowConceptSeries,
   CashFlowData,
+  CashFlowMatrixRow,
   CashFlowMetric,
   CashFlowMonthlyPoint,
   CashFlowTransaction,
@@ -4351,6 +4352,7 @@ function buildCashFlowData({
       ),
       monthlySeries,
       conceptBreakdown: buildCashFlowConceptBreakdown(projectedTransactions, period),
+      matrixRows: buildCashFlowMatrixRows(projectedTransactions, annualPeriods),
     },
     transactions,
     expectedFeeIncome,
@@ -4402,6 +4404,7 @@ function buildFallbackCashFlowData({
       annual: buildCashFlowMonthlyChart([], period, [], getYearPeriods(period)),
       monthlySeries: [],
       conceptBreakdown: [],
+      matrixRows: [],
     },
     transactions: [],
     expectedFeeIncome: 0,
@@ -4646,6 +4649,68 @@ function buildCashFlowConceptBreakdown(
 
       return right.amount - left.amount;
     });
+}
+
+function buildCashFlowMatrixRows(
+  transactions: CashFlowTransactionRecord[],
+  periods: string[],
+): CashFlowMatrixRow[] {
+  const valuesByKey = transactions.reduce<
+    Map<
+      string,
+      {
+        concept: string;
+        type: CashFlowTransactionType;
+        values: Record<string, number>;
+      }
+    >
+  >((rows, transaction) => {
+    if (!periods.includes(transaction.period)) {
+      return rows;
+    }
+
+    const concept =
+      transaction.source === "fee-calculator" && transaction.type === "income"
+        ? "Cuotas jugadores"
+        : transaction.concept;
+    const key = `${transaction.type}:${normalizeHeader(concept) || "sin_concepto"}`;
+    const current = rows.get(key) ?? {
+      concept,
+      type: transaction.type,
+      values: Object.fromEntries(periods.map((period) => [period, 0])),
+    };
+
+    current.values[transaction.period] =
+      (current.values[transaction.period] ?? 0) + transaction.amount;
+    rows.set(key, current);
+
+    return rows;
+  }, new Map());
+
+  return Array.from(valuesByKey.values()).sort((left, right) => {
+    if (left.type !== right.type) {
+      return left.type === "income" ? -1 : 1;
+    }
+
+    if (left.concept === "Cuotas jugadores") {
+      return -1;
+    }
+
+    if (right.concept === "Cuotas jugadores") {
+      return 1;
+    }
+
+    const leftTotal = periods.reduce(
+      (total, period) => total + (left.values[period] ?? 0),
+      0,
+    );
+    const rightTotal = periods.reduce(
+      (total, period) => total + (right.values[period] ?? 0),
+      0,
+    );
+
+    return rightTotal - leftTotal || left.concept.localeCompare(right.concept, "es");
+  });
 }
 
 function getCashFlowExpenseKey(concept: string) {
