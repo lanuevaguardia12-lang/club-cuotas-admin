@@ -293,6 +293,8 @@ const playerDirectoryHeaders = [
   "telefono",
   "email",
   "categoria",
+  "posicion",
+  "segunda_posicion",
   "observaciones",
   "estado",
   "fecha_alta",
@@ -829,10 +831,11 @@ export class GoogleSheetsService implements IDataService {
 
     if (rows.length === 0) {
       const player = normalizePlayerInput(input, new Set(), now);
+      const lastColumn = toColumnName(playerDirectoryHeaders.length - 1);
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${sheetPrefix}!A:K`,
+        range: `${sheetPrefix}!A:${lastColumn}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [
@@ -846,7 +849,13 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const [headerRow = [], ...dataRows] = rows;
-    const headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
+    let headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      playerDirectoryHeaders,
+    );
     const existingPlayers = mapRowsToPlayerDirectoryItems([headers, ...dataRows]);
     const existingIds = new Set(existingPlayers.map((player) => player.id));
     const targetId =
@@ -955,7 +964,14 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const [headerRow = [], ...dataRows] = rows;
-    const headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
+    const sheetPrefix = getSheetPrefix(playersRange);
+    let headers = normalizeWritableHeaders(headerRow, playerDirectoryHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      playerDirectoryHeaders,
+    );
     const targetRowIndex = findPlayerDirectoryRowIndex(headers, dataRows, playerId);
 
     if (targetRowIndex < 0) {
@@ -972,7 +988,6 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const sheets = this.createSheetsClient();
-    const sheetPrefix = getSheetPrefix(playersRange);
     const spreadsheetRow = targetRowIndex + 2;
 
     await sheets.spreadsheets.values.clear({
@@ -2649,6 +2664,14 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
         email: pick(record, ["email", "correo", "mail", "correo_electronico"]),
         category:
           pick(record, ["categoria", "category", "division", "equipo"]) || "Plantel",
+        position: pick(record, ["posicion", "position", "puesto"]),
+        secondPosition: pick(record, [
+          "segunda_posicion",
+          "posicion_secundaria",
+          "second_position",
+          "secondary_position",
+          "segundo_puesto",
+        ]),
         notes: pick(record, ["observaciones", "observacion", "notas", "notes"]),
         status,
         joinedAt:
@@ -2745,6 +2768,8 @@ function normalizePlayerInput(
     phone: input.phone?.trim() ?? existing?.phone ?? "",
     email: input.email?.trim() ?? existing?.email ?? "",
     category: input.category?.trim() || existing?.category || "Plantel",
+    position: input.position?.trim() ?? existing?.position ?? "",
+    secondPosition: input.secondPosition?.trim() ?? existing?.secondPosition ?? "",
     notes: input.notes?.trim() ?? existing?.notes ?? "",
     status,
     joinedAt: existing?.joinedAt || now.slice(0, 10),
@@ -2778,6 +2803,14 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     category: player.category,
     division: player.category,
     equipo: player.category,
+    posicion: player.position,
+    position: player.position,
+    puesto: player.position,
+    segunda_posicion: player.secondPosition,
+    posicion_secundaria: player.secondPosition,
+    second_position: player.secondPosition,
+    secondary_position: player.secondPosition,
+    segundo_puesto: player.secondPosition,
     observaciones: player.notes,
     observacion: player.notes,
     notas: player.notes,

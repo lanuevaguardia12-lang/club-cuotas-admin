@@ -40,6 +40,8 @@ const playerSchema = z.object({
   phone: z.string().trim().max(40).optional(),
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
+  position: z.string().trim().max(80).optional(),
+  secondPosition: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -72,7 +74,15 @@ export function PlayerDirectoryContent({
     return data.players.filter((player) => {
       const matchesQuery =
         !normalizedQuery ||
-        [player.name, player.phone, player.email, player.category, player.notes]
+        [
+          player.name,
+          player.phone,
+          player.email,
+          player.category,
+          player.position,
+          player.secondPosition,
+          player.notes,
+        ]
           .map(normalize)
           .some((value) => value.includes(normalizedQuery));
 
@@ -103,6 +113,8 @@ export function PlayerDirectoryContent({
       phone: player.phone,
       email: player.email,
       category: player.category,
+      position: player.position,
+      secondPosition: player.secondPosition,
       notes: player.notes,
     });
   }
@@ -242,6 +254,22 @@ export function PlayerDirectoryContent({
                 />
               </Field>
 
+              <Field label="Posición" error={errors.position?.message}>
+                <input
+                  {...register("position")}
+                  disabled={!canWrite}
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
+              <Field label="Segunda posición" error={errors.secondPosition?.message}>
+                <input
+                  {...register("secondPosition")}
+                  disabled={!canWrite}
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
               <Field label="Observaciones" error={errors.notes?.message}>
                 <textarea
                   {...register("notes")}
@@ -286,7 +314,7 @@ export function PlayerDirectoryContent({
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Buscar nombre, teléfono..."
+                  placeholder="Buscar nombre, teléfono, posición..."
                   className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 pl-9 text-sm outline-none focus:ring-2"
                 />
               </label>
@@ -333,13 +361,15 @@ function PlayersDesktopTable({
   return (
     <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[1100px] text-sm">
           <thead className="bg-muted/60">
             <tr className="border-border border-b">
               <TableHead>Nombre</TableHead>
               <TableHead>Teléfono</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Categoría</TableHead>
+              <TableHead>Posición</TableHead>
+              <TableHead>Segunda posición</TableHead>
               <TableHead>Observaciones</TableHead>
               <TableHead>Acciones</TableHead>
             </tr>
@@ -352,6 +382,8 @@ function PlayersDesktopTable({
                   <td className="px-4 py-3">{player.phone || "-"}</td>
                   <td className="px-4 py-3">{player.email || "-"}</td>
                   <td className="px-4 py-3">{player.category}</td>
+                  <td className="px-4 py-3">{player.position || "-"}</td>
+                  <td className="px-4 py-3">{player.secondPosition || "-"}</td>
                   <td className="px-4 py-3">
                     <span className="line-clamp-2">{player.notes || "-"}</span>
                   </td>
@@ -368,7 +400,7 @@ function PlayersDesktopTable({
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="text-muted-foreground h-24 px-4 text-center">
+                <td colSpan={8} className="text-muted-foreground h-24 px-4 text-center">
                   No hay jugadores para mostrar.
                 </td>
               </tr>
@@ -403,6 +435,9 @@ function PlayersMobileList({
                 <div className="min-w-0">
                   <h3 className="truncate font-semibold">{player.name}</h3>
                   <p className="text-muted-foreground mt-1 text-sm">{player.category}</p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {formatPlayerPositions(player)}
+                  </p>
                 </div>
               </div>
 
@@ -546,8 +581,16 @@ function getDefaultValues(): PlayerFormValues {
     phone: "",
     email: "",
     category: "Plantel",
+    position: "",
+    secondPosition: "",
     notes: "",
   };
+}
+
+function formatPlayerPositions(player: PlayerDirectoryItem) {
+  const positions = [player.position, player.secondPosition].filter(Boolean);
+
+  return positions.length > 0 ? positions.join(" / ") : "Sin posición";
 }
 
 function normalize(value: string) {
