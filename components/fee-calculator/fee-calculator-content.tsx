@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { useLoadingRouter } from "@/hooks/use-loading-router";
 import type {
   FeeCalculatorActual,
   FeeCalculatorAdjustment,
@@ -85,6 +86,7 @@ interface EditableRefundPolicyRow {
 
 export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContentProps) {
   const router = useRouter();
+  const loadingRouter = useLoadingRouter();
   const [savingMessage, setSavingMessage] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
   const [editingCostName, setEditingCostName] = useState("");
@@ -283,7 +285,14 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
   }
 
   function handlePeriodChange(period: string) {
-    router.push(`/fee-calculator?period=${period}`);
+    if (period === data.period) {
+      return;
+    }
+
+    loadingRouter.push(
+      `/fee-calculator?period=${period}`,
+      "Cargando calculador de cuota...",
+    );
   }
 
   return (

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, ClipboardList, History, Phone } from "lucide-react";
 
@@ -8,6 +7,7 @@ import { ReminderButton } from "@/components/reminders/reminder-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NavigationLink } from "@/components/ui/navigation-link";
 import { getDataService } from "@/services/data-service";
 import type {
   PlayerFeeHistoryItem,
@@ -70,10 +70,10 @@ export default async function PlayerPage({ params, searchParams }: PlayerPagePro
     <main className="grid gap-6">
       <header className="grid gap-4">
         <Button asChild variant="ghost" size="sm" className="w-fit">
-          <Link href="/">
+          <NavigationLink href="/" loadingMessage="Cargando dashboard...">
             <ArrowLeft />
             Volver
-          </Link>
+          </NavigationLink>
         </Button>
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -123,15 +123,21 @@ export default async function PlayerPage({ params, searchParams }: PlayerPagePro
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-3">
             <Button asChild variant="outline" size="sm">
-              <Link href={`/players/${encodedPlayerId}?year=${profile.year - 1}`}>
+              <NavigationLink
+                href={`/players/${encodedPlayerId}?year=${profile.year - 1}`}
+                loadingMessage="Cargando año de cuotas..."
+              >
                 {profile.year - 1}
-              </Link>
+              </NavigationLink>
             </Button>
             <span className="text-xl font-semibold">{profile.year}</span>
             <Button asChild variant="outline" size="sm">
-              <Link href={`/players/${encodedPlayerId}?year=${profile.year + 1}`}>
+              <NavigationLink
+                href={`/players/${encodedPlayerId}?year=${profile.year + 1}`}
+                loadingMessage="Cargando año de cuotas..."
+              >
                 {profile.year + 1}
-              </Link>
+              </NavigationLink>
             </Button>
           </CardContent>
         </Card>

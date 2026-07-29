@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { useLoadingRouter } from "@/hooks/use-loading-router";
 import type {
   CashFlowData,
   CashFlowMatrixRow,
@@ -73,6 +74,7 @@ const typeLabels: Record<CashFlowTransactionType, string> = {
 
 export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
   const router = useRouter();
+  const loadingRouter = useLoadingRouter();
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
@@ -101,7 +103,11 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
   const nextCriticalMonth = data.charts.annual.find((point) => point.cashBalance < 0);
 
   function handlePeriodChange(period: string) {
-    router.push(`/cash-flow?period=${period}`);
+    if (period === data.period) {
+      return;
+    }
+
+    loadingRouter.push(`/cash-flow?period=${period}`, "Cargando Cash Flow...");
   }
 
   async function onSubmit(values: TransactionFormValues) {

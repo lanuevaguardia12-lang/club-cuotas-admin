@@ -1,23 +1,23 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { useLoadingRouter } from "@/hooks/use-loading-router";
 
 interface DashboardPeriodSelectorProps {
   period: string;
 }
 
 export function DashboardPeriodSelector({ period }: DashboardPeriodSelectorProps) {
-  const router = useRouter();
+  const router = useLoadingRouter();
 
   function goToPeriod(nextPeriod: string) {
-    if (!/^\d{4}-\d{2}$/.test(nextPeriod)) {
+    if (!/^\d{4}-\d{2}$/.test(nextPeriod) || nextPeriod === period) {
       return;
     }
 
-    router.push(`/?period=${nextPeriod}`);
+    router.push(`/?period=${nextPeriod}`, "Cargando dashboard del mes...");
   }
 
   return (

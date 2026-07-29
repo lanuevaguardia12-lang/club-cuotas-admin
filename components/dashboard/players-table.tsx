@@ -1,7 +1,4 @@
 "use client";
-
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   type ColumnDef,
   flexRender,
@@ -24,7 +21,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NavigationLink } from "@/components/ui/navigation-link";
 import { ReminderButton } from "@/components/reminders/reminder-button";
+import { useLoadingRouter } from "@/hooks/use-loading-router";
 import type { PlayerPaymentStatus, PlayerTableRow } from "@/types/dashboard";
 
 interface PlayersTableProps {
@@ -59,7 +58,7 @@ const feeSourceLabels: Record<PlayerTableRow["feeSource"], string> = {
 };
 
 export function PlayersTable({ period, rows }: PlayersTableProps) {
-  const router = useRouter();
+  const router = useLoadingRouter();
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | PlayerPaymentStatus>("all");
@@ -98,13 +97,14 @@ export function PlayersTable({ period, rows }: PlayersTableProps) {
         ),
         cell: ({ row }) => (
           <div>
-            <Link
+            <NavigationLink
               href={getPlayerHref(row.original.id)}
+              loadingMessage="Cargando ficha del jugador..."
               onClick={(event) => event.stopPropagation()}
               className="font-medium underline-offset-4 hover:underline"
             >
               {row.original.name}
-            </Link>
+            </NavigationLink>
             <p className="text-muted-foreground text-xs">{row.original.id}</p>
           </div>
         ),
@@ -277,11 +277,19 @@ export function PlayersTable({ period, rows }: PlayersTableProps) {
                     role="link"
                     tabIndex={0}
                     aria-label={`Abrir ficha de ${row.original.name}`}
-                    onClick={() => router.push(getPlayerHref(row.original.id))}
+                    onClick={() =>
+                      router.push(
+                        getPlayerHref(row.original.id),
+                        "Cargando ficha del jugador...",
+                      )
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        router.push(getPlayerHref(row.original.id));
+                        router.push(
+                          getPlayerHref(row.original.id),
+                          "Cargando ficha del jugador...",
+                        );
                       }
                     }}
                     className="border-border hover:bg-muted/40 focus-visible:ring-ring cursor-pointer border-b transition-colors last:border-b-0 focus-visible:ring-2 focus-visible:outline-none"
@@ -375,16 +383,24 @@ function RowActions({ player }: { player: PlayerTableRow }) {
       onKeyDown={(event) => event.stopPropagation()}
     >
       <Button asChild variant="ghost" size="sm">
-        <Link href={getPlayerHref(player.id)} aria-label={`Ver ${player.name}`}>
+        <NavigationLink
+          href={getPlayerHref(player.id)}
+          loadingMessage="Cargando ficha del jugador..."
+          aria-label={`Ver ${player.name}`}
+        >
           <Eye />
           Ver
-        </Link>
+        </NavigationLink>
       </Button>
       <Button asChild variant="outline" size="sm">
-        <Link href={getPlayerHref(player.id)} aria-label={`Cobrar ${player.name}`}>
+        <NavigationLink
+          href={getPlayerHref(player.id)}
+          loadingMessage="Cargando ficha del jugador..."
+          aria-label={`Cobrar ${player.name}`}
+        >
           <CreditCard />
           Cobrar
-        </Link>
+        </NavigationLink>
       </Button>
       <ReminderButton
         playerName={player.name}
@@ -402,12 +418,13 @@ function PlayerCard({ row }: { row: PlayerTableRow }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="truncate text-base">
-              <Link
+              <NavigationLink
                 href={getPlayerHref(row.id)}
+                loadingMessage="Cargando ficha del jugador..."
                 className="underline-offset-4 hover:underline"
               >
                 {row.name}
-              </Link>
+              </NavigationLink>
             </CardTitle>
             <p className="text-muted-foreground mt-1 text-sm">{row.category}</p>
           </div>
