@@ -4667,7 +4667,7 @@ function buildCashFlowMonthlyChart(
           expenseSeriesKeys.has(key) || !hasOtherExpenses ? key : otherExpensesKey;
 
         if (targetKey in expenseValues) {
-          expenseValues[targetKey] -= transaction.amount;
+          expenseValues[targetKey] += transaction.amount;
         }
       });
 

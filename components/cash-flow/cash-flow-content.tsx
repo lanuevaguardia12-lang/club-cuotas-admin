@@ -218,7 +218,7 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
         </CardHeader>
       </Card>
 
-      <CashFlowCharts charts={data.charts} />
+      <CashFlowCharts charts={data.charts} selectedPeriod={data.period} />
 
       <CashFlowGeneralSummary
         annual={data.charts.annual}
