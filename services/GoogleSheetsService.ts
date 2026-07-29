@@ -324,6 +324,7 @@ const feeCalculatorActualHeaders = [
   "costo_id",
   "periodo",
   "cantidad_real",
+  "monto_real",
   "notas",
   "actualizado_en",
 ];
@@ -1292,9 +1293,11 @@ export class GoogleSheetsService implements IDataService {
     );
 
     if (rows.length === 0) {
+      const lastColumn = toColumnName(feeCalculatorActualHeaders.length - 1);
+
       await sheets.spreadsheets.values.update({
         spreadsheetId: feeCalculatorSpreadsheetId,
-        range: `${sheetPrefix}!A:F`,
+        range: `${sheetPrefix}!A:${lastColumn}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [
@@ -1312,7 +1315,13 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const [headerRow = [], ...dataRows] = rows;
-    const headers = normalizeWritableHeaders(headerRow, feeCalculatorActualHeaders);
+    let headers = normalizeWritableHeaders(headerRow, feeCalculatorActualHeaders);
+    headers = await this.ensureWritableHeaders(
+      feeCalculatorSpreadsheetId,
+      sheetPrefix,
+      headers,
+      feeCalculatorActualHeaders,
+    );
     const costIdIndex = findHeaderIndex(headers, ["costo_id", "cost_id"]);
     const periodIndex = findHeaderIndex(headers, ["periodo", "period", "mes"]);
     const targetRowIndex =
@@ -3292,12 +3301,19 @@ function mapRowsToFeeCalculatorActuals(rows: unknown[][]): FeeCalculatorActual[]
       const period =
         normalizePeriod(pick(record, ["periodo", "period", "mes"])) ?? getCurrentPeriod();
       const costId = pick(record, ["costo_id", "cost_id", "id_costo"]);
+      const actualAmountValue = pick(record, [
+        "monto_real",
+        "importe_real",
+        "actual_amount",
+        "total_real",
+        "monto_pagado",
+      ]);
 
       if (!costId) {
         return null;
       }
 
-      return {
+      const actual: FeeCalculatorActual = {
         id: pick(record, ["id", "real_id", "actual_id"]) || `actual-${index + 1}`,
         costId,
         period,
@@ -3312,7 +3328,13 @@ function mapRowsToFeeCalculatorActuals(rows: unknown[][]): FeeCalculatorActual[]
           parseDateTime(
             pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
           ) ?? new Date().toISOString(),
-      } satisfies FeeCalculatorActual;
+      };
+
+      if (actualAmountValue) {
+        actual.actualAmount = Math.max(parseMoney(actualAmountValue), 0);
+      }
+
+      return actual;
     })
     .filter((actual): actual is FeeCalculatorActual => Boolean(actual));
 }
@@ -4875,7 +4897,9 @@ function buildFeeCalculatorOperatingCostCashFlowTransactions({
             return [];
           }
 
-          const amount = cost.amount * actualUnits;
+          const amount =
+            findActualAmountForCost(cost, costs, actuals, sourcePeriod) ??
+            cost.amount * actualUnits;
 
           if (amount <= 0) {
             return [];
@@ -4898,7 +4922,7 @@ function buildFeeCalculatorOperatingCostCashFlowTransactions({
             repeatsMonthly: false,
             startPeriod: paymentPeriod,
             endPeriod: paymentPeriod,
-            notes: `${paymentRule} ${formatPeriodLabel(sourcePeriod)}: ${formatInteger(actualUnits)} ${unitLabel} x ${formatCurrency(cost.amount)}.`,
+            notes: `${paymentRule} ${formatPeriodLabel(sourcePeriod)}: ${formatInteger(actualUnits)} ${unitLabel}. Monto real: ${formatCurrency(amount)}.`,
             active: true,
             source: "fee-calculator",
           } satisfies CashFlowTransactionRecord;
@@ -5589,6 +5613,10 @@ function normalizeFeeCalculatorActualInput(
     costId: input.costId.trim(),
     period: input.period,
     actualUnits: Math.max(Number(input.actualUnits), 0),
+    actualAmount:
+      typeof input.actualAmount === "number" && Number.isFinite(input.actualAmount)
+        ? Math.max(input.actualAmount, 0)
+        : undefined,
     notes: input.notes?.trim() ?? "",
   };
 }
@@ -5736,6 +5764,11 @@ function buildFeeCalculatorActualWritableRow(
     canchas_reales: actual.actualUnits,
     actual_units: actual.actualUnits,
     cantidad: actual.actualUnits,
+    monto_real: actual.actualAmount ?? "",
+    importe_real: actual.actualAmount ?? "",
+    actual_amount: actual.actualAmount ?? "",
+    total_real: actual.actualAmount ?? "",
+    monto_pagado: actual.actualAmount ?? "",
     notas: actual.notes,
     notes: actual.notes,
     observaciones: actual.notes,
@@ -5897,8 +5930,12 @@ function buildFeeCalculatorAdjustments(
       const splitBetween = Math.max(cost.splitBetween, 1);
       const forecastUnits = cost.forecastUnits;
       const unitDifference = actualUnits - forecastUnits;
-      const forecastShare = (cost.amount * forecastUnits) / splitBetween;
-      const actualShare = (cost.amount * actualUnits) / splitBetween;
+      const forecastAmount = cost.amount * forecastUnits;
+      const actualAmount =
+        findActualAmountForCost(cost, costs, actuals, period) ??
+        cost.amount * actualUnits;
+      const forecastShare = forecastAmount / splitBetween;
+      const actualShare = actualAmount / splitBetween;
       const variance = actualShare - forecastShare;
 
       if (Math.abs(variance) < 0.01) {
@@ -5916,6 +5953,8 @@ function buildFeeCalculatorAdjustments(
         actualUnits,
         unitDifference,
         unitAmount: cost.amount,
+        forecastAmount,
+        actualAmount,
         splitBetween,
         forecastShare,
         actualShare,
@@ -5952,7 +5991,10 @@ function calculateCostShare(
     mode === "actual" && typeof actualUnits === "number"
       ? actualUnits
       : cost.forecastUnits;
-  const total = cost.amount * units;
+  const total =
+    mode === "actual" && typeof actualUnits === "number"
+      ? (findActualAmountForCost(cost, costs, actuals, period) ?? cost.amount * units)
+      : cost.amount * units;
 
   return total / Math.max(cost.splitBetween, 1);
 }
@@ -5992,6 +6034,7 @@ function mergeInferredFeeCalculatorActuals(
       costId: cost.id,
       period,
       actualUnits: inferredUnits,
+      actualAmount: cost.amount * inferredUnits,
       notes:
         autoActualKind === "coach"
           ? "Autocalculado desde Asistió joaco? x 3 horas."
@@ -6026,19 +6069,47 @@ function findActualUnitsForCost(
   actuals: FeeCalculatorActual[],
   period: string,
 ) {
+  return findActualForCost(cost, costs, actuals, period)?.actualUnits;
+}
+
+function findActualAmountForCost(
+  cost: FeeCalculatorCost,
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+) {
+  const actual = findActualForCost(cost, costs, actuals, period);
+
+  if (!actual) {
+    return undefined;
+  }
+
+  if (typeof actual.actualAmount === "number" && Number.isFinite(actual.actualAmount)) {
+    return Math.max(actual.actualAmount, 0);
+  }
+
+  return cost.amount * actual.actualUnits;
+}
+
+function findActualForCost(
+  cost: FeeCalculatorCost,
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+) {
   const exactActual = actuals.find(
     (actual) => actual.costId === cost.id && actual.period === period,
   );
 
-  if (typeof exactActual?.actualUnits === "number") {
-    return exactActual.actualUnits;
+  if (exactActual) {
+    return exactActual;
   }
 
   if (!getAutoActualCostKind(cost)) {
     return undefined;
   }
 
-  const compatibleActual = actuals.find((actual) => {
+  return actuals.find((actual) => {
     if (actual.period !== period || actual.costId === cost.id) {
       return false;
     }
@@ -6047,8 +6118,6 @@ function findActualUnitsForCost(
 
     return isCompatibleAutoActualCost(cost, actualCost);
   });
-
-  return compatibleActual?.actualUnits;
 }
 
 function isCompatibleAutoActualCost(

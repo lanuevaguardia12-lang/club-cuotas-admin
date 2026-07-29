@@ -24,6 +24,7 @@ export interface FeeCalculatorActual {
   costId: string;
   period: string;
   actualUnits: number;
+  actualAmount?: number;
   notes: string;
   updatedAt: string;
 }
@@ -60,6 +61,8 @@ export interface FeeCalculatorAdjustment {
   actualUnits: number;
   unitDifference: number;
   unitAmount: number;
+  forecastAmount: number;
+  actualAmount: number;
   splitBetween: number;
   forecastShare: number;
   actualShare: number;
@@ -141,6 +144,7 @@ export interface UpdateFeeCalculatorActualInput {
   costId: string;
   period: string;
   actualUnits: number;
+  actualAmount?: number;
   notes?: string;
 }
 

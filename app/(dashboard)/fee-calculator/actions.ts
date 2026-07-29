@@ -26,6 +26,7 @@ const actualSchema = z.object({
   costId: z.string().trim().min(1),
   period: periodSchema,
   actualUnits: numericSchema.pipe(z.number().min(0)),
+  actualAmount: numericSchema.pipe(z.number().min(0)).optional(),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -208,6 +209,7 @@ export async function saveFeeCalculatorActual(input: unknown) {
           costId: parsed.costId,
           period: parsed.period,
           actualUnits: parsed.actualUnits,
+          actualAmount: parsed.actualAmount ?? null,
         },
       })
       .catch(() => undefined);

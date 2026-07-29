@@ -905,18 +905,20 @@ function AdjustmentList({ data }: { data: FeeCalculatorData }) {
       {adjustments.length === 0 ? (
         <EmptyTableState
           title="Sin ajustes para aplicar"
-          description={`Se leyeron ${data.summary.totalLocalMatchesPreviousPeriod} canchas locales y ${formatNumber(data.summary.coachHoursPreviousPeriod)} h DT de ${formatPeriod(data.previousPeriod)}. Para generar ajuste tiene que existir un costo Cancha o Director técnico vigente en ese mes con una cantidad pronosticada distinta.`}
+          description={`Se leyeron ${data.summary.totalLocalMatchesPreviousPeriod} canchas locales y ${formatNumber(data.summary.coachHoursPreviousPeriod)} h DT de ${formatPeriod(data.previousPeriod)}. Para generar ajuste tiene que existir un costo Cancha o Director técnico vigente en ese mes con una cantidad o monto real distinto a lo pronosticado.`}
         />
       ) : (
         <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
+            <table className="w-full min-w-[1040px] text-sm">
               <thead className="bg-muted/60">
                 <tr className="border-border border-b">
                   <TableHead>Concepto</TableHead>
                   <TableHead>Periodo real</TableHead>
                   <TableHead>Previsto</TableHead>
                   <TableHead>Real</TableHead>
+                  <TableHead>Monto previsto</TableHead>
+                  <TableHead>Monto real</TableHead>
                   <TableHead>Diferencia</TableHead>
                   <TableHead>Impacto por jugador</TableHead>
                 </tr>
@@ -938,6 +940,12 @@ function AdjustmentList({ data }: { data: FeeCalculatorData }) {
                       {formatNumber(adjustment.forecastUnits)}
                     </td>
                     <td className="px-4 py-3">{formatNumber(adjustment.actualUnits)}</td>
+                    <td className="px-4 py-3">
+                      {formatPreciseCurrency(adjustment.forecastAmount)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {formatPreciseCurrency(adjustment.actualAmount)}
+                    </td>
                     <td className="px-4 py-3">
                       {formatSignedNumber(adjustment.unitDifference)}
                     </td>
@@ -969,6 +977,14 @@ function AdjustmentList({ data }: { data: FeeCalculatorData }) {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <Info label="Previsto" value={formatNumber(adjustment.forecastUnits)} />
                   <Info label="Real" value={formatNumber(adjustment.actualUnits)} />
+                  <Info
+                    label="Monto previsto"
+                    value={formatPreciseCurrency(adjustment.forecastAmount)}
+                  />
+                  <Info
+                    label="Monto real"
+                    value={formatPreciseCurrency(adjustment.actualAmount)}
+                  />
                   <Info
                     label="Diferencia"
                     value={formatSignedNumber(adjustment.unitDifference)}
@@ -1204,12 +1220,16 @@ function ActualUnitsCard({
   );
   const inferredUnits = getInferredActualUnits(cost, data);
   const finalActualUnits = actual?.actualUnits ?? inferredUnits ?? cost.forecastUnits;
+  const forecastAmount = cost.amount * cost.forecastUnits;
+  const finalActualAmount = getFinalActualAmount(cost, actual, finalActualUnits);
   const [isEditing, setIsEditing] = useState(false);
   const [actualUnits, setActualUnits] = useState(String(finalActualUnits));
-  const [notes, setNotes] = useState(actual?.notes ?? "");
+  const [actualAmount, setActualAmount] = useState(String(finalActualAmount));
+  const [notes, setNotes] = useState(getEditableActualNotes(actual));
   const [saving, setSaving] = useState(false);
   const sourceLabel = getActualSourceLabel(actual);
   const unitDifference = finalActualUnits - cost.forecastUnits;
+  const amountDifference = finalActualAmount - forecastAmount;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1220,6 +1240,7 @@ function ActualUnitsCard({
         costId: cost.id,
         period: data.previousPeriod,
         actualUnits: Number(actualUnits),
+        actualAmount: Number(parseLocalizedNumberInput(actualAmount)),
         notes,
       });
       router.refresh();
@@ -1247,7 +1268,8 @@ function ActualUnitsCard({
           aria-label={`Editar real de ${cost.name}`}
           onClick={() => {
             setActualUnits(String(finalActualUnits));
-            setNotes(actual?.notes ?? "");
+            setActualAmount(String(finalActualAmount));
+            setNotes(getEditableActualNotes(actual));
             setIsEditing((current) => !current);
           }}
         >
@@ -1255,10 +1277,13 @@ function ActualUnitsCard({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-3">
         <Info label={getForecastLabel(cost)} value={formatNumber(cost.forecastUnits)} />
         <Info label={getActualLabel(cost)} value={formatNumber(finalActualUnits)} />
         <Info label="Diferencia" value={formatSignedNumber(unitDifference)} />
+        <Info label="Monto previsto" value={formatPreciseCurrency(forecastAmount)} />
+        <Info label="Monto real" value={formatPreciseCurrency(finalActualAmount)} />
+        <Info label="Diferencia $" value={formatSignedCurrency(amountDifference)} />
         <Info label="Origen" value={sourceLabel} />
       </div>
 
@@ -1272,6 +1297,16 @@ function ActualUnitsCard({
               step={0.5}
               value={actualUnits}
               onChange={(event) => setActualUnits(event.target.value)}
+              className="border-input bg-card focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium">Monto real gastado</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={actualAmount}
+              onChange={(event) => setActualAmount(event.target.value)}
               className="border-input bg-card focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
             />
           </label>
@@ -1817,6 +1852,26 @@ function getActualSourceLabel(actual?: FeeCalculatorActual) {
   }
 
   return "Editado";
+}
+
+function getFinalActualAmount(
+  cost: FeeCalculatorCost,
+  actual: FeeCalculatorActual | undefined,
+  actualUnits: number,
+) {
+  if (typeof actual?.actualAmount === "number" && Number.isFinite(actual.actualAmount)) {
+    return Math.max(actual.actualAmount, 0);
+  }
+
+  return cost.amount * actualUnits;
+}
+
+function getEditableActualNotes(actual?: FeeCalculatorActual) {
+  if (!actual || isInferredActual(actual)) {
+    return "";
+  }
+
+  return actual.notes;
 }
 
 function isInferredActual(actual: FeeCalculatorActual) {
