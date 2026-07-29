@@ -8,6 +8,7 @@ import {
   type CheckoutActionState,
 } from "@/app/(dashboard)/payments/actions";
 import { Button } from "@/components/ui/button";
+import { LoadingModal } from "@/components/ui/loading-modal";
 
 const initialState: CheckoutActionState = {};
 
@@ -28,6 +29,8 @@ export function CreateCheckoutForm() {
       action={formAction}
       className="border-border bg-card grid gap-4 rounded-lg border p-5"
     >
+      <LoadingModal open={isPending} description="Creando link de pago..." />
+
       <div>
         <h2 className="text-lg font-semibold">Crear link de pago</h2>
         <p className="text-muted-foreground mt-1 text-sm">

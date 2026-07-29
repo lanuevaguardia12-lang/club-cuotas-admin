@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingModal } from "@/components/ui/loading-modal";
 import type {
   CashFlowData,
   CashFlowMatrixRow,
@@ -74,6 +75,7 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
   const router = useRouter();
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [message, setMessage] = useState("");
   const {
     formState: { errors, isSubmitting },
@@ -104,6 +106,9 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
 
   async function onSubmit(values: TransactionFormValues) {
     setMessage("");
+    setLoadingMessage(
+      values.id ? "Actualizando movimiento..." : "Guardando movimiento...",
+    );
     const normalizedValues = values.repeatsMonthly
       ? values
       : {
@@ -112,12 +117,16 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
           endPeriod: values.period,
         };
 
-    await saveCashFlowTransaction(normalizedValues);
-    reset(getDefaultValues(data.period));
-    setEditingId("");
-    setMessage(values.id ? "Movimiento actualizado" : "Movimiento guardado");
-    router.refresh();
-    window.setTimeout(() => setMessage(""), 2200);
+    try {
+      await saveCashFlowTransaction(normalizedValues);
+      reset(getDefaultValues(data.period));
+      setEditingId("");
+      setMessage(values.id ? "Movimiento actualizado" : "Movimiento guardado");
+      router.refresh();
+      window.setTimeout(() => setMessage(""), 2200);
+    } finally {
+      setLoadingMessage("");
+    }
   }
 
   function handleEdit(transaction: CashFlowTransaction) {
@@ -166,15 +175,23 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
     }
 
     setDeletingId(transaction.id);
-    await deleteCashFlowTransaction(transaction.id);
-    setDeletingId("");
-    setMessage("Movimiento eliminado");
-    router.refresh();
-    window.setTimeout(() => setMessage(""), 2200);
+    setLoadingMessage(`Eliminando ${transaction.concept}...`);
+
+    try {
+      await deleteCashFlowTransaction(transaction.id);
+      setMessage("Movimiento eliminado");
+      router.refresh();
+      window.setTimeout(() => setMessage(""), 2200);
+    } finally {
+      setDeletingId("");
+      setLoadingMessage("");
+    }
   }
 
   return (
     <section className="grid gap-6">
+      <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
+
       <Card>
         <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
           <div>

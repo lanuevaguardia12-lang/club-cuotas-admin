@@ -1,16 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ArrowLeft,
-  CalendarDays,
-  CheckCircle2,
-  CircleOff,
-  ClipboardList,
-  History,
-  Phone,
-} from "lucide-react";
+import { ArrowLeft, CalendarDays, ClipboardList, History, Phone } from "lucide-react";
 
 import { updatePlayerMonthStatus } from "@/app/(dashboard)/players/[playerId]/actions";
+import { MonthStatusSubmitButton } from "@/components/players/month-status-submit-button";
 import { ReminderButton } from "@/components/reminders/reminder-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -204,15 +197,7 @@ function MonthCard({ month, playerId }: { month: PlayerYearMonth; playerId: stri
           <input type="hidden" name="playerId" value={playerId} />
           <input type="hidden" name="period" value={month.period} />
           <input type="hidden" name="status" value={nextStatus} />
-          <Button
-            type="submit"
-            variant={month.status === "paid" ? "outline" : "default"}
-            size="sm"
-            className="w-full"
-          >
-            {month.status === "paid" ? <CircleOff /> : <CheckCircle2 />}
-            {month.status === "paid" ? "Marcar impago" : "Marcar pagado"}
-          </Button>
+          <MonthStatusSubmitButton status={month.status} />
         </form>
       </CardContent>
     </Card>

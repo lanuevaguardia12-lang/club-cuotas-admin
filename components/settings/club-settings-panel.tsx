@@ -9,6 +9,7 @@ import { z } from "zod";
 import { saveAppSettings } from "@/app/(dashboard)/settings/actions";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { Button } from "@/components/ui/button";
+import { LoadingModal } from "@/components/ui/loading-modal";
 import { DEFAULT_APP_SETTINGS } from "@/lib/app-settings";
 import type { AppSettings } from "@/types/settings";
 
@@ -89,6 +90,11 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
 
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <LoadingModal
+        open={isSubmitting}
+        description="Guardando configuración del club..."
+      />
+
       <form
         className="border-border bg-card grid gap-5 rounded-lg border p-5"
         onSubmit={handleSubmit(handleSave)}

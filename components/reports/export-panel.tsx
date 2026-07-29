@@ -9,9 +9,11 @@ import {
   UsersRound,
   WalletCards,
 } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingModal } from "@/components/ui/loading-modal";
 import type { ExportDataset, ExportFormat } from "@/types/export";
 
 const datasets: Array<{
@@ -57,8 +59,17 @@ const formats: Array<{
 ];
 
 export function ExportPanel() {
+  const [loadingMessage, setLoadingMessage] = useState("");
+
+  function handleExport(datasetTitle: string, formatLabel: string) {
+    setLoadingMessage(`Preparando ${datasetTitle} en ${formatLabel}...`);
+    window.setTimeout(() => setLoadingMessage(""), 4500);
+  }
+
   return (
     <section className="grid gap-4 md:grid-cols-2">
+      <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
+
       {datasets.map((dataset) => {
         const Icon = dataset.icon;
 
@@ -84,7 +95,10 @@ export function ExportPanel() {
 
                   return (
                     <Button key={format.value} asChild variant="outline" size="sm">
-                      <a href={buildExportHref(dataset.value, format.value)}>
+                      <a
+                        href={buildExportHref(dataset.value, format.value)}
+                        onClick={() => handleExport(dataset.title, format.label)}
+                      >
                         <FormatIcon />
                         {format.label}
                       </a>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { LoadingModal } from "@/components/ui/loading-modal";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -12,17 +13,25 @@ export function LogoutButton() {
 
   async function handleLogout() {
     setIsPending(true);
-    await fetch("/api/auth/logout", {
-      method: "POST",
-    });
-    router.replace("/login");
-    router.refresh();
+
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+      router.replace("/login");
+      router.refresh();
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={handleLogout} disabled={isPending}>
-      <LogOut />
-      {isPending ? "Saliendo..." : "Salir"}
-    </Button>
+    <>
+      <LoadingModal open={isPending} description="Cerrando sesión..." />
+      <Button variant="outline" size="sm" onClick={handleLogout} disabled={isPending}>
+        <LogOut />
+        {isPending ? "Saliendo..." : "Salir"}
+      </Button>
+    </>
   );
 }

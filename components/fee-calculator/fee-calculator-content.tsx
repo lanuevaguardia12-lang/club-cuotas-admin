@@ -29,6 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingModal } from "@/components/ui/loading-modal";
 import type {
   FeeCalculatorActual,
   FeeCalculatorAdjustment,
@@ -85,6 +86,7 @@ interface EditableRefundPolicyRow {
 export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContentProps) {
   const router = useRouter();
   const [savingMessage, setSavingMessage] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [editingCostName, setEditingCostName] = useState("");
   const [repeatMonths, setRepeatMonths] = useState<string[]>([]);
   const [repeatMessage, setRepeatMessage] = useState("");
@@ -126,12 +128,18 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     const isEditing = Boolean(editingCostName && values.id);
     const costInput = isEditing ? values : { ...values, id: undefined };
 
-    await saveFeeCalculatorCost(costInput);
-    reset(getDefaultCostValues(data));
-    setEditingCostName("");
-    setSavingMessage(isEditing ? "Costo actualizado" : "Costo guardado");
-    router.refresh();
-    window.setTimeout(() => setSavingMessage(""), 2200);
+    setLoadingMessage(isEditing ? "Actualizando costo..." : "Guardando costo...");
+
+    try {
+      await saveFeeCalculatorCost(costInput);
+      reset(getDefaultCostValues(data));
+      setEditingCostName("");
+      setSavingMessage(isEditing ? "Costo actualizado" : "Costo guardado");
+      router.refresh();
+      window.setTimeout(() => setSavingMessage(""), 2200);
+    } finally {
+      setLoadingMessage("");
+    }
   }
 
   function applyTemplate(template: CostTemplate) {
@@ -243,30 +251,35 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     }
 
     setIsRepeating(true);
+    setLoadingMessage("Repitiendo estructura de costos...");
     setRepeatMessage("");
 
-    for (const period of repeatMonths) {
-      for (const cost of repeatableCosts) {
-        const existingCost = findEquivalentCostForPeriod(data.costs, cost, period);
+    try {
+      for (const period of repeatMonths) {
+        for (const cost of repeatableCosts) {
+          const existingCost = findEquivalentCostForPeriod(data.costs, cost, period);
 
-        await saveFeeCalculatorCost({
-          id: existingCost?.id,
-          name: cost.name,
-          type: cost.type,
-          period,
-          amount: cost.amount,
-          splitBetween: cost.splitBetween,
-          forecastUnits: cost.forecastUnits,
-          notes: cost.notes,
-        });
+          await saveFeeCalculatorCost({
+            id: existingCost?.id,
+            name: cost.name,
+            type: cost.type,
+            period,
+            amount: cost.amount,
+            splitBetween: cost.splitBetween,
+            forecastUnits: cost.forecastUnits,
+            notes: cost.notes,
+          });
+        }
       }
-    }
 
-    setIsRepeating(false);
-    setRepeatMessage("Estructura repetida");
-    setRepeatMonths([]);
-    router.refresh();
-    window.setTimeout(() => setRepeatMessage(""), 2500);
+      setRepeatMessage("Estructura repetida");
+      setRepeatMonths([]);
+      router.refresh();
+      window.setTimeout(() => setRepeatMessage(""), 2500);
+    } finally {
+      setIsRepeating(false);
+      setLoadingMessage("");
+    }
   }
 
   function handlePeriodChange(period: string) {
@@ -275,6 +288,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
 
   return (
     <section className="grid gap-6">
+      <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={CircleDollarSign}
@@ -584,21 +599,27 @@ function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
   async function handleSave() {
     setSaving(true);
     setMessage("");
-    await saveFeeRefundPolicy({
-      rules: rows.map((row) => ({
-        fromPercent: Number(row.fromPercent),
-        toPercent: Number(row.toPercent),
-        refundPercent: Number(row.refundPercent),
-      })),
-    });
-    router.refresh();
-    setSaving(false);
-    setMessage("Política guardada");
-    window.setTimeout(() => setMessage(""), 2400);
+
+    try {
+      await saveFeeRefundPolicy({
+        rules: rows.map((row) => ({
+          fromPercent: Number(row.fromPercent),
+          toPercent: Number(row.toPercent),
+          refundPercent: Number(row.refundPercent),
+        })),
+      });
+      router.refresh();
+      setMessage("Política guardada");
+      window.setTimeout(() => setMessage(""), 2400);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Card>
+      <LoadingModal open={saving} description="Guardando política de devoluciones..." />
+
       <CardHeader>
         <CardTitle>Política de devoluciones</CardTitle>
         <p className="text-muted-foreground text-sm">
@@ -697,11 +718,14 @@ function CostList({
 }) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [resettingCosts, setResettingCosts] = useState(false);
 
   if (costs.length === 0) {
     return (
       <section className="grid gap-3">
+        <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Costos cargados</h2>
@@ -733,9 +757,15 @@ function CostList({
 
   async function handleDelete(costId: string) {
     setDeletingId(costId);
-    await deleteFeeCalculatorCost(costId);
-    router.refresh();
-    setDeletingId("");
+    setLoadingMessage("Eliminando costo...");
+
+    try {
+      await deleteFeeCalculatorCost(costId);
+      router.refresh();
+    } finally {
+      setDeletingId("");
+      setLoadingMessage("");
+    }
   }
 
   async function handleResetCosts() {
@@ -748,13 +778,21 @@ function CostList({
     }
 
     setResettingCosts(true);
-    await resetFeeCalculatorCosts();
-    router.refresh();
-    setResettingCosts(false);
+    setLoadingMessage("Limpiando costos del calculador...");
+
+    try {
+      await resetFeeCalculatorCosts();
+      router.refresh();
+    } finally {
+      setResettingCosts(false);
+      setLoadingMessage("");
+    }
   }
 
   return (
     <section className="grid gap-3">
+      <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Costos cargados</h2>
@@ -960,18 +998,27 @@ function CalculatorPlayersPanel({ data }: { data: FeeCalculatorData }) {
     status: "active" | "inactive",
   ) {
     setSavingId(player.id);
-    await updateFeeCalculatorPlayerStatus({
-      playerId: player.id,
-      playerName: player.name,
-      period: data.period,
-      status,
-    });
-    router.refresh();
-    setSavingId("");
+
+    try {
+      await updateFeeCalculatorPlayerStatus({
+        playerId: player.id,
+        playerName: player.name,
+        period: data.period,
+        status,
+      });
+      router.refresh();
+    } finally {
+      setSavingId("");
+    }
   }
 
   return (
     <section className="grid gap-3">
+      <LoadingModal
+        open={Boolean(savingId)}
+        description="Actualizando estado del jugador..."
+      />
+
       <div>
         <h2 className="text-lg font-semibold">Jugadores del calculador</h2>
         <p className="text-muted-foreground mt-1 text-sm">
@@ -1158,19 +1205,25 @@ function ActualUnitsCard({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    await saveFeeCalculatorActual({
-      costId: cost.id,
-      period: data.previousPeriod,
-      actualUnits: Number(actualUnits),
-      notes,
-    });
-    router.refresh();
-    setIsEditing(false);
-    setSaving(false);
+
+    try {
+      await saveFeeCalculatorActual({
+        costId: cost.id,
+        period: data.previousPeriod,
+        actualUnits: Number(actualUnits),
+        notes,
+      });
+      router.refresh();
+      setIsEditing(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="border-border bg-background grid gap-4 rounded-lg border p-4">
+      <LoadingModal open={saving} description={`Guardando real de ${cost.name}...`} />
+
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-medium">{cost.name}</p>

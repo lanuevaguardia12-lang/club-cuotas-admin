@@ -26,6 +26,7 @@ import {
 } from "@/app/(dashboard)/players/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingModal } from "@/components/ui/loading-modal";
 import type { PlayerDirectoryData, PlayerDirectoryItem } from "@/types/players";
 
 interface PlayerDirectoryContentProps {
@@ -56,6 +57,7 @@ export function PlayerDirectoryContent({
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [restoringRoster, setRestoringRoster] = useState(false);
   const [message, setMessage] = useState("");
   const {
@@ -97,12 +99,18 @@ export function PlayerDirectoryContent({
 
   async function onSubmit(values: PlayerFormValues) {
     setMessage("");
-    await savePlayer(values);
-    reset(getDefaultValues());
-    setEditingId("");
-    setMessage(values.id ? "Jugador actualizado" : "Jugador creado");
-    router.refresh();
-    window.setTimeout(() => setMessage(""), 2200);
+    setLoadingMessage(values.id ? "Actualizando jugador..." : "Guardando jugador...");
+
+    try {
+      await savePlayer(values);
+      reset(getDefaultValues());
+      setEditingId("");
+      setMessage(values.id ? "Jugador actualizado" : "Jugador creado");
+      router.refresh();
+      window.setTimeout(() => setMessage(""), 2200);
+    } finally {
+      setLoadingMessage("");
+    }
   }
 
   function handleEdit(player: PlayerDirectoryItem) {
@@ -130,11 +138,17 @@ export function PlayerDirectoryContent({
     }
 
     setDeletingId(player.id);
-    await deletePlayer(player.id);
-    setDeletingId("");
-    setMessage(`${player.name} eliminado`);
-    router.refresh();
-    window.setTimeout(() => setMessage(""), 2200);
+    setLoadingMessage(`Eliminando ${player.name}...`);
+
+    try {
+      await deletePlayer(player.id);
+      setMessage(`${player.name} eliminado`);
+      router.refresh();
+      window.setTimeout(() => setMessage(""), 2200);
+    } finally {
+      setDeletingId("");
+      setLoadingMessage("");
+    }
   }
 
   async function handleRestoreRoster() {
@@ -148,15 +162,24 @@ export function PlayerDirectoryContent({
 
     setRestoringRoster(true);
     setMessage("");
-    const result = await restoreDefaultRoster();
-    setRestoringRoster(false);
-    setMessage(`Plantel restaurado: ${result.players} jugadores`);
-    router.refresh();
-    window.setTimeout(() => setMessage(""), 2600);
+    setLoadingMessage("Restaurando plantel base...");
+
+    try {
+      const result = await restoreDefaultRoster();
+
+      setMessage(`Plantel restaurado: ${result.players} jugadores`);
+      router.refresh();
+      window.setTimeout(() => setMessage(""), 2600);
+    } finally {
+      setRestoringRoster(false);
+      setLoadingMessage("");
+    }
   }
 
   return (
     <section className="grid gap-6">
+      <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
+
       {data.source.status === "error" ? (
         <Card className="border-destructive/30 bg-destructive/10">
           <CardContent className="text-destructive p-5 text-sm">

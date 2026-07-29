@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 
 import { loginAction, type LoginState } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
+import { LoadingModal } from "@/components/ui/loading-modal";
 
 interface LoginFormProps {
   redirectTo?: string;
@@ -69,9 +70,12 @@ function SubmitButton() {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" disabled={pending}>
-      <LogIn />
-      {pending ? "Ingresando..." : "Ingresar"}
-    </Button>
+    <>
+      <LoadingModal open={pending} description="Ingresando al sistema..." />
+      <Button type="submit" disabled={pending}>
+        <LogIn />
+        {pending ? "Ingresando..." : "Ingresar"}
+      </Button>
+    </>
   );
 }
