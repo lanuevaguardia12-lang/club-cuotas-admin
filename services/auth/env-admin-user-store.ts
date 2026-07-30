@@ -11,6 +11,7 @@ interface EnvUserRecord {
   password?: string;
   name?: string;
   role?: string;
+  playerId?: string;
 }
 
 export class EnvAdminUserStore implements UserStore {
@@ -78,12 +79,16 @@ function parseAuthUsersJson() {
       password,
       name: String(record.name ?? username),
       role,
+      playerId:
+        role === "player"
+          ? String(record.playerId ?? record.id ?? "").trim() || undefined
+          : undefined,
     };
   });
 }
 
 function normalizeRole(role: unknown): AuthRole | null {
-  if (role === "admin" || role === "treasurer" || role === "coach") {
+  if (role === "admin" || role === "treasurer" || role === "coach" || role === "player") {
     return role;
   }
 

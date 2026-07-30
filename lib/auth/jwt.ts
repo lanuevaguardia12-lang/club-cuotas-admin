@@ -8,6 +8,7 @@ interface SessionTokenPayload {
   username: string;
   name: string;
   role: AuthUser["role"];
+  playerId?: string;
 }
 
 function getJwtSecret() {
@@ -27,6 +28,7 @@ export async function createSessionToken(user: AuthUser) {
     username: user.username,
     name: user.name,
     role: user.role,
+    playerId: user.playerId,
   } satisfies Omit<SessionTokenPayload, "sub">)
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
@@ -69,12 +71,13 @@ function toAuthUser(payload: unknown): AuthUser | null {
   const username = record.username;
   const name = record.name;
   const role = record.role;
+  const playerId = record.playerId;
 
   if (
     typeof id !== "string" ||
     typeof username !== "string" ||
     typeof name !== "string" ||
-    (role !== "admin" && role !== "treasurer" && role !== "coach")
+    (role !== "admin" && role !== "treasurer" && role !== "coach" && role !== "player")
   ) {
     return null;
   }
@@ -84,5 +87,6 @@ function toAuthUser(payload: unknown): AuthUser | null {
     username,
     name,
     role,
+    playerId: typeof playerId === "string" ? playerId : undefined,
   };
 }

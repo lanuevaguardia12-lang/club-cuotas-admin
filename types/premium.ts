@@ -114,6 +114,26 @@ export interface PaymentRecord {
   rawEventType?: string;
 }
 
+export interface PushSubscriptionKeys {
+  auth: string;
+  p256dh: string;
+}
+
+export interface PushSubscriptionInput {
+  userId: string;
+  playerId?: string;
+  endpoint: string;
+  keys: PushSubscriptionKeys;
+  userAgent?: string;
+}
+
+export interface PushSubscriptionRecord extends PushSubscriptionInput {
+  id: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PremiumSummary {
   unreadNotifications: number;
   queuedReminders: number;

@@ -76,6 +76,8 @@ import type {
   PaymentRecord,
   PaymentStatus,
   PremiumData,
+  PushSubscriptionInput,
+  PushSubscriptionRecord,
   ReminderJob,
   ReminderStatus,
   UpsertPaymentRecordInput,
@@ -117,6 +119,7 @@ interface GoogleSheetsConfig {
   notificationsRange: string;
   remindersRange: string;
   paymentsRange: string;
+  pushSubscriptionsRange: string;
   feeCalculatorCostsRange: string;
   feeCalculatorActualsRange: string;
   feeCalculatorPlayerStatusesRange: string;
@@ -203,6 +206,7 @@ const DEFAULT_LOGS_RANGE = "Logs!A:Z";
 const DEFAULT_NOTIFICATIONS_RANGE = "Notificaciones!A:Z";
 const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
+const DEFAULT_PUSH_SUBSCRIPTIONS_RANGE = "PushSubscriptions!A:Z";
 const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
 const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
@@ -271,6 +275,19 @@ const paymentHeaders = [
   "created_at",
   "updated_at",
   "raw_event_type",
+];
+
+const pushSubscriptionHeaders = [
+  "id",
+  "user_id",
+  "player_id",
+  "endpoint",
+  "p256dh",
+  "auth",
+  "user_agent",
+  "activo",
+  "creado_en",
+  "actualizado_en",
 ];
 
 const cashFlowHeaders = [
@@ -395,6 +412,10 @@ export class GoogleSheetsService implements IDataService {
         config.paymentsRange ??
         process.env.GOOGLE_SHEETS_PAYMENTS_RANGE ??
         DEFAULT_PAYMENTS_RANGE,
+      pushSubscriptionsRange:
+        config.pushSubscriptionsRange ??
+        process.env.GOOGLE_SHEETS_PUSH_SUBSCRIPTIONS_RANGE ??
+        DEFAULT_PUSH_SUBSCRIPTIONS_RANGE,
       feeCalculatorCostsRange:
         config.feeCalculatorCostsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE ??
@@ -1879,6 +1900,176 @@ export class GoogleSheetsService implements IDataService {
     invalidatePremiumCache();
   }
 
+  async upsertPushSubscription(input: PushSubscriptionInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const range = this.config.pushSubscriptionsRange;
+    const sheetPrefix = getSheetPrefix(range);
+    const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
+    const sheets = this.createSheetsClient();
+    const now = new Date().toISOString();
+
+    await this.ensureSheetForRange(range, spreadsheetId);
+
+    if (rows.length === 0) {
+      const subscription = buildPushSubscriptionRecord(input, now);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A1:${toColumnName(pushSubscriptionHeaders.length - 1)}2`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            pushSubscriptionHeaders,
+            buildPushSubscriptionWritableRow(pushSubscriptionHeaders, subscription),
+          ],
+        },
+      });
+      invalidatePushSubscriptionCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, pushSubscriptionHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      pushSubscriptionHeaders,
+    );
+    const endpointIndex = findHeaderIndex(headers, ["endpoint"]);
+    const targetRowIndex =
+      endpointIndex >= 0
+        ? dataRows.findIndex(
+            (row) => String(row[endpointIndex] ?? "").trim() === input.endpoint,
+          )
+        : -1;
+
+    if (targetRowIndex >= 0) {
+      const existing = mapRowsToPushSubscriptions([headers, dataRows[targetRowIndex]])[0];
+      const subscription = buildPushSubscriptionRecord(
+        input,
+        existing?.createdAt ?? now,
+        existing?.id,
+        now,
+      );
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [buildPushSubscriptionWritableRow(headers, subscription)],
+        },
+      });
+      invalidatePushSubscriptionCache();
+      return;
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [
+          buildPushSubscriptionWritableRow(
+            headers,
+            buildPushSubscriptionRecord(input, now),
+          ),
+        ],
+      },
+    });
+    invalidatePushSubscriptionCache();
+  }
+
+  async deletePushSubscription(endpoint: string, userId?: string): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const range = this.config.pushSubscriptionsRange;
+    const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    const headers = normalizeWritableHeaders(headerRow, pushSubscriptionHeaders);
+    const endpointIndex = findHeaderIndex(headers, ["endpoint"]);
+    const userIdIndex = findHeaderIndex(headers, ["user_id", "usuario_id"]);
+    const activeIndex = findHeaderIndex(headers, ["activo", "active"]);
+    const updatedAtIndex = findHeaderIndex(headers, [
+      "actualizado_en",
+      "updated_at",
+      "updated",
+    ]);
+
+    if (endpointIndex < 0 || activeIndex < 0) {
+      return;
+    }
+
+    const targetRowIndex = dataRows.findIndex((row) => {
+      const endpointMatches = String(row[endpointIndex] ?? "").trim() === endpoint;
+      const userMatches =
+        !userId || userIdIndex < 0 || String(row[userIdIndex] ?? "").trim() === userId;
+
+      return endpointMatches && userMatches;
+    });
+
+    if (targetRowIndex < 0) {
+      return;
+    }
+
+    const spreadsheetRow = targetRowIndex + 2;
+    const data = [
+      {
+        range: `${getSheetPrefix(range)}!${toColumnName(activeIndex)}${spreadsheetRow}`,
+        values: [["false"]],
+      },
+    ];
+
+    if (updatedAtIndex >= 0) {
+      data.push({
+        range: `${getSheetPrefix(range)}!${toColumnName(updatedAtIndex)}${spreadsheetRow}`,
+        values: [[new Date().toISOString()]],
+      });
+    }
+
+    await this.createSheetsClient().spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data,
+      },
+    });
+    invalidatePushSubscriptionCache();
+  }
+
+  async getPushSubscriptionsForUser(userId: string): Promise<PushSubscriptionRecord[]> {
+    this.assertConfigured();
+
+    return this.readPushSubscriptions().then((subscriptions) =>
+      subscriptions.filter(
+        (subscription) => subscription.active && subscription.userId === userId,
+      ),
+    );
+  }
+
+  async getPushSubscriptionsForPlayer(
+    playerId: string,
+  ): Promise<PushSubscriptionRecord[]> {
+    this.assertConfigured();
+
+    return this.readPushSubscriptions().then((subscriptions) =>
+      subscriptions.filter(
+        (subscription) => subscription.active && subscription.playerId === playerId,
+      ),
+    );
+  }
+
   private assertConfigured() {
     const missing = [
       ["GOOGLE_SHEETS_SPREADSHEET_ID", this.config.spreadsheetId],
@@ -2015,6 +2206,16 @@ export class GoogleSheetsService implements IDataService {
         tags: ["google-sheets", "google-sheets:premium"],
       },
     )();
+  }
+
+  private async readPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.pushSubscriptionsRange,
+    );
+
+    return mapRowsToPushSubscriptions(rows);
   }
 
   private async readCachedClubDashboardRows() {
@@ -3935,6 +4136,43 @@ function mapRowsToReminderJobs(rows: unknown[][]): ReminderJob[] {
     .sort(compareByCreatedAtDesc);
 }
 
+function mapRowsToPushSubscriptions(rows: unknown[][]): PushSubscriptionRecord[] {
+  return rowsToRecords(rows)
+    .map((record, index): PushSubscriptionRecord | null => {
+      const endpoint = pick(record, ["endpoint"]).trim();
+      const p256dh = pick(record, ["p256dh", "public_key"]).trim();
+      const auth = pick(record, ["auth", "auth_secret"]).trim();
+      const userId = pick(record, ["user_id", "usuario_id"]).trim();
+
+      if (!endpoint || !p256dh || !auth || !userId) {
+        return null;
+      }
+
+      return {
+        id: pick(record, ["id", "subscription_id"]) || `push-${index + 1}`,
+        userId,
+        playerId: pick(record, ["player_id", "jugador_id"]) || undefined,
+        endpoint,
+        keys: {
+          auth,
+          p256dh,
+        },
+        userAgent: pick(record, ["user_agent", "navegador"]) || undefined,
+        active: parseLooseBoolean(pick(record, ["activo", "active"]), true),
+        createdAt:
+          parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
+          new Date().toISOString(),
+        updatedAt:
+          parseDateTime(
+            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+          ) ?? new Date().toISOString(),
+      };
+    })
+    .filter((subscription): subscription is PushSubscriptionRecord =>
+      Boolean(subscription),
+    );
+}
+
 function mapRowsToPaymentRecords(rows: unknown[][]): PaymentRecord[] {
   return rowsToRecords(rows)
     .map((record, index) => {
@@ -4062,6 +4300,54 @@ function buildPaymentWritableRow(
   };
 
   return headers.map((header) => fallbackValues[header] ?? "");
+}
+
+function buildPushSubscriptionRecord(
+  input: PushSubscriptionInput,
+  createdAt: string,
+  id = createId("push"),
+  updatedAt = createdAt,
+): PushSubscriptionRecord {
+  return {
+    id,
+    userId: input.userId,
+    playerId: input.playerId,
+    endpoint: input.endpoint,
+    keys: input.keys,
+    userAgent: input.userAgent,
+    active: true,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function buildPushSubscriptionWritableRow(
+  headers: string[],
+  subscription: PushSubscriptionRecord,
+) {
+  const values: Record<string, string> = {
+    id: subscription.id,
+    subscription_id: subscription.id,
+    user_id: subscription.userId,
+    usuario_id: subscription.userId,
+    player_id: subscription.playerId ?? "",
+    jugador_id: subscription.playerId ?? "",
+    endpoint: subscription.endpoint,
+    p256dh: subscription.keys.p256dh,
+    public_key: subscription.keys.p256dh,
+    auth: subscription.keys.auth,
+    auth_secret: subscription.keys.auth,
+    user_agent: subscription.userAgent ?? "",
+    navegador: subscription.userAgent ?? "",
+    activo: subscription.active ? "true" : "false",
+    active: subscription.active ? "true" : "false",
+    creado_en: subscription.createdAt,
+    created_at: subscription.createdAt,
+    actualizado_en: subscription.updatedAt,
+    updated_at: subscription.updatedAt,
+  };
+
+  return headers.map((header) => values[header] ?? "");
 }
 
 function buildPlayersExport(players: PlayerRecord[]): ExportData {
@@ -6796,7 +7082,7 @@ function normalizeAuditEntityType(value: string): AuditEntityType {
 function normalizeAuditActorRole(value: string): AuditActor["role"] {
   const role = normalizeText(value);
 
-  if (role === "admin" || role === "treasurer" || role === "coach") {
+  if (role === "admin" || role === "treasurer" || role === "coach" || role === "player") {
     return role;
   }
 
@@ -6844,7 +7130,7 @@ function normalizeNotificationStatus(value: string): NotificationStatus {
 function normalizeTargetRole(value: string): AppNotification["targetRole"] {
   const role = normalizeText(value);
 
-  if (role === "admin" || role === "treasurer" || role === "coach") {
+  if (role === "admin" || role === "treasurer" || role === "coach" || role === "player") {
     return role;
   }
 
@@ -7121,4 +7407,9 @@ function invalidateFeeCalculatorCache() {
 function invalidateCashFlowCache() {
   revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:cash-flow");
+}
+
+function invalidatePushSubscriptionCache() {
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:push-subscriptions");
 }

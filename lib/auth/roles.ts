@@ -15,17 +15,20 @@ export type Permission =
   | "payments:manage"
   | "maintenance:manage"
   | "api:read"
-  | "api:write";
+  | "api:write"
+  | "player:self:read";
 
 export const roleLabels: Record<AuthRole, string> = {
   admin: "Administrador",
   coach: "Profesor",
+  player: "Jugador",
   treasurer: "Tesorero",
 };
 
 export const roleDescriptions: Record<AuthRole, string> = {
   admin: "Acceso total al sistema, configuracion, usuarios, auditoria e integraciones.",
   coach: "Acceso operativo a jugadores, fichas, cuotas y recordatorios.",
+  player: "Acceso personal al estado de sus cuotas y notificaciones.",
   treasurer: "Acceso financiero a cuotas, cash flow, pagos, reportes y auditoria.",
 };
 
@@ -46,8 +49,10 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "maintenance:manage",
     "api:read",
     "api:write",
+    "player:self:read",
   ],
   coach: ["dashboard:read", "players:read", "players:write", "notifications:manage"],
+  player: ["player:self:read"],
   treasurer: [
     "dashboard:read",
     "players:read",
@@ -78,6 +83,10 @@ export function hasPermission(user: AuthUser | null | undefined, permission: Per
 export function canAccessRoute(user: AuthUser, href: string) {
   if (href.startsWith("/settings")) {
     return hasPermission(user, "settings:write");
+  }
+
+  if (href.startsWith("/mi-cuota")) {
+    return hasPermission(user, "player:self:read");
   }
 
   if (href.startsWith("/users")) {

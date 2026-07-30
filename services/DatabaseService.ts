@@ -6,7 +6,7 @@ import type { IDataService } from "@/services/IDataService";
 import type { CashFlowData, DashboardData, PlayerProfile } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
 import type { FeeCalculatorData } from "@/types/fee-calculator";
-import type { PremiumData } from "@/types/premium";
+import type { PremiumData, PushSubscriptionRecord } from "@/types/premium";
 import type { PlayerDirectoryData } from "@/types/players";
 import type { AppSettingsData } from "@/types/settings";
 
@@ -431,6 +431,28 @@ export class DatabaseService implements IDataService {
       "DatabaseService todavia no esta implementado.",
       "UNSUPPORTED_DATA_SOURCE",
     );
+  }
+
+  async upsertPushSubscription(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async deletePushSubscription(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async getPushSubscriptionsForUser(): Promise<PushSubscriptionRecord[]> {
+    return [];
+  }
+
+  async getPushSubscriptionsForPlayer(): Promise<PushSubscriptionRecord[]> {
+    return [];
   }
 }
 

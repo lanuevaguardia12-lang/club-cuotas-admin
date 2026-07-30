@@ -2,6 +2,7 @@ import type { Permission } from "@/lib/auth/roles";
 
 export type NavigationIcon =
   | "dashboard"
+  | "myFee"
   | "players"
   | "cashFlow"
   | "feeCalculator"

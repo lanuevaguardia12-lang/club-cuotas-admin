@@ -65,6 +65,49 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(staleWhileRevalidate(request));
 });
 
+self.addEventListener("push", (event) => {
+  const payload = getPushPayload(event);
+  const title = payload.title || "La Nueva Guardia";
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      badge: payload.badge || "/icons/favicon-32x32.png",
+      body: payload.body || "Tenés una nueva notificación.",
+      data: {
+        url: payload.url || "/mi-cuota",
+      },
+      icon: payload.icon || "/icons/icon-192.png",
+      renotify: Boolean(payload.tag),
+      tag: payload.tag,
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const targetUrl = new URL(event.notification.data?.url || "/", self.location.origin);
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        const existingClient = clientList.find((client) => {
+          const clientUrl = new URL(client.url);
+
+          return clientUrl.origin === targetUrl.origin;
+        });
+
+        if (existingClient) {
+          existingClient.focus();
+          return existingClient.navigate(targetUrl.href);
+        }
+
+        return self.clients.openWindow(targetUrl.href);
+      }),
+  );
+});
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(request);
@@ -79,4 +122,18 @@ async function staleWhileRevalidate(request) {
     .catch(() => cachedResponse);
 
   return cachedResponse || networkResponsePromise;
+}
+
+function getPushPayload(event) {
+  if (!event.data) {
+    return {};
+  }
+
+  try {
+    return event.data.json();
+  } catch {
+    return {
+      body: event.data.text(),
+    };
+  }
 }

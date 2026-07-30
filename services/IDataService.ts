@@ -18,6 +18,8 @@ import type {
   CreateNotificationInput,
   CreateReminderJobInput,
   PremiumData,
+  PushSubscriptionInput,
+  PushSubscriptionRecord,
   UpsertPaymentRecordInput,
 } from "@/types/premium";
 import type { PlayerDirectoryData, UpsertPlayerInput } from "@/types/players";
@@ -52,4 +54,8 @@ export interface IDataService {
   markNotificationRead(notificationId: string): Promise<void>;
   createReminderJob(input: CreateReminderJobInput): Promise<void>;
   upsertPaymentRecord(input: UpsertPaymentRecordInput): Promise<void>;
+  upsertPushSubscription(input: PushSubscriptionInput): Promise<void>;
+  deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
+  getPushSubscriptionsForUser(userId: string): Promise<PushSubscriptionRecord[]>;
+  getPushSubscriptionsForPlayer(playerId: string): Promise<PushSubscriptionRecord[]>;
 }

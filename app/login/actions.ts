@@ -25,7 +25,7 @@ export async function loginAction(
 ): Promise<LoginState> {
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const redirectTo =
+  const requestedRedirectTo =
     getSafeRedirectPath(formData.get("redirectTo")) ?? DEFAULT_AUTH_REDIRECT;
 
   if (!username || !password) {
@@ -73,6 +73,11 @@ export async function loginAction(
       summary: `${authenticatedUser.name} inicio sesion.`,
     })
     .catch(() => undefined);
+
+  const redirectTo =
+    authenticatedUser.role === "player" && requestedRedirectTo === DEFAULT_AUTH_REDIRECT
+      ? "/mi-cuota"
+      : requestedRedirectTo;
 
   redirect(redirectTo);
 }

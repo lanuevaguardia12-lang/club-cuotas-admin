@@ -9,10 +9,12 @@ import {
   UserPlus,
   UsersRound,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +43,12 @@ interface DashboardPageProps {
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const user = await getCurrentUser();
+
+  if (user?.role === "player") {
+    redirect("/mi-cuota");
+  }
+
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
   const dashboard = await getDataService().getDashboardData(period);

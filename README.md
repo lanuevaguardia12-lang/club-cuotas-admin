@@ -138,6 +138,7 @@ utils/
 - Lazy loading y code splitting para graficos y tablas pesadas.
 - SEO tecnico con metadata, Open Graph, Twitter Card, robots y sitemap.
 - PWA con `manifest.webmanifest`, service worker, iconos y favicons.
+- Push notifications Web Push con VAPID para usuarios jugadores.
 - Headers de seguridad y cache para assets estaticos.
 - Configuracion lista para Vercel.
 - CI de GitHub con formato, lint, typecheck, auditoria y build.
@@ -182,10 +183,14 @@ AUTH_SESSION_MAX_AGE_SECONDS=28800
 ADMIN_USERNAME="replace-with-admin-username"
 ADMIN_PASSWORD="replace-with-a-strong-password"
 ADMIN_NAME="replace-with-admin-display-name"
-AUTH_USERS_JSON='[{"id":"admin","username":"admin","password":"replace-with-a-strong-password","name":"Administrador","role":"admin"},{"id":"tesorero","username":"tesorero","password":"replace-with-a-strong-password","name":"Tesorero","role":"treasurer"},{"id":"profesor","username":"profesor","password":"replace-with-a-strong-password","name":"Profesor","role":"coach"}]'
+AUTH_USERS_JSON='[{"id":"admin","username":"admin","password":"replace-with-a-strong-password","name":"Administrador","role":"admin"},{"id":"tesorero","username":"tesorero","password":"replace-with-a-strong-password","name":"Tesorero","role":"treasurer"},{"id":"profesor","username":"profesor","password":"replace-with-a-strong-password","name":"Profesor","role":"coach"},{"id":"ivo-unzaga","username":"ivo","password":"replace-with-a-strong-password","name":"Ivo Unzaga","role":"player","playerId":"ivo-unzaga"}]'
 
 API_SECRET="replace-with-a-long-random-api-secret"
 CRON_SECRET="replace-with-a-long-random-cron-secret"
+
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+VAPID_PRIVATE_KEY=""
+VAPID_SUBJECT="mailto:lanuevaguardia12@gmail.com"
 
 MERCADO_PAGO_ACCESS_TOKEN="replace-with-mercado-pago-access-token"
 MERCADO_PAGO_WEBHOOK_SECRET="replace-with-mercado-pago-webhook-secret"
@@ -209,6 +214,7 @@ GOOGLE_SHEETS_LOGS_RANGE="Logs!A:Z"
 GOOGLE_SHEETS_NOTIFICATIONS_RANGE="Notificaciones!A:Z"
 GOOGLE_SHEETS_REMINDERS_RANGE="Recordatorios!A:Z"
 GOOGLE_SHEETS_PAYMENTS_RANGE="Pagos!A:Z"
+GOOGLE_SHEETS_PUSH_SUBSCRIPTIONS_RANGE="PushSubscriptions!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE="CalculadoraCostos!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE="CalculadoraReales!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_PLAYER_STATUSES_RANGE="CalculadoraJugadores!A:Z"
@@ -276,6 +282,7 @@ Roles soportados:
 - `admin`: Administrador, acceso total.
 - `treasurer`: Tesorero, acceso financiero, pagos, reportes y auditoria.
 - `coach`: Profesor, acceso operativo a jugadores, cuotas y recordatorios.
+- `player`: Jugador, acceso a `/mi-cuota` y sus notificaciones.
 
 Los permisos se definen en `lib/auth/roles.ts` y se usan en navegacion, paginas y
 API REST. `AUTH_USERS_JSON` permite declarar multiples usuarios sin hardcodear
@@ -289,6 +296,14 @@ credenciales:
     "password": "usar-un-secreto-real",
     "name": "Tesorero",
     "role": "treasurer"
+  },
+  {
+    "id": "ivo-unzaga",
+    "username": "ivo",
+    "password": "usar-un-secreto-real",
+    "name": "Ivo Unzaga",
+    "role": "player",
+    "playerId": "ivo-unzaga"
   }
 ]
 ```
@@ -791,10 +806,16 @@ El panel `/notifications` muestra avisos internos y la cola de recordatorios.
 El cron diario se configura en `vercel.json`:
 
 ```json
-{
-  "path": "/api/cron/reminders",
-  "schedule": "0 12 * * *"
-}
+[
+  {
+    "path": "/api/cron/reminders",
+    "schedule": "0 12 * * *"
+  },
+  {
+    "path": "/api/cron/player-fee-reminders",
+    "schedule": "0 12 1 * *"
+  }
+]
 ```
 
 La ruta valida `Authorization: Bearer <CRON_SECRET>`. En Vercel, los cron jobs
@@ -804,6 +825,42 @@ solo corren en produccion y la autenticacion debe configurarse con
 El cron no envia WhatsApp directamente. Genera recordatorios auditables en cola,
 preparados para conectar luego WhatsApp Business API, Twilio, Zenvia, QStash,
 Inngest u otro worker.
+
+### Push notifications
+
+La app soporta Web Push para usuarios jugadores. Un jugador entra a `/mi-cuota`,
+activa notificaciones en su dispositivo y la suscripcion queda guardada en
+`PushSubscriptions`.
+
+Variables requeridas:
+
+```bash
+NEXT_PUBLIC_VAPID_PUBLIC_KEY="clave-publica"
+VAPID_PRIVATE_KEY="clave-privada"
+VAPID_SUBJECT="mailto:lanuevaguardia12@gmail.com"
+GOOGLE_SHEETS_PUSH_SUBSCRIPTIONS_RANGE="PushSubscriptions!A:Z"
+```
+
+Generar claves VAPID:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Rutas principales:
+
+- `GET /api/push/subscriptions`: estado de configuracion push.
+- `POST /api/push/subscriptions`: guarda la suscripcion del dispositivo logueado.
+- `DELETE /api/push/subscriptions`: desactiva una suscripcion.
+- `POST /api/push/test`: envia una prueba al usuario logueado.
+- `GET /api/cron/player-fee-reminders`: envia push mensual de cuota pendiente.
+
+Limitaciones:
+
+- En iPhone requiere instalar la PWA en pantalla de inicio.
+- En Android y escritorio funciona desde navegadores compatibles.
+- El usuario debe aceptar permisos del navegador.
+- Requiere HTTPS; Vercel lo provee en produccion.
 
 ### Pagos
 
