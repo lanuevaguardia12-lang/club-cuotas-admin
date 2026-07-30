@@ -4,6 +4,7 @@ import { CashFlowContent } from "@/components/cash-flow/cash-flow-content";
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
+import type { CashFlowScenario } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,13 @@ export default async function CashFlowPage({
 }: {
   searchParams?: Promise<{
     period?: string;
+    scenario?: string;
   }>;
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params?.period ?? "") ? params?.period : undefined;
+  const scenario: CashFlowScenario = params?.scenario === "draft" ? "draft" : "real";
   const cashFlow = await getDataService().getCashFlowData(period);
 
   return (
@@ -53,6 +56,7 @@ export default async function CashFlowPage({
       <CashFlowContent
         canWrite={hasPermission(user, "cash-flow:write")}
         data={cashFlow}
+        initialScenario={scenario}
       />
 
       {cashFlow.source.status === "error" ? (

@@ -22,6 +22,7 @@ const transactionSchema = z
     startPeriod: periodSchema,
     endPeriod: periodSchema,
     notes: z.string().trim().max(500).optional(),
+    scenario: z.enum(["real", "draft"]).default("real"),
   })
   .refine((value) => value.endPeriod >= value.startPeriod, {
     message: "El mes final no puede ser anterior al inicial.",
@@ -52,6 +53,7 @@ export async function saveCashFlowTransaction(input: unknown) {
           type: parsed.type,
           amount: parsed.amount,
           period: parsed.period,
+          scenario: parsed.scenario,
           repeatsMonthly: parsed.repeatsMonthly,
         },
       })

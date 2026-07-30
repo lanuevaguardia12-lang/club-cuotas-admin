@@ -155,6 +155,7 @@ export class DatabaseService implements IDataService {
         matrixRows: [],
       },
       transactions: [],
+      scenario: "real",
       expectedFeeIncome: 0,
       additionalIncome: 0,
       additionalExpenses: 0,
@@ -162,6 +163,26 @@ export class DatabaseService implements IDataService {
         title: "Cash Flow pendiente",
         description:
           "El contrato IDataService ya esta listo. Implementa DatabaseService cuando migres la persistencia.",
+      },
+      draft: {
+        scenario: "draft",
+        metrics: [],
+        charts: {
+          monthly: [],
+          annual: [],
+          monthlySeries: [],
+          conceptBreakdown: [],
+          matrixRows: [],
+        },
+        transactions: [],
+        expectedFeeIncome: 0,
+        additionalIncome: 0,
+        additionalExpenses: 0,
+        emptyState: {
+          title: "Cash Flow borrador pendiente",
+          description:
+            "El contrato IDataService ya esta listo para escenarios borrador en PostgreSQL.",
+        },
       },
       source: {
         provider: "postgresql",

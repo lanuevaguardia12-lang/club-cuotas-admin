@@ -20,6 +20,8 @@ import type {
   CashFlowMatrixRow,
   CashFlowMetric,
   CashFlowMonthlyPoint,
+  CashFlowScenario,
+  CashFlowScenarioData,
   CashFlowTransaction,
   CashFlowTransactionType,
   ChartDatum,
@@ -282,6 +284,7 @@ const cashFlowHeaders = [
   "vigencia_desde",
   "vigencia_hasta",
   "notas",
+  "escenario",
   "activo",
   "creado_en",
   "actualizado_en",
@@ -552,21 +555,39 @@ export class GoogleSheetsService implements IDataService {
           this.readFeeIncomeByPeriod(ledgerPeriods),
           this.readFeeCalculatorOperatingCostTransactions(ledgerPeriods),
         ]);
-      const cashFlowTransactions = [...transactions, ...operatingCostTransactions];
+      const realManualTransactions = transactions.filter(
+        (transaction) => transaction.scenario === "real",
+      );
+      const draftManualTransactions = transactions.filter(
+        (transaction) => transaction.scenario === "draft",
+      );
+      const realCashFlowTransactions = [
+        ...realManualTransactions,
+        ...operatingCostTransactions,
+      ];
+      const draftCashFlowTransactions = [
+        ...draftManualTransactions,
+        ...operatingCostTransactions,
+      ];
       const expectedFeeIncome = feeIncomeByPeriod.get(period) ?? 0;
 
       return buildCashFlowData({
         period,
-        transactions: cashFlowTransactions,
+        transactions: realCashFlowTransactions,
+        draftTransactions: draftCashFlowTransactions,
         feeIncomeByPeriod,
         status:
-          cashFlowTransactions.length === 0 && expectedFeeIncome === 0
+          realCashFlowTransactions.length === 0 &&
+          draftCashFlowTransactions.length === 0 &&
+          expectedFeeIncome === 0
             ? "empty"
             : "ready",
         message:
-          cashFlowTransactions.length === 0 && expectedFeeIncome === 0
+          realCashFlowTransactions.length === 0 &&
+          draftCashFlowTransactions.length === 0 &&
+          expectedFeeIncome === 0
             ? "Google Sheets conectado, sin movimientos ni cuotas calculadas."
-            : "Cash Flow obtenido desde Google Sheets y calculador de cuota.",
+            : "Cash Flow real y borrador obtenidos desde Google Sheets y calculador de cuota.",
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
@@ -2909,6 +2930,9 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
         false,
       );
       const active = parseLooseBoolean(pick(record, ["activo", "active"]), true);
+      const scenario = normalizeCashFlowScenario(
+        pick(record, ["escenario", "scenario", "tipo_escenario"]),
+      );
 
       if (amount === 0 || !active) {
         return null;
@@ -2937,6 +2961,7 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
         notes: pick(record, ["notas", "notes", "observaciones"]),
         active,
         source: "manual",
+        scenario,
         createdAt:
           parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
           new Date().toISOString(),
@@ -3075,6 +3100,7 @@ function mapClubFeesToIncomeTransactions(
         notes: "Ingreso legacy desde cuotas pagadas.",
         active: true,
         source: "legacy",
+        scenario: "real",
       };
     });
 }
@@ -3108,6 +3134,7 @@ function mapClubExpenseRowsToTransactions(
       notes: "Gasto legacy del club.",
       active: true,
       source: "legacy",
+      scenario: "real",
     });
   });
 
@@ -4135,6 +4162,7 @@ function buildCashFlowExport(transactions: CashFlowTransactionRecord[]): ExportD
     { key: "type", header: "Tipo" },
     { key: "concept", header: "Concepto" },
     { key: "amount", header: "Monto", type: "currency" },
+    { key: "scenario", header: "Escenario" },
     { key: "repeatsMonthly", header: "Recurrente" },
     { key: "startPeriod", header: "Desde" },
     { key: "endPeriod", header: "Hasta" },
@@ -4147,6 +4175,7 @@ function buildCashFlowExport(transactions: CashFlowTransactionRecord[]): ExportD
     type: transaction.type === "income" ? "Ingreso" : "Gasto",
     concept: transaction.concept,
     amount: transaction.type === "income" ? transaction.amount : -transaction.amount,
+    scenario: transaction.scenario === "draft" ? "Borrador" : "Real",
     repeatsMonthly: transaction.repeatsMonthly ? "Si" : "No",
     startPeriod: transaction.startPeriod,
     endPeriod: transaction.endPeriod,
@@ -4362,6 +4391,7 @@ function calculateExpectedFeeIncomeForCashFlow(
 function buildCashFlowData({
   period,
   transactions,
+  draftTransactions,
   feeIncomeByPeriod,
   status,
   message,
@@ -4370,12 +4400,51 @@ function buildCashFlowData({
 }: {
   period: string;
   transactions: CashFlowTransactionRecord[];
+  draftTransactions: CashFlowTransactionRecord[];
   feeIncomeByPeriod: Map<string, number>;
   status: CashFlowData["source"]["status"];
   message: string;
   cachedAt: string;
   revalidateSeconds: number;
 }): CashFlowData {
+  const realScenario = buildCashFlowScenarioData({
+    period,
+    scenario: "real",
+    transactions,
+    feeIncomeByPeriod,
+  });
+  const draftScenario = buildCashFlowScenarioData({
+    period,
+    scenario: "draft",
+    transactions: draftTransactions,
+    feeIncomeByPeriod,
+  });
+
+  return {
+    ...realScenario,
+    period,
+    draft: draftScenario,
+    source: {
+      provider: "google-sheets",
+      status,
+      message,
+      cachedAt,
+      revalidateSeconds,
+    },
+  };
+}
+
+function buildCashFlowScenarioData({
+  period,
+  scenario,
+  transactions,
+  feeIncomeByPeriod,
+}: {
+  period: string;
+  scenario: CashFlowScenario;
+  transactions: CashFlowTransactionRecord[];
+  feeIncomeByPeriod: Map<string, number>;
+}): CashFlowScenarioData {
   const projectionPeriods = getCashFlowProjectionPeriods(period);
   const annualPeriods = getYearPeriods(period);
   const chartPeriods = Array.from(
@@ -4407,9 +4476,10 @@ function buildCashFlowData({
     period,
   );
   const currentCashBalance = currentOpeningBalance + currentBalance;
+  const isDraft = scenario === "draft";
 
   return {
-    period,
+    scenario,
     metrics: buildCashFlowMetrics({
       currentIncome,
       currentExpenses,
@@ -4443,18 +4513,10 @@ function buildCashFlowData({
     additionalIncome,
     additionalExpenses: currentExpenses,
     emptyState: {
-      title: status === "ready" ? "Cash Flow" : "Cash Flow sin movimientos",
-      description:
-        status === "ready"
-          ? "Vista financiera de cuotas esperadas, ingresos, gastos, balance y saldo."
-          : "Carga movimientos o calcula cuotas para alimentar esta seccion.",
-    },
-    source: {
-      provider: "google-sheets",
-      status,
-      message,
-      cachedAt,
-      revalidateSeconds,
+      title: isDraft ? "Cash Flow borrador" : "Cash Flow",
+      description: isDraft
+        ? "Escenario hipotetico para probar ingresos y gastos sin tocar el cashflow real."
+        : "Vista financiera de cuotas esperadas, ingresos, gastos, balance y saldo.",
     },
   };
 }
@@ -4472,8 +4534,29 @@ function buildFallbackCashFlowData({
   cachedAt: string;
   revalidateSeconds: number;
 }): CashFlowData {
+  const realScenario = buildFallbackCashFlowScenarioData(period, "real");
+  const draftScenario = buildFallbackCashFlowScenarioData(period, "draft");
+
   return {
+    ...realScenario,
     period,
+    draft: draftScenario,
+    source: {
+      provider: "google-sheets",
+      status,
+      message,
+      cachedAt,
+      revalidateSeconds,
+    },
+  };
+}
+
+function buildFallbackCashFlowScenarioData(
+  period: string,
+  scenario: CashFlowScenario,
+): CashFlowScenarioData {
+  return {
+    scenario,
     metrics: buildCashFlowMetrics({
       currentIncome: 0,
       currentExpenses: 0,
@@ -4495,15 +4578,12 @@ function buildFallbackCashFlowData({
     additionalIncome: 0,
     additionalExpenses: 0,
     emptyState: {
-      title: "Cash Flow sin datos",
-      description: "Configura la hoja CashFlow para ver informacion financiera.",
-    },
-    source: {
-      provider: "google-sheets",
-      status,
-      message,
-      cachedAt,
-      revalidateSeconds,
+      title:
+        scenario === "draft" ? "Cash Flow borrador sin datos" : "Cash Flow sin datos",
+      description:
+        scenario === "draft"
+          ? "Crea movimientos hipoteticos para armar una proyeccion borrador."
+          : "Configura la hoja CashFlow para ver informacion financiera.",
     },
   };
 }
@@ -4857,6 +4937,7 @@ function buildFeeIncomeTransactions(
       notes: "Ingreso esperado calculado desde el calculador de cuota.",
       active: true,
       source: "fee-calculator",
+      scenario: "real",
     }));
 }
 
@@ -4925,6 +5006,7 @@ function buildFeeCalculatorOperatingCostCashFlowTransactions({
             notes: `${paymentRule} ${formatPeriodLabel(sourcePeriod)}: ${formatInteger(actualUnits)} ${unitLabel}. Monto real: ${formatCurrency(amount)}.`,
             active: true,
             source: "fee-calculator",
+            scenario: "real",
           } satisfies CashFlowTransactionRecord;
         }),
     )
@@ -5603,6 +5685,7 @@ function normalizeCashFlowTransactionInput(
     startPeriod: normalizedStartPeriod,
     endPeriod: normalizedEndPeriod,
     notes: input.notes?.trim() ?? "",
+    scenario: input.scenario ?? "real",
   };
 }
 
@@ -5693,6 +5776,9 @@ function buildCashFlowWritableRow(
     notas: transaction.notes,
     notes: transaction.notes,
     observaciones: transaction.notes,
+    escenario: transaction.scenario,
+    scenario: transaction.scenario,
+    tipo_escenario: transaction.scenario,
     activo: transaction.active ? "true" : "false",
     active: transaction.active ? "true" : "false",
     creado_en: transaction.createdAt ?? now,
@@ -6367,6 +6453,25 @@ function normalizeCashFlowType(value: string, amount: number): CashFlowTransacti
   }
 
   return amount < 0 ? "expense" : "income";
+}
+
+function normalizeCashFlowScenario(value: string): CashFlowScenario {
+  const scenario = normalizeText(value);
+
+  if (
+    [
+      "draft",
+      "borrador",
+      "hipotetico",
+      "hipotetica",
+      "proyeccion",
+      "simulacion",
+    ].includes(scenario)
+  ) {
+    return "draft";
+  }
+
+  return "real";
 }
 
 function parseMoney(value: string) {

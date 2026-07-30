@@ -60,6 +60,8 @@ export type CashFlowTransactionType = "income" | "expense";
 
 export type CashFlowTransactionSource = "manual" | "fee-calculator" | "legacy";
 
+export type CashFlowScenario = "real" | "draft";
+
 export interface CashFlowTransaction {
   id: string;
   date?: string;
@@ -73,6 +75,7 @@ export interface CashFlowTransaction {
   notes: string;
   active: boolean;
   source: CashFlowTransactionSource;
+  scenario: CashFlowScenario;
 }
 
 export interface CashFlowMetric {
@@ -125,8 +128,8 @@ export interface CashFlowChartsData {
   matrixRows: CashFlowMatrixRow[];
 }
 
-export interface CashFlowData {
-  period: string;
+export interface CashFlowScenarioData {
+  scenario: CashFlowScenario;
   metrics: CashFlowMetric[];
   charts: CashFlowChartsData;
   transactions: CashFlowTransaction[];
@@ -137,6 +140,11 @@ export interface CashFlowData {
     title: string;
     description: string;
   };
+}
+
+export interface CashFlowData extends CashFlowScenarioData {
+  period: string;
+  draft: CashFlowScenarioData;
   source: DataSourceState;
 }
 
@@ -151,6 +159,7 @@ export interface UpsertCashFlowTransactionInput {
   startPeriod: string;
   endPeriod: string;
   notes?: string;
+  scenario?: CashFlowScenario;
 }
 
 export type PlayerPaymentStatus = "paid" | "debt" | "pending";

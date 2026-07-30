@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
@@ -29,6 +29,8 @@ import type {
   CashFlowData,
   CashFlowMatrixRow,
   CashFlowMonthlyPoint,
+  CashFlowScenario,
+  CashFlowScenarioData,
   CashFlowTransaction,
   CashFlowTransactionType,
 } from "@/types/dashboard";
@@ -36,6 +38,7 @@ import type {
 interface CashFlowContentProps {
   canWrite: boolean;
   data: CashFlowData;
+  initialScenario: CashFlowScenario;
 }
 
 const transactionSchema = z
@@ -50,6 +53,7 @@ const transactionSchema = z
     startPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí mes inicial."),
     endPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí mes final."),
     notes: z.string().trim().max(500).optional(),
+    scenario: z.enum(["real", "draft"]),
   })
   .refine((value) => value.endPeriod >= value.startPeriod, {
     message: "El mes final no puede ser anterior al inicial.",
@@ -72,13 +76,30 @@ const typeLabels: Record<CashFlowTransactionType, string> = {
   income: "Ingreso",
 };
 
-export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
+const scenarioLabels: Record<CashFlowScenario, string> = {
+  draft: "Borrador",
+  real: "Real",
+};
+
+const scenarioDescriptions: Record<CashFlowScenario, string> = {
+  draft:
+    "Escenario hipotético para jugar con ingresos y gastos sin tocar el cashflow real.",
+  real: "Movimientos reales y datos automáticos del calculador de cuota.",
+};
+
+export function CashFlowContent({
+  canWrite,
+  data,
+  initialScenario,
+}: CashFlowContentProps) {
   const router = useRouter();
   const loadingRouter = useLoadingRouter();
+  const [activeScenario, setActiveScenario] = useState<CashFlowScenario>(initialScenario);
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
   const [message, setMessage] = useState("");
+  const activeData: CashFlowScenarioData = activeScenario === "draft" ? data.draft : data;
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
@@ -87,27 +108,59 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
     watch,
   } = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
-    defaultValues: getDefaultValues(data.period),
+    defaultValues: getDefaultValues(data.period, activeScenario),
   });
   const repeatsMonthly = watch("repeatsMonthly");
   const manualTransactions = useMemo(
     () =>
-      data.transactions
-        .filter((transaction) => transaction.source === "manual")
+      activeData.transactions
+        .filter(
+          (transaction) =>
+            transaction.source === "manual" && transaction.scenario === activeScenario,
+        )
         .sort((left, right) => right.period.localeCompare(left.period)),
-    [data.transactions],
+    [activeData.transactions, activeScenario],
   );
   const selectedMonth =
-    data.charts.annual.find((point) => point.period === data.period) ??
-    data.charts.monthly.find((point) => point.period === data.period);
-  const nextCriticalMonth = data.charts.annual.find((point) => point.cashBalance < 0);
+    activeData.charts.annual.find((point) => point.period === data.period) ??
+    activeData.charts.monthly.find((point) => point.period === data.period);
+  const nextCriticalMonth = activeData.charts.annual.find(
+    (point) => point.cashBalance < 0,
+  );
+
+  useEffect(() => {
+    setActiveScenario(initialScenario);
+  }, [initialScenario]);
+
+  useEffect(() => {
+    setEditingId("");
+    reset(getDefaultValues(data.period, activeScenario));
+  }, [activeScenario, data.period, reset]);
+
+  function handleScenarioChange(scenario: CashFlowScenario) {
+    if (scenario === activeScenario) {
+      return;
+    }
+
+    setActiveScenario(scenario);
+
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("period", data.period);
+      url.searchParams.set("scenario", scenario);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
 
   function handlePeriodChange(period: string) {
     if (period === data.period) {
       return;
     }
 
-    loadingRouter.push(`/cash-flow?period=${period}`, "Cargando Cash Flow...");
+    loadingRouter.push(
+      `/cash-flow?period=${period}&scenario=${activeScenario}`,
+      "Cargando Cash Flow...",
+    );
   }
 
   async function onSubmit(values: TransactionFormValues) {
@@ -125,9 +178,13 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
 
     try {
       await saveCashFlowTransaction(normalizedValues);
-      reset(getDefaultValues(data.period));
+      reset(getDefaultValues(data.period, activeScenario));
       setEditingId("");
-      setMessage(values.id ? "Movimiento actualizado" : "Movimiento guardado");
+      setMessage(
+        values.id
+          ? `${scenarioLabels[activeScenario]} actualizado`
+          : `${scenarioLabels[activeScenario]} guardado`,
+      );
       router.refresh();
       window.setTimeout(() => setMessage(""), 2200);
     } finally {
@@ -148,6 +205,7 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
       startPeriod: transaction.startPeriod,
       endPeriod: transaction.endPeriod,
       notes: transaction.notes,
+      scenario: transaction.scenario,
     });
     document
       .getElementById("cash-flow-form")
@@ -156,19 +214,22 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
 
   function cancelEdit() {
     setEditingId("");
-    reset(getDefaultValues(data.period));
+    reset(getDefaultValues(data.period, activeScenario));
   }
 
   function startInitialBalance(type: CashFlowTransactionType) {
     setEditingId("");
     reset({
-      ...getDefaultValues(data.period),
+      ...getDefaultValues(data.period, activeScenario),
       concept:
         type === "income" ? "Saldo inicial de caja" : "Ajuste saldo inicial negativo",
       date: `${data.period}-01`,
       period: data.period,
       type,
-      notes: "Saldo real de caja cargado como punto de partida.",
+      notes:
+        activeScenario === "draft"
+          ? "Saldo inicial hipotetico cargado como punto de partida del borrador."
+          : "Saldo real de caja cargado como punto de partida.",
     });
     document
       .getElementById("cash-flow-form")
@@ -218,19 +279,49 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
         </CardHeader>
       </Card>
 
-      <CashFlowCharts charts={data.charts} selectedPeriod={data.period} />
+      <Card>
+        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <CardTitle>Vista de Cash Flow</CardTitle>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {scenarioDescriptions[activeScenario]}
+            </p>
+          </div>
+          <div className="border-border bg-muted inline-grid grid-cols-2 rounded-md border p-1">
+            {(["real", "draft"] as const).map((scenario) => (
+              <Button
+                key={scenario}
+                type="button"
+                variant={activeScenario === scenario ? "default" : "ghost"}
+                size="sm"
+                onClick={() => handleScenarioChange(scenario)}
+              >
+                {scenarioLabels[scenario]}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+      </Card>
+
+      <CashFlowCharts charts={activeData.charts} selectedPeriod={data.period} />
 
       <CashFlowGeneralSummary
-        annual={data.charts.annual}
+        annual={activeData.charts.annual}
         nextCriticalMonth={nextCriticalMonth}
       />
 
       <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>{editingId ? "Editar movimiento" : "Nuevo movimiento"}</CardTitle>
+            <CardTitle>
+              {editingId
+                ? `Editar movimiento ${scenarioLabels[activeScenario].toLowerCase()}`
+                : `Nuevo movimiento ${scenarioLabels[activeScenario].toLowerCase()}`}
+            </CardTitle>
             <p className="text-muted-foreground text-sm">
-              Cargá ingresos y gastos adicionales para simular escenarios.
+              {activeScenario === "draft"
+                ? "Cargá ingresos y gastos hipotéticos por mes para probar escenarios."
+                : "Cargá ingresos y gastos reales adicionales al cálculo automático."}
             </p>
           </CardHeader>
           <CardContent>
@@ -240,6 +331,7 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
               onSubmit={handleSubmit(onSubmit)}
             >
               <input type="hidden" {...register("id")} />
+              <input type="hidden" {...register("scenario")} />
               {editingId ? (
                 <div className="border-primary/30 bg-primary/10 text-primary flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
                   <span>Editando movimiento</span>
@@ -358,13 +450,14 @@ export function CashFlowContent({ canWrite, data }: CashFlowContentProps) {
           deletingId={deletingId}
           onDelete={handleDelete}
           onEdit={handleEdit}
+          scenario={activeScenario}
           transactions={manualTransactions}
         />
       </div>
 
       <CashFlowMonthSummary
         canWrite={canWrite}
-        matrixRows={data.charts.matrixRows}
+        matrixRows={activeData.charts.matrixRows}
         onInitialBalance={startInitialBalance}
         selectedMonth={selectedMonth}
       />
@@ -377,28 +470,40 @@ function CashFlowTransactionsList({
   deletingId,
   onDelete,
   onEdit,
+  scenario,
   transactions,
 }: {
   canWrite: boolean;
   deletingId: string;
   onDelete: (transaction: CashFlowTransaction) => void;
   onEdit: (transaction: CashFlowTransaction) => void;
+  scenario: CashFlowScenario;
   transactions: CashFlowTransaction[];
 }) {
+  const isDraft = scenario === "draft";
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Movimientos adicionales</CardTitle>
+        <CardTitle>
+          {isDraft ? "Movimientos hipotéticos" : "Movimientos adicionales"}
+        </CardTitle>
         <p className="text-muted-foreground text-sm">
-          Ingresos y gastos manuales. Las cuotas esperadas no se editan acá.
+          {isDraft
+            ? "Ingresos y gastos del borrador. No modifican el Cash Flow real."
+            : "Ingresos y gastos manuales. Las cuotas esperadas no se editan acá."}
         </p>
       </CardHeader>
       <CardContent>
         {transactions.length === 0 ? (
           <div className="border-border rounded-lg border border-dashed p-4">
-            <h3 className="font-semibold">Sin movimientos adicionales</h3>
+            <h3 className="font-semibold">
+              {isDraft ? "Sin movimientos hipotéticos" : "Sin movimientos adicionales"}
+            </h3>
             <p className="text-muted-foreground mt-2 text-sm">
-              Cargá gastos o ingresos extra para completar el cash flow.
+              {isDraft
+                ? "Cargá gastos o ingresos hipotéticos para proyectar el mes."
+                : "Cargá gastos o ingresos extra para completar el cash flow."}
             </p>
           </div>
         ) : (
@@ -760,7 +865,10 @@ function CashFlowChartsLoading() {
   );
 }
 
-function getDefaultValues(period: string): TransactionFormValues {
+function getDefaultValues(
+  period: string,
+  scenario: CashFlowScenario,
+): TransactionFormValues {
   return {
     amount: 0,
     concept: "",
@@ -771,6 +879,7 @@ function getDefaultValues(period: string): TransactionFormValues {
     startPeriod: period,
     type: "expense",
     notes: "",
+    scenario,
   };
 }
 
