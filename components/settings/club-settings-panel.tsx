@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Palette, RotateCcw, Save, ShieldCheck } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -48,6 +49,7 @@ type ClubSettingsFormValues = z.infer<typeof clubSettingsSchema>;
 
 export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
   const { settings, setSettings } = useAppSettings();
+  const { setTheme } = useTheme();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const {
@@ -76,6 +78,7 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
       const result = await saveAppSettings(values);
 
       setSettings(result.settings);
+      setTheme(result.settings.darkMode ? "dark" : "light");
       reset(result.settings);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2200);

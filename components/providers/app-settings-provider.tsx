@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 
 import { DEFAULT_APP_SETTINGS, getContrastingTextColor } from "@/lib/app-settings";
@@ -24,6 +24,7 @@ export function AppSettingsProvider({
     initialSettings ?? DEFAULT_APP_SETTINGS,
   );
   const { setTheme } = useTheme();
+  const appliedInitialTheme = useRef(false);
 
   useEffect(() => {
     setSettings(initialSettings ?? DEFAULT_APP_SETTINGS);
@@ -38,8 +39,21 @@ export function AppSettingsProvider({
       "--primary-foreground",
       getContrastingTextColor(settings.primaryColor),
     );
+  }, [settings.primaryColor]);
+
+  useEffect(() => {
+    if (appliedInitialTheme.current) {
+      return;
+    }
+
+    appliedInitialTheme.current = true;
+
+    if (window.localStorage.getItem("theme")) {
+      return;
+    }
+
     setTheme(settings.darkMode ? "dark" : "light");
-  }, [setTheme, settings.darkMode, settings.primaryColor]);
+  }, [setTheme, settings.darkMode]);
 
   const value = useMemo(
     () => ({
