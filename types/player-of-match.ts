@@ -20,7 +20,20 @@ export interface PlayerOfMatchMatch {
   period: string;
   rival: string;
   players: string[];
+  results: PlayerOfMatchResult[];
+  totalVotes: number;
+  totalVoters: number;
+  votingStartsAt: string;
+  votingEndsAt: string;
+  votingStatus: "open" | "closed";
   userVote?: PlayerOfMatchVote;
+}
+
+export interface PlayerOfMatchResult {
+  playerName: string;
+  photoDataUrl?: string;
+  rank: number;
+  votes: number;
 }
 
 export interface PlayerOfMatchData {

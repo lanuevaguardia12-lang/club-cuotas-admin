@@ -190,6 +190,7 @@ interface MatchRecord {
   players: string[];
   venue: string;
   coachAttended: boolean;
+  loadedAt: string;
 }
 
 interface AccountProfileRecord extends AccountProfile {
@@ -1891,28 +1892,33 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
 
-      const [matches, votes] = await Promise.all([
+      const [matches, votes, accountProfiles] = await Promise.all([
         this.readPlayerOfMatchMatches(),
         this.readPlayerOfMatchVotes(),
+        this.readAccountProfiles().catch(() => []),
       ]);
       const voterVotes = votes.filter((vote) => vote.voterUserId === voterUserId);
 
       return buildPlayerOfMatchData({
+        accountProfiles,
         cachedAt,
         matches,
         revalidateSeconds: this.config.cacheTtlSeconds,
         status: matches.length === 0 ? "empty" : "ready",
+        votes,
         voterVotes,
       });
     } catch (error) {
       const serviceError = normalizeGoogleSheetsError(error);
 
       return buildPlayerOfMatchData({
+        accountProfiles: [],
         cachedAt,
         matches: [],
         message: serviceError.message,
         revalidateSeconds: this.config.cacheTtlSeconds,
         status: "error",
+        votes: [],
         voterVotes: [],
       });
     }
@@ -1930,6 +1936,13 @@ export class GoogleSheetsService implements IDataService {
     if (!match) {
       throw new DataServiceError(
         "No se encontro el partido para votar.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    if (!isPlayerOfMatchVotingOpen(match)) {
+      throw new DataServiceError(
+        "La votacion de este partido ya cerro.",
         "CONFIGURATION_ERROR",
       );
     }
@@ -3909,6 +3922,16 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
   return rowsToRecords(rows)
     .map((record) => {
       const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
+      const loadedAt =
+        parseClubDateTime(
+          pick(record, [
+            "marca_temporal",
+            "timestamp",
+            "created_at",
+            "creado_en",
+            "fecha_carga",
+          ]),
+        ) ?? date;
       const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
       const venue = pick(record, [
         "local_visitante",
@@ -3948,6 +3971,7 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
         players,
         venue,
         coachAttended,
+        loadedAt: loadedAt ?? date,
       } satisfies MatchRecord;
     })
     .filter((match): match is MatchRecord => Boolean(match))
@@ -3996,32 +4020,48 @@ function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
 }
 
 function buildPlayerOfMatchData({
+  accountProfiles,
   cachedAt,
   matches,
   message,
   revalidateSeconds,
   status,
+  votes,
   voterVotes,
 }: {
+  accountProfiles: AccountProfileRecord[];
   cachedAt: string;
   matches: MatchRecord[];
   message?: string;
   revalidateSeconds: number;
   status: PlayerOfMatchData["source"]["status"];
+  votes: PlayerOfMatchVote[];
   voterVotes: PlayerOfMatchVote[];
 }): PlayerOfMatchData {
   const votesByMatchId = new Map(voterVotes.map((vote) => [vote.matchId, vote]));
+  const playerPhotoMap = buildPlayerOfMatchPhotoMap(matches, accountProfiles);
   const formattedMatches = [...matches]
     .sort((left, right) => right.date.localeCompare(left.date))
-    .map<PlayerOfMatchMatch>((match) => ({
-      id: match.id,
-      title: `La Nueva Guardia vs ${match.rival}`,
-      date: match.date,
-      period: match.period,
-      rival: match.rival,
-      players: match.players,
-      userVote: votesByMatchId.get(match.id),
-    }));
+    .map<PlayerOfMatchMatch>((match) => {
+      const votingWindow = getPlayerOfMatchVotingWindow(match);
+      const matchVotes = votes.filter((vote) => vote.matchId === match.id);
+
+      return {
+        id: match.id,
+        title: `La Nueva Guardia vs ${match.rival}`,
+        date: match.date,
+        period: match.period,
+        rival: match.rival,
+        players: match.players,
+        results: buildPlayerOfMatchResults(match, matchVotes, playerPhotoMap),
+        totalVotes: matchVotes.length * 2,
+        totalVoters: matchVotes.length,
+        userVote: votesByMatchId.get(match.id),
+        votingEndsAt: votingWindow.endsAt,
+        votingStartsAt: votingWindow.startsAt,
+        votingStatus: votingWindow.isOpen ? "open" : "closed",
+      };
+    });
 
   return {
     matches: formattedMatches,
@@ -4047,6 +4087,113 @@ function buildPlayerOfMatchData({
       revalidateSeconds,
     },
   };
+}
+
+function buildPlayerOfMatchResults(
+  match: MatchRecord,
+  votes: PlayerOfMatchVote[],
+  playerPhotoMap: Map<string, string>,
+) {
+  const voteCounts = new Map<string, number>();
+  const playerNamesByKey = new Map<string, string>();
+
+  match.players.forEach((player) => {
+    const key = normalizeClubPlayerName(player);
+
+    voteCounts.set(key, 0);
+    playerNamesByKey.set(key, player);
+  });
+
+  votes.forEach((vote) => {
+    [vote.firstVotePlayerName, vote.secondVotePlayerName].forEach((playerName) => {
+      const key = normalizeClubPlayerName(playerName);
+
+      if (!voteCounts.has(key)) {
+        return;
+      }
+
+      voteCounts.set(key, (voteCounts.get(key) ?? 0) + 1);
+    });
+  });
+
+  return [...voteCounts.entries()]
+    .map(([key, votesCount]) => ({
+      playerName: playerNamesByKey.get(key) ?? key,
+      photoDataUrl: playerPhotoMap.get(key),
+      rank: 0,
+      votes: votesCount,
+    }))
+    .sort((left, right) => {
+      if (right.votes !== left.votes) {
+        return right.votes - left.votes;
+      }
+
+      return left.playerName.localeCompare(right.playerName, "es");
+    })
+    .map((result, index) => ({
+      ...result,
+      rank: index + 1,
+    }));
+}
+
+function buildPlayerOfMatchPhotoMap(
+  matches: MatchRecord[],
+  accountProfiles: AccountProfileRecord[],
+) {
+  const playerKeys = new Set(
+    matches.flatMap((match) => match.players.map(normalizeClubPlayerName)),
+  );
+  const photos = new Map<string, string>();
+
+  accountProfiles.forEach((profile) => {
+    if (!profile.profilePhotoDataUrl) {
+      return;
+    }
+
+    const candidates = [
+      profile.name,
+      profile.userId,
+      profile.username,
+      createClubPlayerId(profile.name),
+      createClubPlayerId(profile.userId),
+      createClubPlayerId(profile.username),
+    ].flatMap((value) => [
+      normalizeClubPlayerName(value),
+      normalizeClubPlayerName(value.replace(/[-_]+/g, " ")),
+    ]);
+
+    candidates.forEach((candidate) => {
+      if (playerKeys.has(candidate) && !photos.has(candidate)) {
+        photos.set(candidate, profile.profilePhotoDataUrl);
+      }
+    });
+  });
+
+  return photos;
+}
+
+function getPlayerOfMatchVotingWindow(match: MatchRecord) {
+  const startsAt = match.loadedAt || match.date;
+  const startsAtDate = new Date(`${startsAt}T00:00:00`);
+  const fallbackDate = new Date(`${match.date}T00:00:00`);
+  const safeStartDate = !Number.isNaN(startsAtDate.getTime())
+    ? startsAtDate
+    : !Number.isNaN(fallbackDate.getTime())
+      ? fallbackDate
+      : new Date();
+  const endsAtDate = new Date(safeStartDate);
+
+  endsAtDate.setDate(endsAtDate.getDate() + 7);
+
+  return {
+    endsAt: endsAtDate.toISOString().slice(0, 10),
+    isOpen: Date.now() <= endsAtDate.getTime(),
+    startsAt: safeStartDate.toISOString().slice(0, 10),
+  };
+}
+
+function isPlayerOfMatchVotingOpen(match: MatchRecord) {
+  return getPlayerOfMatchVotingWindow(match).isOpen;
 }
 
 function buildPlayerOfMatchVoteWritableRow(headers: string[], vote: PlayerOfMatchVote) {

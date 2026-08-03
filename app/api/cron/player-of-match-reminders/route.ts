@@ -35,7 +35,8 @@ export async function GET(request: NextRequest) {
   for (const [userId, userSubscriptions] of subscriptionsByUser) {
     const data = await dataService.getPlayerOfMatchData(userId);
     const pendingMatches = data.matches.filter(
-      (match) => !match.userVote && match.players.length >= 2,
+      (match) =>
+        !match.userVote && match.players.length >= 2 && match.votingStatus === "open",
     );
 
     if (pendingMatches.length === 0) {

@@ -503,6 +503,11 @@ Reglas de votación:
 - Cada usuario puede votar una sola vez por partido.
 - Cada voto exige dos jugadores distintos.
 - Las opciones salen únicamente de `Jugadores que ingresaron` del partido.
+- La votacion abre cuando el partido queda cargado en el formulario y dura 7
+  dias. Si no hay marca temporal, se usa la fecha del partido como fallback.
+- `Ver resultados` muestra un podio visual con los 3 jugadores mas votados,
+  usando la foto de perfil de `CuentasUsuario` cuando existe y un avatar de
+  iniciales como fallback.
 - La pantalla muestra cada partido como `La Nueva Guardia vs Rival` y la fecha
   del encuentro.
 
