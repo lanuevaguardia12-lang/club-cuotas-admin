@@ -96,24 +96,34 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
             </CardTitle>
             <p className="text-muted-foreground text-sm">{profile.category}</p>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
-            <Metric
-              label="Cuota actual"
-              value={currentMonth?.amount ?? "-"}
-              detail={currentMonth ? formatPeriod(currentMonth.period) : "Sin datos"}
-            />
-            <Metric
-              label="Estado"
-              value={currentMonth ? monthStatusLabels[currentMonth.status] : "Sin datos"}
-              detail={currentMonth?.paidAt || currentMonth?.dueDate || "-"}
-              tone={currentMonth?.status === "paid" ? "success" : "danger"}
-            />
-            <Metric
-              label="Pendientes"
-              value={String(pendingMonths.length)}
-              detail={`Año ${profile.year}`}
-              tone={pendingMonths.length > 0 ? "danger" : "success"}
-            />
+          <CardContent className="grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Metric
+                label="Cuota actual"
+                value={currentMonth?.amount ?? "-"}
+                detail={currentMonth ? formatPeriod(currentMonth.period) : "Sin datos"}
+              />
+              <Metric
+                label="Estado"
+                value={
+                  currentMonth ? monthStatusLabels[currentMonth.status] : "Sin datos"
+                }
+                detail={currentMonth?.paidAt || currentMonth?.dueDate || "-"}
+                tone={currentMonth?.status === "paid" ? "success" : "danger"}
+              />
+              <Metric
+                label="Pendientes"
+                value={String(pendingMonths.length)}
+                detail={`Año ${profile.year}`}
+                tone={pendingMonths.length > 0 ? "danger" : "success"}
+              />
+            </div>
+            {currentMonth?.matchSummary ? (
+              <CurrentQuotaAttendanceSummary
+                currentPeriod={currentMonth.period}
+                summary={currentMonth.matchSummary}
+              />
+            ) : null}
           </CardContent>
         </Card>
 
@@ -212,6 +222,43 @@ function MonthMatchSummary({ summary }: { summary: PlayerMonthMatchSummary }) {
         </div>
       </div>
       <div className="mt-3 grid gap-2 text-xs">
+        <MatchList
+          emptyText="Sin partidos presentes."
+          matches={summary.presentMatches}
+          title="Estuvo"
+        />
+        <MatchList
+          emptyText="Sin partidos ausentes."
+          matches={summary.absentMatches}
+          title="No estuvo"
+        />
+      </div>
+    </div>
+  );
+}
+
+function CurrentQuotaAttendanceSummary({
+  currentPeriod,
+  summary,
+}: {
+  currentPeriod: string;
+  summary: PlayerMonthMatchSummary;
+}) {
+  return (
+    <div className="border-primary/20 bg-primary/5 rounded-md border p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <ListChecks className="text-primary size-4" />
+            Asistencia aplicada a {formatPeriod(currentPeriod)}
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Se toma {formatPeriod(summary.evaluatedPeriod)}: {summary.playedMatches}/
+            {summary.totalMatches} partidos · {formatPercent(summary.attendanceRate)}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <MatchList
           emptyText="Sin partidos presentes."
           matches={summary.presentMatches}
