@@ -378,26 +378,20 @@ Rangos por defecto:
 
 ### Planilla operativa La Nueva Guardia
 
-La aplicacion soporta la planilla operativa actual del club sin duplicar carga
-manual. El padron principal es el ABM de la app, persistido por defecto en
-`Jugadores!A:Z`; si existen hojas legacy adicionales como `Listado jugadores`,
-`Cuotas` o `CashFlow`, tambien puede combinarlas:
+La fuente oficial del padron es el ABM `/players`, persistido por defecto en
+`Jugadores!A:Z`. La aplicacion ya no lee hojas legacy de jugadores o cuotas como
+`Listado jugadores`, `Seguimiento` o `Cuota final por jugador`.
 
-- `Listado jugadores!A:Z`: fallback legacy de nombres, telefonos y emails.
-- `Seguimiento!A:Z`: matriz anual con estados `Pago`, `Pagó`,
-  `Enviar recordatorio` y `No se cobra`.
-- `Cuota final por jugador!A:Z`: matriz anual con el importe calculado por mes.
+El Sheet externo del club queda limitado a datos que siguen entrando por
+formularios u operaciones externas:
+
 - `Respuestas de formulario!A:Z`: pagos cargados desde el formulario.
-- `Gastos nueva guardia!A:Z`: gastos del club para Cash Flow.
+- `Gastos nueva guardia!A:Z`: gastos del club usados como ajustes del calculador.
 - `Politica devoluciones!A:C`: rangos de asistencia y porcentaje a devolver.
 
-En este modo, el Google Sheet existente sigue siendo la fuente de verdad:
+Los telefonos locales como `1154012398` se normalizan internamente a formato
+WhatsApp Argentina (`549...`).
 
-- La app arma los jugadores desde el ABM `/players`.
-- El calculador actual usa ese mismo padron del ABM y deja de depender del Sheet
-  viejo de cuotas.
-- Los telefonos locales como `1154012398` se normalizan internamente a formato
-  WhatsApp Argentina (`549...`).
 - Los ingresos de Cash Flow salen de cuotas pagadas y los gastos de
   `Gastos nueva guardia`.
 - El calculador resta al jugador los gastos que haya pagado en el mes anterior,
