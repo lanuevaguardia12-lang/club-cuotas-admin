@@ -1,5 +1,12 @@
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarDays, ClipboardList, History, Phone } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  ClipboardList,
+  History,
+  ListChecks,
+  Phone,
+} from "lucide-react";
 
 import { updatePlayerMonthStatus } from "@/app/(dashboard)/players/[playerId]/actions";
 import { MonthStatusSubmitButton } from "@/components/players/month-status-submit-button";
@@ -198,6 +205,7 @@ function MonthCard({ month, playerId }: { month: PlayerYearMonth; playerId: stri
           <Info label="Vence" value={month.dueDate} />
           <Info label="Pago" value={month.paidAt} />
         </div>
+        {month.matchSummary ? <MonthMatchSummary month={month} /> : null}
 
         <form action={updatePlayerMonthStatus}>
           <input type="hidden" name="playerId" value={playerId} />
@@ -207,6 +215,58 @@ function MonthCard({ month, playerId }: { month: PlayerYearMonth; playerId: stri
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function MonthMatchSummary({ month }: { month: PlayerYearMonth }) {
+  const summary = month.matchSummary;
+
+  if (!summary) {
+    return null;
+  }
+
+  return (
+    <div className="border-border bg-muted/30 rounded-md border p-3 text-sm">
+      <p className="flex items-center gap-2 font-medium">
+        <ListChecks className="text-primary size-4" />
+        Asistencia de {formatPeriod(summary.evaluatedPeriod)}
+      </p>
+      <p className="text-muted-foreground mt-1 text-xs">
+        {summary.playedMatches}/{summary.totalMatches} partidos ·{" "}
+        {formatPercent(summary.attendanceRate)}
+      </p>
+      <div className="mt-3 grid gap-2 text-xs">
+        <MatchList title="Estuvo" matches={summary.presentMatches} />
+        <MatchList title="No estuvo" matches={summary.absentMatches} />
+      </div>
+    </div>
+  );
+}
+
+function MatchList({
+  matches,
+  title,
+}: {
+  matches: Array<{ date: string; rival: string }>;
+  title: string;
+}) {
+  return (
+    <details>
+      <summary className="text-primary cursor-pointer list-none font-medium">
+        {title} ({matches.length})
+      </summary>
+      <div className="mt-1 grid gap-1">
+        {matches.length > 0 ? (
+          matches.map((match) => (
+            <p key={`${match.date}-${match.rival}`} className="text-muted-foreground">
+              {formatShortDate(match.date)} · {match.rival}
+            </p>
+          ))
+        ) : (
+          <p className="text-muted-foreground">Sin partidos.</p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -287,6 +347,36 @@ function parseYear(value?: string) {
 
 function getCurrentPeriod(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatPeriod(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 0,
+    style: "percent",
+  }).format(value);
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(date);
 }
 
 function safeDecodeURIComponent(value: string) {

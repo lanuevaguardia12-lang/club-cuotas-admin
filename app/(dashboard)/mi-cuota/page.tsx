@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  ListChecks,
   XCircle,
 } from "lucide-react";
 
@@ -14,7 +15,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 import type { AuthUser } from "@/types/auth";
-import type { PlayerMonthPaymentStatus } from "@/types/dashboard";
+import type {
+  PlayerMonthMatchSummary,
+  PlayerMonthPaymentStatus,
+} from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -130,23 +134,35 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
             return (
               <article
                 key={month.period}
-                className="border-border bg-background flex items-start justify-between gap-3 rounded-md border p-3"
+                className="border-border bg-background grid gap-3 rounded-md border p-3"
               >
-                <div className="min-w-0">
-                  <p className="font-medium capitalize">{formatPeriod(month.period)}</p>
-                  <p className="text-muted-foreground mt-1 text-sm">
-                    {month.amount} · vence {month.dueDate}
-                  </p>
-                  {month.paidAt ? (
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Pagada el {month.paidAt}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium capitalize">{formatPeriod(month.period)}</p>
+                    <p className="text-muted-foreground mt-1 text-sm">
+                      {month.amount} · vence {month.dueDate}
                     </p>
-                  ) : null}
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      {month.amountSource === "calculator"
+                        ? "Monto tomado del calculador de cuota."
+                        : month.amountSource === "payments"
+                          ? "Monto tomado del registro de cuotas."
+                          : "Sin monto calculado para este mes."}
+                    </p>
+                    {month.paidAt ? (
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        Pagada el {month.paidAt}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Badge variant={monthStatusVariants[month.status]} className="gap-1.5">
+                    <Icon className="size-3.5" />
+                    {monthStatusLabels[month.status]}
+                  </Badge>
                 </div>
-                <Badge variant={monthStatusVariants[month.status]} className="gap-1.5">
-                  <Icon className="size-3.5" />
-                  {monthStatusLabels[month.status]}
-                </Badge>
+                {month.matchSummary ? (
+                  <MonthMatchSummary summary={month.matchSummary} />
+                ) : null}
               </article>
             );
           })}
@@ -177,6 +193,66 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+function MonthMatchSummary({ summary }: { summary: PlayerMonthMatchSummary }) {
+  return (
+    <div className="border-border bg-muted/30 rounded-md border p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <ListChecks className="text-primary size-4" />
+            Asistencia de {formatPeriod(summary.evaluatedPeriod)}
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {summary.playedMatches}/{summary.totalMatches} partidos ·{" "}
+            {formatPercent(summary.attendanceRate)}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs">
+        <MatchList
+          emptyText="Sin partidos presentes."
+          matches={summary.presentMatches}
+          title="Estuvo"
+        />
+        <MatchList
+          emptyText="Sin partidos ausentes."
+          matches={summary.absentMatches}
+          title="No estuvo"
+        />
+      </div>
+    </div>
+  );
+}
+
+function MatchList({
+  emptyText,
+  matches,
+  title,
+}: {
+  emptyText: string;
+  matches: Array<{ date: string; rival: string }>;
+  title: string;
+}) {
+  return (
+    <details>
+      <summary className="text-primary cursor-pointer list-none font-medium">
+        {title} ({matches.length})
+      </summary>
+      <div className="mt-1 grid gap-1">
+        {matches.length > 0 ? (
+          matches.map((match) => (
+            <p key={`${match.date}-${match.rival}`} className="text-muted-foreground">
+              {formatShortDate(match.date)} · {match.rival}
+            </p>
+          ))
+        ) : (
+          <p className="text-muted-foreground">{emptyText}</p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -250,5 +326,25 @@ function formatPeriod(period: string) {
   return new Intl.DateTimeFormat("es-AR", {
     month: "long",
     year: "numeric",
+  }).format(date);
+}
+
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 0,
+    style: "percent",
+  }).format(value);
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
   }).format(date);
 }

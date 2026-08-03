@@ -189,13 +189,31 @@ export interface PlayerFeeHistoryItem {
   paidAt: string;
 }
 
+export interface PlayerMonthMatchDetail {
+  date: string;
+  rival: string;
+  attended: boolean;
+}
+
+export interface PlayerMonthMatchSummary {
+  evaluatedPeriod: string;
+  totalMatches: number;
+  playedMatches: number;
+  attendanceRate: number;
+  presentMatches: PlayerMonthMatchDetail[];
+  absentMatches: PlayerMonthMatchDetail[];
+}
+
 export interface PlayerYearMonth {
   period: string;
   label: string;
   status: PlayerMonthPaymentStatus;
   amount: string;
+  amountValue: number;
+  amountSource: "calculator" | "payments" | "none";
   dueDate: string;
   paidAt: string;
+  matchSummary?: PlayerMonthMatchSummary;
 }
 
 export interface PlayerProfile {

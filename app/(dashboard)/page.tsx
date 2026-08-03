@@ -13,6 +13,7 @@ import { redirect } from "next/navigation";
 
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
+import { SendPendingNotificationsButton } from "@/components/dashboard/send-pending-notifications-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
@@ -83,6 +84,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </span>
             </div>
             <DashboardPeriodSelector period={dashboard.period} />
+            {user?.role === "admin" ? (
+              <SendPendingNotificationsButton period={dashboard.period} />
+            ) : null}
           </div>
         </div>
       </header>

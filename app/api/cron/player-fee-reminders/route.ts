@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { systemAuditActor } from "@/lib/audit";
+import { systemAuditActor, userToAuditActor } from "@/lib/audit";
+import { getCurrentUser } from "@/lib/auth/session";
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
+import type { AuditActor } from "@/types/premium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +17,50 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
+  return sendPendingFeePushNotifications({
+    actor: systemAuditActor,
+    period: getCurrentPeriod(),
+    trigger: "cron",
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return NextResponse.json({ message: "No autorizado." }, { status: 401 });
+  }
+
+  if (user.role !== "admin") {
+    return NextResponse.json(
+      { message: "Solo un administrador puede enviar notificaciones masivas." },
+      { status: 403 },
+    );
+  }
+
+  const body = (await request.json().catch(() => ({}))) as { period?: unknown };
+  const period =
+    typeof body.period === "string" && /^\d{4}-\d{2}$/.test(body.period)
+      ? body.period
+      : getCurrentPeriod();
+
+  return sendPendingFeePushNotifications({
+    actor: userToAuditActor(user),
+    period,
+    trigger: "manual",
+  });
+}
+
+async function sendPendingFeePushNotifications({
+  actor,
+  period,
+  trigger,
+}: {
+  actor: AuditActor;
+  period: string;
+  trigger: "cron" | "manual";
+}) {
   const dataService = getDataService();
-  const period = new Date().toISOString().slice(0, 7);
   const dashboard = await dataService.getDashboardData(period);
   const targetPlayers = dashboard.players.filter((player) => player.status !== "paid");
   let sent = 0;
@@ -35,7 +79,7 @@ export async function GET(request: NextRequest) {
       try {
         await sendPushNotification(subscription, {
           title: "Cuota pendiente",
-          body: `Hola ${player.name}. Ya está disponible la cuota de ${formatPeriod(period)} por ${player.fee}.`,
+          body: buildPendingFeeNotificationMessage(player.name, player.fee, period),
           tag: `fee-reminder-${player.id}-${period}`,
           url: "/mi-cuota",
         });
@@ -54,23 +98,24 @@ export async function GET(request: NextRequest) {
   if (sent > 0) {
     await dataService.createNotification({
       title: "Push de cuotas enviado",
-      message: `${sent} notificaciones push enviadas para ${period}.`,
+      message: `${sent} notificaciones push enviadas para ${period} (${trigger}).`,
       type: failed > 0 ? "warning" : "success",
       targetRole: "all",
     });
   }
 
   await dataService.recordAuditEvent({
-    actor: systemAuditActor,
+    actor,
     action: "reminder.sent",
     entityType: "reminder",
     entityId: period,
-    summary: `Cron envio ${sent} push de cuota para ${period}.`,
+    summary: `${trigger === "cron" ? "Cron" : "Admin"} envio ${sent} push de cuota para ${period}.`,
     metadata: {
       failed,
       period,
       sent,
       skipped,
+      trigger,
     },
   });
 
@@ -79,6 +124,7 @@ export async function GET(request: NextRequest) {
     period,
     sent,
     skipped,
+    totalPending: targetPlayers.length,
   });
 }
 
@@ -105,4 +151,16 @@ function formatPeriod(period: string) {
     month: "long",
     year: "numeric",
   }).format(date);
+}
+
+function getCurrentPeriod() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function buildPendingFeeNotificationMessage(
+  playerName: string,
+  fee: string,
+  period: string,
+) {
+  return `Hola, ${playerName}, recorda que tenes la cuota del mes ${formatPeriod(period)} impaga. Tu cuota es de ${fee}. Hace el pago y llena el formulario para que no te lleguen estas notificaciones.`;
 }

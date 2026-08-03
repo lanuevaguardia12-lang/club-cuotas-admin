@@ -31,6 +31,7 @@ import type {
   MonthlyCollectionPoint,
   PlayerFeeHistoryItem,
   PlayerLifecyclePoint,
+  PlayerMonthMatchSummary,
   PlayerPaymentStatus,
   PlayerProfile,
   PlayerTableRow,
@@ -53,6 +54,7 @@ import type {
   FeeCalculatorPlayer,
   FeeMatchDetail,
   FeePlayerCalculation,
+  FeePlayerMatchSummary,
   FeeRefundPolicyRule,
   UpdateFeeCalculatorActualInput,
   UpdateFeeCalculatorPlayerStatusInput,
@@ -1044,52 +1046,9 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
       assertValidPeriod(period);
+      const [data] = await this.buildFeeCalculatorDataForPeriods([period], cachedAt);
 
-      const [
-        {
-          costsRows,
-          actualsRows,
-          playerStatusRows,
-          refundPolicyRows,
-          matchRows,
-          expenseRows,
-        },
-        cachedPlayersRows,
-      ] = await Promise.all([
-        this.readFeeCalculatorRows(),
-        this.readCachedPlayerDirectoryRows(),
-      ]);
-      const playersRows =
-        cachedPlayersRows.length > 0
-          ? cachedPlayersRows
-          : await this.readPlayerDirectoryRows(this.getAppSpreadsheetId()).catch(
-              () => cachedPlayersRows,
-            );
-      const players = mapRowsToPlayers(playersRows);
-      const costs = mapRowsToFeeCalculatorCosts(costsRows);
-      const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
-      const playerStatuses = mapRowsToFeeCalculatorPlayerStatuses(playerStatusRows);
-      const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
-      const matches = mapRowsToMatches(matchRows);
-      const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
-
-      return buildFeeCalculatorData({
-        period,
-        players,
-        costs,
-        actuals,
-        playerStatuses,
-        refundPolicy,
-        matches,
-        expenseCredits,
-        status: players.length === 0 && costs.length === 0 ? "empty" : "ready",
-        message:
-          players.length === 0 && costs.length === 0
-            ? "Google Sheets conectado, sin costos del calculador cargados."
-            : "Calculador de cuota obtenido desde Google Sheets.",
-        cachedAt,
-        revalidateSeconds: this.config.cacheTtlSeconds,
-      });
+      return data;
     } catch (error) {
       const serviceError = normalizeGoogleSheetsError(error);
 
@@ -1108,6 +1067,61 @@ export class GoogleSheetsService implements IDataService {
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
     }
+  }
+
+  private async buildFeeCalculatorDataForPeriods(
+    periods: string[],
+    cachedAt = new Date().toISOString(),
+  ) {
+    const [
+      {
+        costsRows,
+        actualsRows,
+        playerStatusRows,
+        refundPolicyRows,
+        matchRows,
+        expenseRows,
+      },
+      cachedPlayersRows,
+    ] = await Promise.all([
+      this.readFeeCalculatorRows(),
+      this.readCachedPlayerDirectoryRows(),
+    ]);
+    const playersRows =
+      cachedPlayersRows.length > 0
+        ? cachedPlayersRows
+        : await this.readPlayerDirectoryRows(this.getAppSpreadsheetId()).catch(
+            () => cachedPlayersRows,
+          );
+    const players = mapRowsToPlayers(playersRows);
+    const costs = mapRowsToFeeCalculatorCosts(costsRows);
+    const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
+    const playerStatuses = mapRowsToFeeCalculatorPlayerStatuses(playerStatusRows);
+    const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
+    const matches = mapRowsToMatches(matchRows);
+    const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
+    const status = players.length === 0 && costs.length === 0 ? "empty" : "ready";
+    const message =
+      players.length === 0 && costs.length === 0
+        ? "Google Sheets conectado, sin costos del calculador cargados."
+        : "Calculador de cuota obtenido desde Google Sheets.";
+
+    return periods.map((period) =>
+      buildFeeCalculatorData({
+        period,
+        players,
+        costs,
+        actuals,
+        playerStatuses,
+        refundPolicy,
+        matches,
+        expenseCredits,
+        status,
+        message,
+        cachedAt,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+      }),
+    );
   }
 
   async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
@@ -1595,9 +1609,46 @@ export class GoogleSheetsService implements IDataService {
         return null;
       }
 
-      return buildPlayerProfile(player, fees, year);
+      const feeCalculatorData = await this.readPlayerProfileFeeCalculatorData(year);
+      const playerProfileLookupKeys = buildPlayerLookupKeys(player.id, player.name);
+      const playerCalculations: FeePlayerCalculation[] = [];
+      const matchSummaries = new Map<string, PlayerMonthMatchSummary>();
+
+      for (const periodData of feeCalculatorData) {
+        const calculation = periodData.playerCalculations.find((candidate) =>
+          feePlayerCalculationMatchesLookup(candidate, playerProfileLookupKeys),
+        );
+
+        if (!calculation) {
+          continue;
+        }
+
+        const matchSummary = periodData.matchSummaries.find((candidate) =>
+          feePlayerMatchSummaryMatchesLookup(candidate, playerProfileLookupKeys),
+        );
+
+        playerCalculations.push(calculation);
+        matchSummaries.set(
+          periodData.period,
+          buildPlayerMonthMatchSummary(
+            periodData.previousPeriod,
+            calculation,
+            matchSummary,
+          ),
+        );
+      }
+
+      return buildPlayerProfile(player, fees, year, playerCalculations, matchSummaries);
     } catch {
       return null;
+    }
+  }
+
+  private async readPlayerProfileFeeCalculatorData(year: number) {
+    try {
+      return await this.buildFeeCalculatorDataForPeriods(buildYearPeriods(year));
+    } catch {
+      return [];
     }
   }
 
@@ -3502,15 +3553,9 @@ function buildFeeCalculatorData({
     players: calculatorPlayers,
     refundPolicy,
     playerCalculations: calculations,
-    matchSummaries: calculations.map((calculation) => ({
-      playerId: calculation.playerId,
-      playerName: calculation.playerName,
-      period: previousPeriod,
-      playedMatches: calculation.playedMatches,
-      totalMatches: calculation.totalMatches,
-      attendanceRate: calculation.attendanceRate,
-      matches: calculation.matches,
-    })),
+    matchSummaries: calculations.map((calculation) =>
+      buildFeePlayerMatchSummary(calculation, previousPeriodMatches),
+    ),
     summary: {
       period,
       previousPeriod,
@@ -3610,6 +3655,43 @@ function buildPlayerFeeCalculation({
     playedMatches,
     totalMatches: totalMatchesPreviousPeriod,
     matches: playerMatches,
+  };
+}
+
+function buildFeePlayerMatchSummary(
+  calculation: FeePlayerCalculation,
+  periodMatches: MatchRecord[],
+): FeePlayerMatchSummary {
+  const normalizedPlayerName = normalizeClubPlayerName(calculation.playerName);
+  const presentMatches: FeeMatchDetail[] = [];
+  const absentMatches: FeeMatchDetail[] = [];
+
+  for (const match of periodMatches) {
+    const attended = match.players.some(
+      (name) => normalizeClubPlayerName(name) === normalizedPlayerName,
+    );
+    const detail = {
+      date: match.date,
+      rival: match.rival,
+    };
+
+    if (attended) {
+      presentMatches.push(detail);
+    } else {
+      absentMatches.push(detail);
+    }
+  }
+
+  return {
+    playerId: calculation.playerId,
+    playerName: calculation.playerName,
+    period: calculation.previousPeriod,
+    playedMatches: presentMatches.length,
+    totalMatches: periodMatches.length,
+    attendanceRate:
+      periodMatches.length > 0 ? presentMatches.length / periodMatches.length : 0,
+    matches: presentMatches,
+    absentMatches,
   };
 }
 
@@ -5308,6 +5390,8 @@ function buildPlayerProfile(
   player: PlayerRecord,
   fees: FeeRecord[],
   year: number,
+  feeCalculations: FeePlayerCalculation[] = [],
+  matchSummaries = new Map<string, PlayerMonthMatchSummary>(),
 ): PlayerProfile {
   const playerFees = fees.filter((fee) => fee.playerId === player.id);
 
@@ -5319,7 +5403,7 @@ function buildPlayerProfile(
     observations: player.observations,
     year,
     history: buildPlayerHistory(playerFees),
-    months: buildYearMonths(playerFees, year),
+    months: buildYearMonths(playerFees, year, feeCalculations, matchSummaries),
   };
 }
 
@@ -5334,20 +5418,79 @@ function buildPlayerHistory(fees: FeeRecord[]): PlayerFeeHistoryItem[] {
   }));
 }
 
-function buildYearMonths(fees: FeeRecord[], year: number): PlayerYearMonth[] {
+function buildYearMonths(
+  fees: FeeRecord[],
+  year: number,
+  feeCalculations: FeePlayerCalculation[] = [],
+  matchSummaries = new Map<string, PlayerMonthMatchSummary>(),
+): PlayerYearMonth[] {
   return Array.from({ length: 12 }, (_, index) => {
     const period = `${year}-${String(index + 1).padStart(2, "0")}`;
     const fee = fees.find((candidate) => candidate.period === period);
+    const calculation = feeCalculations.find(
+      (candidate) => candidate.currentPeriod === period,
+    );
+    const amountValue =
+      calculation?.finalQuota ?? (fee?.amount && fee.amount > 0 ? fee.amount : 0);
+    const amountSource = calculation
+      ? "calculator"
+      : fee?.amount && fee.amount > 0
+        ? "payments"
+        : "none";
 
     return {
       period,
       label: formatFullMonthLabel(period),
       status: fee?.status === "paid" ? "paid" : "unpaid",
-      amount: fee?.amount ? formatCurrency(fee.amount) : "-",
-      dueDate: fee?.dueDate ? formatDate(fee.dueDate) : "-",
+      amount: amountValue > 0 ? formatCurrency(amountValue) : "-",
+      amountValue,
+      amountSource,
+      dueDate: fee?.dueDate ? formatDate(fee.dueDate) : formatDate(`${period}-10`),
       paidAt: fee?.paidAt ? formatDate(fee.paidAt) : "-",
+      matchSummary: matchSummaries.get(period),
     };
   });
+}
+
+function buildPlayerMonthMatchSummary(
+  evaluatedPeriod: string,
+  calculation: FeePlayerCalculation,
+  summary?: FeePlayerMatchSummary,
+): PlayerMonthMatchSummary {
+  return {
+    evaluatedPeriod,
+    totalMatches: summary?.totalMatches ?? calculation.totalMatches,
+    playedMatches: summary?.playedMatches ?? calculation.playedMatches,
+    attendanceRate: summary?.attendanceRate ?? calculation.attendanceRate,
+    presentMatches: (summary?.matches ?? calculation.matches).map((match) => ({
+      ...match,
+      attended: true,
+    })),
+    absentMatches: (summary?.absentMatches ?? []).map((match) => ({
+      ...match,
+      attended: false,
+    })),
+  };
+}
+
+function feePlayerCalculationMatchesLookup(
+  calculation: FeePlayerCalculation,
+  lookupKeys: Set<string>,
+) {
+  return lookupSetsIntersect(
+    buildPlayerLookupKeys(calculation.playerId, calculation.playerName),
+    lookupKeys,
+  );
+}
+
+function feePlayerMatchSummaryMatchesLookup(
+  summary: FeePlayerMatchSummary,
+  lookupKeys: Set<string>,
+) {
+  return lookupSetsIntersect(
+    buildPlayerLookupKeys(summary.playerId, summary.playerName),
+    lookupKeys,
+  );
 }
 
 function toPlayerPaymentStatus(status: FeeStatus): PlayerPaymentStatus {
@@ -6338,6 +6481,13 @@ function getPreviousPeriod(period: string) {
   const date = new Date(year, month - 2, 1);
 
   return getCurrentPeriod(date);
+}
+
+function buildYearPeriods(year: number) {
+  return Array.from(
+    { length: 12 },
+    (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`,
+  );
 }
 
 function unquoteSheetTitle(title: string) {

@@ -48,6 +48,7 @@ export interface FeePlayerMatchSummary {
   totalMatches: number;
   attendanceRate: number;
   matches: FeeMatchDetail[];
+  absentMatches: FeeMatchDetail[];
 }
 
 export interface FeeCalculatorAdjustment {
