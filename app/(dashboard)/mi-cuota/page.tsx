@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  ExternalLink,
   ListChecks,
   XCircle,
 } from "lucide-react";
@@ -11,6 +12,7 @@ import {
 import { EmptySection } from "@/components/layout/empty-section";
 import { PushNotificationPanel } from "@/components/push/push-notification-panel";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
@@ -37,6 +39,9 @@ const monthStatusVariants: Record<PlayerMonthPaymentStatus, "success" | "danger"
   paid: "success",
   unpaid: "danger",
 };
+
+const PAYMENT_FORM_BASE_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLScNPtChGadjifgrXFRZjDYsMVaIniB-EIRRvKfT4SAGKhqfuA/viewform";
 
 export default async function MyFeePage({ searchParams }: MyFeePageProps) {
   const user = await getCurrentUser();
@@ -124,6 +129,21 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                 summary={currentMonth.matchSummary}
               />
             ) : null}
+            {currentMonth?.status === "unpaid" ? (
+              <div className="flex flex-col gap-2 rounded-md border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">¿Ya hiciste el pago?</p>
+                  <p className="text-muted-foreground text-xs">
+                    Abrí el formulario precargado para {formatPeriod(currentMonth.period)}
+                    .
+                  </p>
+                </div>
+                <PaymentFormButton
+                  period={currentMonth.period}
+                  playerName={profile.name}
+                />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -173,6 +193,13 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                 {month.matchSummary ? (
                   <MonthMatchSummary summary={month.matchSummary} />
                 ) : null}
+                {month.status === "unpaid" ? (
+                  <PaymentFormButton
+                    className="w-full"
+                    period={month.period}
+                    playerName={profile.name}
+                  />
+                ) : null}
               </article>
             );
           })}
@@ -203,6 +230,25 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+function PaymentFormButton({
+  className,
+  period,
+  playerName,
+}: {
+  className?: string;
+  period: string;
+  playerName: string;
+}) {
+  return (
+    <Button asChild className={className} size="sm">
+      <a href={buildPaymentFormUrl(playerName, period)} rel="noreferrer" target="_blank">
+        <ExternalLink className="size-4" />
+        Registrar pago
+      </a>
+    </Button>
   );
 }
 
@@ -374,6 +420,28 @@ function formatPeriod(period: string) {
     month: "long",
     year: "numeric",
   }).format(date);
+}
+
+function buildPaymentFormUrl(playerName: string, period: string) {
+  const [year] = period.split("-");
+  const params = new URLSearchParams({
+    usp: "pp_url",
+    "entry.1447717655": playerName,
+    "entry.2143604901": year,
+    "entry.639910438": formatFormMonth(period),
+  });
+
+  return `${PAYMENT_FORM_BASE_URL}?${params.toString()}`;
+}
+
+function formatFormMonth(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  const label = new Intl.DateTimeFormat("es-AR", {
+    month: "long",
+  }).format(date);
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function formatPercent(value: number) {
