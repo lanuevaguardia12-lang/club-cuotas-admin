@@ -515,6 +515,10 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async getPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+    return [];
+  }
+
   async getPushSubscriptionsForUser(): Promise<PushSubscriptionRecord[]> {
     return [];
   }

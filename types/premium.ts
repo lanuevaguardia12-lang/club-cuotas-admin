@@ -67,6 +67,10 @@ export interface AppNotification {
   type: NotificationType;
   status: NotificationStatus;
   targetRole: AuthRole | "all";
+  targetUserId?: string;
+  targetPlayerId?: string;
+  referenceId?: string;
+  url?: string;
   readAt?: string;
 }
 
@@ -168,6 +172,10 @@ export interface CreateNotificationInput {
   message: string;
   type?: NotificationType;
   targetRole?: AuthRole | "all";
+  targetUserId?: string;
+  targetPlayerId?: string;
+  referenceId?: string;
+  url?: string;
 }
 
 export interface CreateReminderJobInput {

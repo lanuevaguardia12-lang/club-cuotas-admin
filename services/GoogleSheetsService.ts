@@ -263,6 +263,10 @@ const notificationHeaders = [
   "type",
   "status",
   "target_role",
+  "target_user_id",
+  "target_player_id",
+  "reference_id",
+  "url",
   "read_at",
 ];
 
@@ -2055,20 +2059,40 @@ export class GoogleSheetsService implements IDataService {
   async createNotification(input: CreateNotificationInput): Promise<void> {
     this.assertConfigured();
 
-    await this.appendRowsWithHeaders(
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const sheetPrefix = getSheetPrefix(this.config.notificationsRange);
+    await this.ensureSheetForRange(this.config.notificationsRange, spreadsheetId);
+
+    const values = await this.readValuesFromSpreadsheet(
+      spreadsheetId,
       this.config.notificationsRange,
+    ).catch(() => []);
+    const isEmptySheet = values.length === 0;
+    const [headerRow = []] = values;
+    let headers = normalizeWritableHeaders(headerRow, notificationHeaders);
+
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
       notificationHeaders,
-      [
-        createId("notification"),
-        new Date().toISOString(),
-        input.title,
-        input.message,
-        input.type ?? "info",
-        "unread",
-        input.targetRole ?? "all",
-        "",
-      ],
     );
+
+    const row = buildNotificationWritableRow(headers, {
+      id: createId("notification"),
+      createdAt: new Date().toISOString(),
+      input,
+    });
+
+    await this.createSheetsClient().spreadsheets.values.append({
+      spreadsheetId,
+      range: this.config.notificationsRange,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: isEmptySheet ? [headers, row] : [row],
+      },
+    });
     invalidatePremiumCache();
   }
 
@@ -2356,6 +2380,14 @@ export class GoogleSheetsService implements IDataService {
       subscriptions.filter(
         (subscription) => subscription.active && subscription.userId === userId,
       ),
+    );
+  }
+
+  async getPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+    this.assertConfigured();
+
+    return this.readPushSubscriptions().then((subscriptions) =>
+      subscriptions.filter((subscription) => subscription.active),
     );
   }
 
@@ -4522,9 +4554,65 @@ function mapRowsToNotifications(rows: unknown[][]): AppNotification[] {
       type: normalizeNotificationType(pick(record, ["type", "tipo"])),
       status: normalizeNotificationStatus(pick(record, ["status", "estado"])),
       targetRole: normalizeTargetRole(pick(record, ["target_role", "rol", "audience"])),
+      targetUserId:
+        pick(record, ["target_user_id", "user_id", "usuario_id"]) || undefined,
+      targetPlayerId:
+        pick(record, ["target_player_id", "player_id", "jugador_id"]) || undefined,
+      referenceId:
+        pick(record, ["reference_id", "referencia_id", "entity_id"]) || undefined,
+      url: pick(record, ["url", "href", "link"]) || undefined,
       readAt: parseDateTime(pick(record, ["read_at", "leido_el"])),
     }))
     .sort(compareByCreatedAtDesc);
+}
+
+function buildNotificationWritableRow(
+  headers: string[],
+  {
+    createdAt,
+    id,
+    input,
+  }: {
+    createdAt: string;
+    id: string;
+    input: CreateNotificationInput;
+  },
+) {
+  const values: Record<string, string> = {
+    id,
+    notification_id: id,
+    created_at: createdAt,
+    fecha: createdAt,
+    timestamp: createdAt,
+    title: input.title,
+    titulo: input.title,
+    message: input.message,
+    mensaje: input.message,
+    description: input.message,
+    type: input.type ?? "info",
+    tipo: input.type ?? "info",
+    status: "unread",
+    estado: "unread",
+    target_role: input.targetRole ?? "all",
+    rol: input.targetRole ?? "all",
+    audience: input.targetRole ?? "all",
+    target_user_id: input.targetUserId ?? "",
+    user_id: input.targetUserId ?? "",
+    usuario_id: input.targetUserId ?? "",
+    target_player_id: input.targetPlayerId ?? "",
+    player_id: input.targetPlayerId ?? "",
+    jugador_id: input.targetPlayerId ?? "",
+    reference_id: input.referenceId ?? "",
+    referencia_id: input.referenceId ?? "",
+    entity_id: input.referenceId ?? "",
+    url: input.url ?? "",
+    href: input.url ?? "",
+    link: input.url ?? "",
+    read_at: "",
+    leido_el: "",
+  };
+
+  return headers.map((header) => values[header] ?? "");
 }
 
 function mapRowsToReminderJobs(rows: unknown[][]): ReminderJob[] {

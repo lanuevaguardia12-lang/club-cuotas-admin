@@ -76,6 +76,7 @@ export interface IDataService {
   upsertPaymentRecord(input: UpsertPaymentRecordInput): Promise<void>;
   upsertPushSubscription(input: PushSubscriptionInput): Promise<void>;
   deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
+  getPushSubscriptions(): Promise<PushSubscriptionRecord[]>;
   getPushSubscriptionsForUser(userId: string): Promise<PushSubscriptionRecord[]>;
   getPushSubscriptionsForPlayer(playerId: string): Promise<PushSubscriptionRecord[]>;
 }

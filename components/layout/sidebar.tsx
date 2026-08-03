@@ -16,6 +16,7 @@ import {
   WalletCards,
 } from "lucide-react";
 
+import { LogoutButton } from "@/components/auth/logout-button";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { NavigationLink } from "@/components/ui/navigation-link";
 import { hasPermission } from "@/lib/auth/roles";
@@ -92,11 +93,14 @@ export function Sidebar({ className, user }: SidebarProps) {
         })}
       </nav>
 
-      <div className="border-border mt-auto border-t p-4">
-        <p className="text-muted-foreground text-xs font-medium">Base preparada</p>
-        <p className="text-muted-foreground mt-1 text-xs">
-          GitHub, Vercel, ESLint y Prettier listos.
-        </p>
+      <div className="border-border mt-auto grid gap-3 border-t p-4">
+        <div>
+          <p className="text-muted-foreground text-xs font-medium">Base preparada</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            GitHub, Vercel, ESLint y Prettier listos.
+          </p>
+        </div>
+        <LogoutButton className="w-full justify-start" />
       </div>
     </aside>
   );

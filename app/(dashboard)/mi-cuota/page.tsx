@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 
 import { EmptySection } from "@/components/layout/empty-section";
-import { PushNotificationPanel } from "@/components/push/push-notification-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,7 +91,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         </p>
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="grid gap-4">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -146,8 +145,6 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
             ) : null}
           </CardContent>
         </Card>
-
-        <PushNotificationPanel playerId={profile.id} />
       </section>
 
       <Card>

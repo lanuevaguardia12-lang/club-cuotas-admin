@@ -15,6 +15,7 @@ interface SendPendingNotificationsResponse {
   period: string;
   sent: number;
   skipped: number;
+  throttled?: number;
   totalPending: number;
 }
 
@@ -48,7 +49,7 @@ export function SendPendingNotificationsButton({
       const result = (await response.json()) as SendPendingNotificationsResponse;
 
       setMessage(
-        `Pendientes ${result.totalPending}. Enviadas ${result.sent}. Sin dispositivo ${result.skipped}. Fallidas ${result.failed}.`,
+        `Pendientes ${result.totalPending}. Enviadas ${result.sent}. Sin dispositivo ${result.skipped}. Fallidas ${result.failed}. Salteadas por 4 dias ${result.throttled ?? 0}.`,
       );
     } catch (error) {
       setMessage(

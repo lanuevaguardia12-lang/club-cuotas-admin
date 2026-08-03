@@ -2,9 +2,9 @@
 
 import { Menu, Search } from "lucide-react";
 
-import { LogoutButton } from "@/components/auth/logout-button";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Sidebar } from "@/components/layout/sidebar";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,7 @@ export function Navbar({ user }: NavbarProps) {
             <p className="text-muted-foreground mt-1 text-xs">{roleLabels[user.role]}</p>
           </div>
           <ThemeToggle />
-          <LogoutButton />
+          <NotificationBell user={user} />
         </div>
       </div>
     </header>

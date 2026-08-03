@@ -124,7 +124,7 @@ utils/
   modo oscuro.
 - Configuracion validada con React Hook Form y Zod.
 - Historial de cambios y logs mediante panel de auditoria.
-- Notificaciones internas con estado leido/no leido.
+- Campana global con historial de notificaciones y estado leido/no leido.
 - Recordatorios automaticos en cola mediante Vercel Cron.
 - Integracion preparada con Mercado Pago Checkout Pro.
 - Integracion preparada con Stripe Checkout.
@@ -138,7 +138,7 @@ utils/
 - Lazy loading y code splitting para graficos y tablas pesadas.
 - SEO tecnico con metadata, Open Graph, Twitter Card, robots y sitemap.
 - PWA con `manifest.webmanifest`, service worker, iconos y favicons.
-- Push notifications Web Push con VAPID para usuarios jugadores.
+- Push notifications Web Push con VAPID para cuotas impagas y votacion MVP.
 - Headers de seguridad y cache para assets estaticos.
 - Configuracion lista para Vercel.
 - CI de GitHub con formato, lint, typecheck, auditoria y build.
@@ -457,9 +457,9 @@ Hoja `Logs`:
 
 Hoja `Notificaciones`:
 
-| id      | created_at           | title           | message              | type | status | target_role | read_at |
-| ------- | -------------------- | --------------- | -------------------- | ---- | ------ | ----------- | ------- |
-| NOT-001 | 2026-07-16T12:00:00Z | Pago confirmado | Se registro un pago. | info | unread | treasurer   |         |
+| id      | created_at           | title           | message              | type | status | target_role | target_user_id | target_player_id | reference_id          | url       | read_at |
+| ------- | -------------------- | --------------- | -------------------- | ---- | ------ | ----------- | -------------- | ---------------- | --------------------- | --------- | ------- |
+| NOT-001 | 2026-07-16T12:00:00Z | Pago confirmado | Se registro un pago. | info | unread | treasurer   |                |                  | payment:2026-07:JUG-1 | /payments |         |
 
 Hoja `Recordatorios`:
 
@@ -823,9 +823,11 @@ auditoria no esta disponible, la operacion principal no se bloquea.
 
 ### Notificaciones y recordatorios automaticos
 
-El panel `/notifications` muestra avisos internos y la cola de recordatorios.
+El panel `/notifications` muestra avisos internos y la cola de recordatorios. La
+campana superior muestra el historial filtrado del usuario logueado y permite
+habilitar push notifications desde cualquier seccion.
 
-El cron diario se configura en `vercel.json`:
+Los cron jobs se configuran en `vercel.json`:
 
 ```json
 [
@@ -835,7 +837,11 @@ El cron diario se configura en `vercel.json`:
   },
   {
     "path": "/api/cron/player-fee-reminders",
-    "schedule": "0 12 1 * *"
+    "schedule": "0 12 */4 * *"
+  },
+  {
+    "path": "/api/cron/player-of-match-reminders",
+    "schedule": "0 13 * * *"
   }
 ]
 ```
@@ -848,11 +854,21 @@ El cron no envia WhatsApp directamente. Genera recordatorios auditables en cola,
 preparados para conectar luego WhatsApp Business API, Twilio, Zenvia, QStash,
 Inngest u otro worker.
 
+El cron `/api/cron/player-fee-reminders` envia push solo a jugadores impagos y
+usa `Recordatorios` como memoria para no repetir el aviso automatico antes de 4
+dias por jugador y periodo. El envio manual desde el dashboard sigue disponible
+para pruebas administrativas.
+
+El cron `/api/cron/player-of-match-reminders` avisa a usuarios suscriptos cuando
+hay partidos listos para votar MVP y evita repetir el mismo aviso por
+usuario/partido mediante `reference_id` en `Notificaciones`.
+
 ### Push notifications
 
-La app soporta Web Push para usuarios jugadores. Un jugador entra a `/mi-cuota`,
-activa notificaciones en su dispositivo y la suscripcion queda guardada en
-`PushSubscriptions`.
+La app soporta Web Push. El usuario abre la campana superior, habilita
+notificaciones en su dispositivo y la suscripcion queda guardada en
+`PushSubscriptions`. El historial visible en la campana se lee desde
+`Notificaciones` y se filtra por `target_user_id`, `target_player_id` o rol.
 
 Variables requeridas:
 
@@ -875,7 +891,10 @@ Rutas principales:
 - `POST /api/push/subscriptions`: guarda la suscripcion del dispositivo logueado.
 - `DELETE /api/push/subscriptions`: desactiva una suscripcion.
 - `POST /api/push/test`: envia una prueba al usuario logueado.
-- `GET /api/cron/player-fee-reminders`: envia push mensual de cuota pendiente.
+- `GET /api/notifications`: historial de la campana del usuario logueado.
+- `PATCH /api/notifications`: marca una notificacion visible como leida.
+- `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
+- `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
 
 Limitaciones:
 

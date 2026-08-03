@@ -4,10 +4,16 @@ import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonProps } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 
-export function LogoutButton() {
+type LogoutButtonProps = Pick<ButtonProps, "className" | "size" | "variant">;
+
+export function LogoutButton({
+  className,
+  size = "sm",
+  variant = "outline",
+}: LogoutButtonProps) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
 
@@ -28,7 +34,13 @@ export function LogoutButton() {
   return (
     <>
       <LoadingModal open={isPending} description="Cerrando sesión..." />
-      <Button variant="outline" size="sm" onClick={handleLogout} disabled={isPending}>
+      <Button
+        className={className}
+        variant={variant}
+        size={size}
+        onClick={handleLogout}
+        disabled={isPending}
+      >
         <LogOut />
         {isPending ? "Saliendo..." : "Salir"}
       </Button>

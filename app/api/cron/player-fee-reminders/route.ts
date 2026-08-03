@@ -4,10 +4,12 @@ import { systemAuditActor, userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
-import type { AuditActor } from "@/types/premium";
+import type { AuditActor, ReminderJob } from "@/types/premium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const PUSH_REMINDER_INTERVAL_DAYS = 4;
 
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
@@ -61,14 +63,30 @@ async function sendPendingFeePushNotifications({
   trigger: "cron" | "manual";
 }) {
   const dataService = getDataService();
-  const dashboard = await dataService.getDashboardData(period);
-  const targetPlayers = dashboard.players.filter((player) => player.status !== "paid");
+  const [dashboard, premium] = await Promise.all([
+    dataService.getDashboardData(period),
+    dataService.getPremiumData(),
+  ]);
+  const pendingPlayers = dashboard.players.filter((player) => player.status !== "paid");
+  const targetPlayers = pendingPlayers.filter((player) => {
+    return (
+      trigger === "manual" ||
+      !hasRecentFeePushReminder(premium.reminders, player.id, period)
+    );
+  });
   let sent = 0;
   let skipped = 0;
   let failed = 0;
+  const throttled = pendingPlayers.filter(
+    (player) =>
+      trigger === "cron" &&
+      hasRecentFeePushReminder(premium.reminders, player.id, period),
+  ).length;
 
   for (const player of targetPlayers) {
     const subscriptions = await dataService.getPushSubscriptionsForPlayer(player.id);
+    const message = buildPendingFeeNotificationMessage(player.name, player.fee, period);
+    let playerSent = 0;
 
     if (subscriptions.length === 0) {
       skipped += 1;
@@ -79,11 +97,12 @@ async function sendPendingFeePushNotifications({
       try {
         await sendPushNotification(subscription, {
           title: "Cuota pendiente",
-          body: buildPendingFeeNotificationMessage(player.name, player.fee, period),
+          body: message,
           tag: `fee-reminder-${player.id}-${period}`,
           url: "/mi-cuota",
         });
         sent += 1;
+        playerSent += 1;
       } catch (error) {
         failed += 1;
         await maybeDeactivateExpiredSubscription(
@@ -92,6 +111,28 @@ async function sendPendingFeePushNotifications({
           error,
         );
       }
+    }
+
+    if (playerSent > 0) {
+      await dataService.createReminderJob({
+        scheduledFor: new Date().toISOString(),
+        period,
+        playerId: player.id,
+        playerName: player.name,
+        phone: player.phone,
+        paymentStatus: player.status,
+        message,
+        status: "sent",
+      });
+      await dataService.createNotification({
+        title: "Cuota pendiente",
+        message,
+        type: "warning",
+        targetRole: "player",
+        targetPlayerId: player.id,
+        referenceId: `fee:${player.id}:${period}:${new Date().toISOString().slice(0, 10)}`,
+        url: "/mi-cuota",
+      });
     }
   }
 
@@ -115,6 +156,7 @@ async function sendPendingFeePushNotifications({
       period,
       sent,
       skipped,
+      throttled,
       trigger,
     },
   });
@@ -124,7 +166,8 @@ async function sendPendingFeePushNotifications({
     period,
     sent,
     skipped,
-    totalPending: targetPlayers.length,
+    throttled,
+    totalPending: pendingPlayers.length,
   });
 }
 
@@ -155,6 +198,30 @@ function formatPeriod(period: string) {
 
 function getCurrentPeriod() {
   return new Date().toISOString().slice(0, 7);
+}
+
+function hasRecentFeePushReminder(
+  reminders: ReminderJob[],
+  playerId: string,
+  period: string,
+) {
+  const cutoff = Date.now() - PUSH_REMINDER_INTERVAL_DAYS * 24 * 60 * 60 * 1000;
+
+  return reminders.some((reminder) => {
+    if (
+      reminder.playerId !== playerId ||
+      reminder.period !== period ||
+      reminder.status !== "sent" ||
+      !reminder.message.includes("no te lleguen estas notificaciones")
+    ) {
+      return false;
+    }
+
+    const sentAt = reminder.sentAt ?? reminder.createdAt;
+    const timestamp = new Date(sentAt).getTime();
+
+    return Number.isFinite(timestamp) && timestamp >= cutoff;
+  });
 }
 
 function buildPendingFeeNotificationMessage(
