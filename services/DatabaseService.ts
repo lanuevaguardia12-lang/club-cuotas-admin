@@ -6,6 +6,7 @@ import type { IDataService } from "@/services/IDataService";
 import type { CashFlowData, DashboardData, PlayerProfile } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
 import type { FeeCalculatorData } from "@/types/fee-calculator";
+import type { PlayerOfMatchData } from "@/types/player-of-match";
 import type { PremiumData, PushSubscriptionRecord } from "@/types/premium";
 import type { PlayerDirectoryData } from "@/types/players";
 import type { AppSettingsData } from "@/types/settings";
@@ -355,6 +356,31 @@ export class DatabaseService implements IDataService {
   }
 
   async updatePlayerFeeStatus(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async getPlayerOfMatchData(): Promise<PlayerOfMatchData> {
+    return {
+      matches: [],
+      emptyState: {
+        title: "Jugador del partido pendiente",
+        description:
+          "El contrato IDataService ya esta listo para implementar votaciones en PostgreSQL.",
+      },
+      source: {
+        provider: "postgresql",
+        status: "error",
+        message: "DatabaseService todavia no esta implementado.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  async submitPlayerOfMatchVote(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
       "UNSUPPORTED_DATA_SOURCE",

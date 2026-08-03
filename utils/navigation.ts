@@ -14,6 +14,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "player:self:read",
   },
   {
+    label: "Jugador del partido",
+    href: "/player-of-match",
+    icon: "playerOfMatch",
+    permission: "player-of-match:vote",
+  },
+  {
     label: "Jugadores",
     href: "/players",
     icon: "players",

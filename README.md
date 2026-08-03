@@ -368,6 +368,7 @@ Rangos por defecto:
 - `Notificaciones!A:Z`
 - `Recordatorios!A:Z`
 - `Pagos!A:Z`
+- `JugadorPartidoVotos!A:Z`
 - `CalculadoraCostos!A:Z`
 - `CalculadoraReales!A:Z`
 - `Politica devoluciones!A:C`
@@ -488,6 +489,20 @@ Hoja externa `Partidos jugados formulario`:
 | Marca temporal    | Rival       | Fecha    | Jugadores que ingresaron |
 | ----------------- | ----------- | -------- | ------------------------ |
 | 7/6/2026 16:25:19 | Green Ville | 6/6/2026 | Juan Perez, Pedro Gomez  |
+
+Hoja `JugadorPartidoVotos`:
+
+| id      | partido_id                | fecha_partido | rival       | votante_user_id | votante_player_id | votante_nombre | primer_voto_jugador | segundo_voto_jugador | creado_en            |
+| ------- | ------------------------- | ------------- | ----------- | --------------- | ----------------- | -------------- | ------------------- | -------------------- | -------------------- |
+| vote-01 | match-2026-06-06-green... | 2026-06-06    | Green Ville | ivo             | ivo-unzaga        | Ivo Unzaga     | Juan Perez          | Pedro Gomez          | 2026-06-07T10:00:00Z |
+
+Reglas de votación:
+
+- Cada usuario puede votar una sola vez por partido.
+- Cada voto exige dos jugadores distintos.
+- Las opciones salen únicamente de `Jugadores que ingresaron` del partido.
+- La pantalla muestra cada partido como `La Nueva Guardia vs Rival` y la fecha
+  del encuentro.
 
 Encabezados equivalentes soportados:
 

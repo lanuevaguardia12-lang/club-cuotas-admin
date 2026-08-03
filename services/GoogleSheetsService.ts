@@ -85,6 +85,12 @@ import type {
   UpsertPaymentRecordInput,
 } from "@/types/premium";
 import type {
+  PlayerOfMatchData,
+  PlayerOfMatchMatch,
+  PlayerOfMatchVote,
+  SubmitPlayerOfMatchVoteInput,
+} from "@/types/player-of-match";
+import type {
   PlayerDirectoryData,
   PlayerDirectoryItem,
   PlayerDirectoryStatus,
@@ -122,6 +128,7 @@ interface GoogleSheetsConfig {
   remindersRange: string;
   paymentsRange: string;
   pushSubscriptionsRange: string;
+  playerOfMatchVotesRange: string;
   feeCalculatorCostsRange: string;
   feeCalculatorActualsRange: string;
   feeCalculatorPlayerStatusesRange: string;
@@ -209,6 +216,7 @@ const DEFAULT_NOTIFICATIONS_RANGE = "Notificaciones!A:Z";
 const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
 const DEFAULT_PUSH_SUBSCRIPTIONS_RANGE = "PushSubscriptions!A:Z";
+const DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE = "JugadorPartidoVotos!A:Z";
 const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
 const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
@@ -287,6 +295,19 @@ const pushSubscriptionHeaders = [
   "activo",
   "creado_en",
   "actualizado_en",
+];
+
+const playerOfMatchVoteHeaders = [
+  "id",
+  "partido_id",
+  "fecha_partido",
+  "rival",
+  "votante_user_id",
+  "votante_player_id",
+  "votante_nombre",
+  "primer_voto_jugador",
+  "segundo_voto_jugador",
+  "creado_en",
 ];
 
 const cashFlowHeaders = [
@@ -415,6 +436,10 @@ export class GoogleSheetsService implements IDataService {
         config.pushSubscriptionsRange ??
         process.env.GOOGLE_SHEETS_PUSH_SUBSCRIPTIONS_RANGE ??
         DEFAULT_PUSH_SUBSCRIPTIONS_RANGE,
+      playerOfMatchVotesRange:
+        config.playerOfMatchVotesRange ??
+        process.env.GOOGLE_SHEETS_PLAYER_OF_MATCH_VOTES_RANGE ??
+        DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE,
       feeCalculatorCostsRange:
         config.feeCalculatorCostsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE ??
@@ -1735,6 +1760,112 @@ export class GoogleSheetsService implements IDataService {
     invalidateDashboardCache();
   }
 
+  async getPlayerOfMatchData(voterUserId: string): Promise<PlayerOfMatchData> {
+    const cachedAt = new Date().toISOString();
+
+    try {
+      this.assertConfigured();
+
+      const [matches, votes] = await Promise.all([
+        this.readPlayerOfMatchMatches(),
+        this.readPlayerOfMatchVotes(),
+      ]);
+      const voterVotes = votes.filter((vote) => vote.voterUserId === voterUserId);
+
+      return buildPlayerOfMatchData({
+        cachedAt,
+        matches,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+        status: matches.length === 0 ? "empty" : "ready",
+        voterVotes,
+      });
+    } catch (error) {
+      const serviceError = normalizeGoogleSheetsError(error);
+
+      return buildPlayerOfMatchData({
+        cachedAt,
+        matches: [],
+        message: serviceError.message,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+        status: "error",
+        voterVotes: [],
+      });
+    }
+  }
+
+  async submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void> {
+    this.assertConfigured();
+
+    const [matches, votes] = await Promise.all([
+      this.readPlayerOfMatchMatches(),
+      this.readPlayerOfMatchVotes(),
+    ]);
+    const match = matches.find((candidate) => candidate.id === input.matchId);
+
+    if (!match) {
+      throw new DataServiceError(
+        "No se encontro el partido para votar.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    if (
+      votes.some(
+        (vote) => vote.matchId === match.id && vote.voterUserId === input.voterUserId,
+      )
+    ) {
+      throw new DataServiceError(
+        "Ya votaste a este partido con este usuario.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const firstVotePlayerName = findMatchPlayerName(
+      match.players,
+      input.firstVotePlayerName,
+    );
+    const secondVotePlayerName = findMatchPlayerName(
+      match.players,
+      input.secondVotePlayerName,
+    );
+
+    if (!firstVotePlayerName || !secondVotePlayerName) {
+      throw new DataServiceError(
+        "Solo se puede votar a jugadores que participaron en ese partido.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    if (
+      normalizeClubPlayerName(firstVotePlayerName) ===
+      normalizeClubPlayerName(secondVotePlayerName)
+    ) {
+      throw new DataServiceError("Elegí dos jugadores distintos.", "CONFIGURATION_ERROR");
+    }
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+
+    await this.ensureSheetForRange(this.config.playerOfMatchVotesRange, spreadsheetId);
+    await this.appendRowsWithHeaders(
+      this.config.playerOfMatchVotesRange,
+      playerOfMatchVoteHeaders,
+      buildPlayerOfMatchVoteWritableRow(playerOfMatchVoteHeaders, {
+        id: createId("player-of-match-vote"),
+        matchId: match.id,
+        matchDate: match.date,
+        rival: match.rival,
+        voterUserId: input.voterUserId,
+        voterPlayerId: input.voterPlayerId,
+        voterName: input.voterName,
+        firstVotePlayerName,
+        secondVotePlayerName,
+        createdAt: new Date().toISOString(),
+      }),
+      spreadsheetId,
+    );
+    invalidatePlayerOfMatchCache();
+  }
+
   async getPremiumData(): Promise<PremiumData> {
     const cachedAt = new Date().toISOString();
 
@@ -2265,6 +2396,52 @@ export class GoogleSheetsService implements IDataService {
     );
 
     return mapRowsToPushSubscriptions(rows);
+  }
+
+  private async readPlayerOfMatchMatches(): Promise<MatchRecord[]> {
+    const spreadsheetId = this.config.matchesSpreadsheetId;
+
+    if (!spreadsheetId) {
+      return [];
+    }
+
+    return unstable_cache(
+      async () =>
+        mapRowsToMatches(
+          await this.readOptionalValuesFromSpreadsheet(
+            spreadsheetId,
+            this.config.matchesRange,
+          ),
+        ),
+      ["google-sheets-player-of-match-matches", spreadsheetId, this.config.matchesRange],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:player-of-match"],
+      },
+    )();
+  }
+
+  private async readPlayerOfMatchVotes(): Promise<PlayerOfMatchVote[]> {
+    const spreadsheetId = this.getAppSpreadsheetId();
+
+    return unstable_cache(
+      async () =>
+        mapRowsToPlayerOfMatchVotes(
+          await this.readOptionalValuesFromSpreadsheet(
+            spreadsheetId,
+            this.config.playerOfMatchVotesRange,
+          ),
+        ),
+      [
+        "google-sheets-player-of-match-votes",
+        spreadsheetId,
+        this.config.playerOfMatchVotesRange,
+      ],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:player-of-match"],
+      },
+    )();
   }
 
   private async ensureWritableHeaders(
@@ -3366,8 +3543,10 @@ function mapRowsToRefundPolicy(rows: unknown[][]): FeeRefundPolicyRule[] {
 }
 
 function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
+  const seenIds = new Set<string>();
+
   return rowsToRecords(rows)
-    .map((record, index) => {
+    .map((record) => {
       const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
       const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
       const venue = pick(record, [
@@ -3398,8 +3577,10 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
         return null;
       }
 
+      const rawId = pick(record, ["id", "partido_id", "match_id"]);
+
       return {
-        id: pick(record, ["id", "partido_id", "match_id"]) || `match-${index + 1}`,
+        id: createUniqueMatchId(rawId || createMatchId(date, rival), seenIds),
         date,
         period: getPeriodFromDate(date) ?? getCurrentPeriod(),
         rival,
@@ -3410,6 +3591,151 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
     })
     .filter((match): match is MatchRecord => Boolean(match))
     .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
+  return rowsToRecords(rows)
+    .map<PlayerOfMatchVote | null>((record, index) => {
+      const matchId = pick(record, ["partido_id", "match_id"]);
+      const voterUserId = pick(record, ["votante_user_id", "user_id", "usuario_id"]);
+      const firstVotePlayerName = pick(record, [
+        "primer_voto_jugador",
+        "primer_voto",
+        "first_vote_player_name",
+      ]);
+      const secondVotePlayerName = pick(record, [
+        "segundo_voto_jugador",
+        "segundo_voto",
+        "second_vote_player_name",
+      ]);
+
+      if (!matchId || !voterUserId || !firstVotePlayerName || !secondVotePlayerName) {
+        return null;
+      }
+
+      return {
+        id: pick(record, ["id", "voto_id"]) || `player-of-match-vote-${index + 1}`,
+        matchId,
+        matchDate: parseDate(pick(record, ["fecha_partido", "match_date"])) ?? "",
+        rival: pick(record, ["rival", "oponente", "contrario"]),
+        voterUserId,
+        voterPlayerId: pick(record, [
+          "votante_player_id",
+          "votante_jugador_id",
+          "player_id",
+        ]),
+        voterName: pick(record, ["votante_nombre", "votante", "user_name"]),
+        firstVotePlayerName,
+        secondVotePlayerName,
+        createdAt:
+          parseDateTime(pick(record, ["creado_en", "created_at", "timestamp"])) ?? "",
+      } satisfies PlayerOfMatchVote;
+    })
+    .filter((vote): vote is PlayerOfMatchVote => Boolean(vote));
+}
+
+function buildPlayerOfMatchData({
+  cachedAt,
+  matches,
+  message,
+  revalidateSeconds,
+  status,
+  voterVotes,
+}: {
+  cachedAt: string;
+  matches: MatchRecord[];
+  message?: string;
+  revalidateSeconds: number;
+  status: PlayerOfMatchData["source"]["status"];
+  voterVotes: PlayerOfMatchVote[];
+}): PlayerOfMatchData {
+  const votesByMatchId = new Map(voterVotes.map((vote) => [vote.matchId, vote]));
+  const formattedMatches = [...matches]
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .map<PlayerOfMatchMatch>((match) => ({
+      id: match.id,
+      title: `La Nueva Guardia vs ${match.rival}`,
+      date: match.date,
+      period: match.period,
+      rival: match.rival,
+      players: match.players,
+      userVote: votesByMatchId.get(match.id),
+    }));
+
+  return {
+    matches: formattedMatches,
+    emptyState: {
+      title:
+        status === "error"
+          ? "No se pudo cargar la votacion"
+          : "Todavia no hay partidos para votar",
+      description:
+        status === "error"
+          ? (message ?? "Revisá la conexión con Google Sheets.")
+          : "Cuando el formulario de partidos tenga fecha, rival y jugadores, van a aparecer aca.",
+    },
+    source: {
+      provider: "google-sheets",
+      status,
+      message:
+        message ??
+        (formattedMatches.length > 0
+          ? "Partidos y votos obtenidos desde Google Sheets."
+          : "Google Sheets conectado, sin partidos cargados para votar."),
+      cachedAt,
+      revalidateSeconds,
+    },
+  };
+}
+
+function buildPlayerOfMatchVoteWritableRow(headers: string[], vote: PlayerOfMatchVote) {
+  const values: Record<string, string> = {
+    creado_en: vote.createdAt,
+    fecha_partido: vote.matchDate,
+    first_vote_player_name: vote.firstVotePlayerName,
+    id: vote.id,
+    match_date: vote.matchDate,
+    match_id: vote.matchId,
+    partido_id: vote.matchId,
+    primer_voto_jugador: vote.firstVotePlayerName,
+    rival: vote.rival,
+    second_vote_player_name: vote.secondVotePlayerName,
+    segundo_voto_jugador: vote.secondVotePlayerName,
+    user_id: vote.voterUserId,
+    user_name: vote.voterName,
+    votante: vote.voterName,
+    votante_jugador_id: vote.voterPlayerId ?? "",
+    votante_nombre: vote.voterName,
+    votante_player_id: vote.voterPlayerId ?? "",
+    votante_user_id: vote.voterUserId,
+  };
+
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function findMatchPlayerName(players: string[], value: string) {
+  const normalizedValue = normalizeClubPlayerName(value);
+
+  return players.find((player) => normalizeClubPlayerName(player) === normalizedValue);
+}
+
+function createMatchId(date: string, rival: string) {
+  const rivalId = createClubPlayerId(rival) || "rival";
+
+  return `match-${date}-${rivalId}`;
+}
+
+function createUniqueMatchId(baseId: string, seenIds: Set<string>) {
+  let id = baseId;
+  let suffix = 2;
+
+  while (seenIds.has(id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  seenIds.add(id);
+  return id;
 }
 
 function mapClubExpenseRowsToPlayerCredits(rows: unknown[][]): PlayerExpenseCredit[] {
@@ -7288,4 +7614,9 @@ function invalidateCashFlowCache() {
 function invalidatePushSubscriptionCache() {
   revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:push-subscriptions");
+}
+
+function invalidatePlayerOfMatchCache() {
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:player-of-match");
 }

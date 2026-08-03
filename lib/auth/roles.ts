@@ -16,7 +16,8 @@ export type Permission =
   | "maintenance:manage"
   | "api:read"
   | "api:write"
-  | "player:self:read";
+  | "player:self:read"
+  | "player-of-match:vote";
 
 export const roleLabels: Record<AuthRole, string> = {
   admin: "Administrador",
@@ -50,9 +51,16 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "api:read",
     "api:write",
     "player:self:read",
+    "player-of-match:vote",
   ],
-  coach: ["dashboard:read", "players:read", "players:write", "notifications:manage"],
-  player: ["player:self:read"],
+  coach: [
+    "dashboard:read",
+    "players:read",
+    "players:write",
+    "notifications:manage",
+    "player-of-match:vote",
+  ],
+  player: ["player:self:read", "player-of-match:vote"],
   treasurer: [
     "dashboard:read",
     "players:read",
@@ -65,6 +73,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "payments:manage",
     "api:read",
     "api:write",
+    "player-of-match:vote",
   ],
 };
 
@@ -87,6 +96,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
 
   if (href.startsWith("/mi-cuota")) {
     return hasPermission(user, "player:self:read");
+  }
+
+  if (href.startsWith("/player-of-match")) {
+    return hasPermission(user, "player-of-match:vote");
   }
 
   if (href.startsWith("/users")) {

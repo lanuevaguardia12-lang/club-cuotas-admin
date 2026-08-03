@@ -22,6 +22,10 @@ import type {
   PushSubscriptionRecord,
   UpsertPaymentRecordInput,
 } from "@/types/premium";
+import type {
+  PlayerOfMatchData,
+  SubmitPlayerOfMatchVoteInput,
+} from "@/types/player-of-match";
 import type { PlayerDirectoryData, UpsertPlayerInput } from "@/types/players";
 import type { AppSettingsData, UpdateAppSettingsInput } from "@/types/settings";
 
@@ -48,6 +52,8 @@ export interface IDataService {
   getExportData(dataset: ExportDataset): Promise<ExportData>;
   getPlayerProfile(playerId: string, year?: number): Promise<PlayerProfile | null>;
   updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput): Promise<void>;
+  getPlayerOfMatchData(voterUserId: string): Promise<PlayerOfMatchData>;
+  submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void>;
   getPremiumData(): Promise<PremiumData>;
   recordAuditEvent(input: CreateAuditEventInput): Promise<void>;
   createNotification(input: CreateNotificationInput): Promise<void>;

@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Settings,
   ShieldCheck,
+  Trophy,
   UsersRound,
   WalletCards,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const iconMap = {
   audit: ShieldCheck,
   dashboard: LayoutDashboard,
   myFee: BadgeDollarSign,
+  playerOfMatch: Trophy,
   feeCalculator: Calculator,
   cashFlow: WalletCards,
   players: UsersRound,
