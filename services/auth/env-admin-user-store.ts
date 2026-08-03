@@ -2,6 +2,8 @@ import "server-only";
 
 import { timingSafeEqual } from "node:crypto";
 
+import { verifyPassword } from "@/lib/auth/passwords";
+import { getDataService } from "@/services/data-service";
 import type { UserCredentials, UserStore } from "@/services/auth/user-store";
 import type { AuthRole, AuthUser } from "@/types/auth";
 
@@ -22,13 +24,32 @@ export class EnvAdminUserStore implements UserStore {
       throw new Error("ADMIN_USERNAME/ADMIN_PASSWORD or AUTH_USERS_JSON are required.");
     }
 
-    return (
-      users.find(
-        (user) =>
-          safeCompare(credentials.username, user.username) &&
-          safeCompare(credentials.password, user.password),
-      ) ?? null
+    const user = users.find((candidate) =>
+      safeCompare(credentials.username, candidate.username),
     );
+
+    if (!user) {
+      return null;
+    }
+
+    const override = await getDataService()
+      .getAccountAuthOverride(user.id, user.username)
+      .catch(() => null);
+    const passwordMatches = override?.passwordHash
+      ? verifyPassword(credentials.password, override.passwordHash)
+      : safeCompare(credentials.password, user.password);
+
+    if (!passwordMatches) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      name: override?.name || user.name,
+      role: user.role,
+      playerId: user.playerId,
+    };
   }
 }
 
@@ -44,6 +65,7 @@ function getEnvUsers() {
           password: adminPassword,
           name: process.env.ADMIN_NAME ?? adminUsername,
           role: "admin" as const,
+          playerId: undefined,
         }
       : null;
 

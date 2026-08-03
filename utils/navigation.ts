@@ -8,6 +8,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "dashboard:read",
   },
   {
+    label: "Mi cuenta",
+    href: "/account",
+    icon: "account",
+    permission: "account:manage",
+  },
+  {
     label: "Mi cuota",
     href: "/mi-cuota",
     icon: "myFee",

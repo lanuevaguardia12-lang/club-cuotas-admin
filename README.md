@@ -359,6 +359,8 @@ Archivos principales:
 Rangos por defecto:
 
 - `Jugadores!A:Z` como persistencia del ABM de jugadores
+- `CuentasUsuario!A:Z` para datos de cuenta, foto de perfil y contraseña
+  actualizada
 - `Cuotas!A:Z` para estados de pago heredados, opcional para el calculador
 - `CashFlow!A:Z`
 - `Configuracion!A:B`
@@ -503,6 +505,17 @@ Reglas de votación:
 - Las opciones salen únicamente de `Jugadores que ingresaron` del partido.
 - La pantalla muestra cada partido como `La Nueva Guardia vs Rival` y la fecha
   del encuentro.
+
+Hoja `CuentasUsuario`:
+
+| user_id    | username | rol    | nombre     | email           | telefono   | foto_perfil | password_hash | password_actualizado_en | actualizado_en       |
+| ---------- | -------- | ------ | ---------- | --------------- | ---------- | ----------- | ------------- | ----------------------- | -------------------- |
+| ivo-unzaga | ivo      | player | Ivo Unzaga | ivo@example.com | 1159556277 | data:image… | pbkdf2…       | 2026-08-03T12:00:00Z    | 2026-08-03T12:00:00Z |
+
+- `foto_perfil` guarda una imagen comprimida como data URL chica.
+- `password_hash` nunca guarda la contraseña plana; usa PBKDF2 con sal aleatoria.
+- Si `password_hash` está vacío, el login usa la contraseña definida en Vercel por
+  `AUTH_USERS_JSON` o `ADMIN_PASSWORD`.
 
 Encabezados equivalentes soportados:
 

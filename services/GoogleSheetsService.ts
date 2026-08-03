@@ -13,6 +13,13 @@ import {
 import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type {
+  AccountAuthOverride,
+  AccountProfile,
+  UpdateAccountPasswordInput,
+  UpdateAccountProfileInput,
+} from "@/types/account";
+import type { AuthUser } from "@/types/auth";
+import type {
   AnnualComparisonPoint,
   CashFlowConceptBreakdownPoint,
   CashFlowConceptSeries,
@@ -118,6 +125,7 @@ interface GoogleSheetsConfig {
   clubSpreadsheetId?: string;
   clientEmail?: string;
   privateKey?: string;
+  accountProfilesRange: string;
   playersRange: string;
   feesRange: string;
   cashFlowRange: string;
@@ -184,6 +192,10 @@ interface MatchRecord {
   coachAttended: boolean;
 }
 
+interface AccountProfileRecord extends AccountProfile {
+  passwordHash: string;
+}
+
 interface PlayerExpenseCredit {
   playerName: string;
   period: string;
@@ -225,6 +237,7 @@ const DEFAULT_FORM_RESPONSES_RANGE = "Respuestas de formulario!A:Z";
 const DEFAULT_EXPENSES_RANGE = "Gastos nueva guardia!A:Z";
 const DEFAULT_REFUND_POLICY_RANGE = "Politica devoluciones!A:C";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
+const DEFAULT_ACCOUNT_PROFILES_RANGE = "CuentasUsuario!A:Z";
 
 const CLUB_FORM_RESPONSES_RANGE = DEFAULT_FORM_RESPONSES_RANGE;
 const CLUB_FORM_RESPONSE_RANGE = "Respuesta de formulario!A:Z";
@@ -381,6 +394,19 @@ const feeCalculatorPlayerStatusHeaders = [
 
 const feeRefundPolicyHeaders = ["desde", "hasta", "devolucion"];
 
+const accountProfileHeaders = [
+  "user_id",
+  "username",
+  "rol",
+  "nombre",
+  "email",
+  "telefono",
+  "foto_perfil",
+  "password_hash",
+  "password_actualizado_en",
+  "actualizado_en",
+];
+
 export class GoogleSheetsService implements IDataService {
   private readonly config: GoogleSheetsConfig;
 
@@ -402,6 +428,10 @@ export class GoogleSheetsService implements IDataService {
       clubSpreadsheetId,
       clientEmail: config.clientEmail ?? process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
       privateKey: config.privateKey ?? process.env.GOOGLE_SHEETS_PRIVATE_KEY,
+      accountProfilesRange:
+        config.accountProfilesRange ??
+        process.env.GOOGLE_SHEETS_ACCOUNT_PROFILES_RANGE ??
+        DEFAULT_ACCOUNT_PROFILES_RANGE,
       playersRange:
         config.playersRange ??
         process.env.GOOGLE_SHEETS_PLAYERS_RANGE ??
@@ -547,6 +577,97 @@ export class GoogleSheetsService implements IDataService {
     });
 
     invalidateSettingsCache();
+  }
+
+  async getAccountProfile(user: AuthUser) {
+    const cachedAt = new Date().toISOString();
+
+    try {
+      this.assertConfigured();
+      const account = await this.findAccountProfile(user.id, user.username);
+      const player =
+        user.role === "player"
+          ? await this.findPlayerRecordForUser(user).catch(() => null)
+          : null;
+
+      return {
+        profile: buildAccountProfile(user, account, player),
+        source: {
+          provider: "google-sheets" as const,
+          status: "ready" as const,
+          message: "Cuenta obtenida desde Google Sheets.",
+          cachedAt,
+          revalidateSeconds: this.config.cacheTtlSeconds,
+        },
+      };
+    } catch (error) {
+      const serviceError = normalizeGoogleSheetsError(error);
+
+      return {
+        profile: buildAccountProfile(user),
+        source: {
+          provider: "google-sheets" as const,
+          status: "error" as const,
+          message: serviceError.message,
+          cachedAt,
+          revalidateSeconds: this.config.cacheTtlSeconds,
+        },
+      };
+    }
+  }
+
+  async updateAccountProfile(input: UpdateAccountProfileInput): Promise<void> {
+    this.assertConfigured();
+
+    const existing = await this.findAccountProfile(input.userId, input.username);
+
+    await this.upsertAccountProfile({
+      ...buildAccountProfileFromInput(input, existing),
+      passwordHash: existing?.passwordHash ?? "",
+      passwordUpdatedAt: existing?.passwordUpdatedAt ?? "",
+    });
+    invalidateAccountCache();
+  }
+
+  async updateAccountPassword(input: UpdateAccountPasswordInput): Promise<void> {
+    this.assertConfigured();
+
+    const existing = await this.findAccountProfile(input.userId, input.username);
+    const now = new Date().toISOString();
+
+    await this.upsertAccountProfile({
+      userId: input.userId,
+      username: input.username,
+      role: existing?.role ?? input.role,
+      name: existing?.name || input.name,
+      email: existing?.email ?? "",
+      phone: existing?.phone ?? "",
+      profilePhotoDataUrl: existing?.profilePhotoDataUrl ?? "",
+      passwordHash: input.passwordHash,
+      passwordUpdatedAt: now,
+      updatedAt: existing?.updatedAt || now,
+    });
+    invalidateAccountCache();
+  }
+
+  async getAccountAuthOverride(
+    userId: string,
+    username: string,
+  ): Promise<AccountAuthOverride | null> {
+    this.assertConfigured();
+
+    const account = await this.findAccountProfile(userId, username).catch(() => null);
+
+    if (!account) {
+      return null;
+    }
+
+    return {
+      userId: account.userId,
+      username: account.username,
+      name: account.name || undefined,
+      passwordHash: account.passwordHash || undefined,
+    };
   }
 
   async getDashboardData(period = getCurrentPeriod()): Promise<DashboardData> {
@@ -2354,6 +2475,109 @@ export class GoogleSheetsService implements IDataService {
     )();
   }
 
+  private async readCachedAccountProfileRows() {
+    const spreadsheetId = this.getAppSpreadsheetId();
+
+    return unstable_cache(
+      async () =>
+        this.readOptionalValuesFromSpreadsheet(
+          spreadsheetId,
+          this.config.accountProfilesRange,
+        ),
+      ["google-sheets-accounts", spreadsheetId, this.config.accountProfilesRange],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:accounts"],
+      },
+    )();
+  }
+
+  private async readAccountProfiles() {
+    return mapRowsToAccountProfiles(await this.readCachedAccountProfileRows());
+  }
+
+  private async findAccountProfile(userId: string, username: string) {
+    const profiles = await this.readAccountProfiles();
+
+    return profiles.find(
+      (profile) => profile.userId === userId || profile.username === username,
+    );
+  }
+
+  private async findPlayerRecordForUser(user: AuthUser) {
+    const lookupKeys = buildPlayerLookupKeys(user.playerId, user.id, user.name);
+    const players = mapRowsToPlayers(await this.readCachedPlayerDirectoryRows());
+
+    return players.find((player) => playerMatchesLookup(player, lookupKeys)) ?? null;
+  }
+
+  private async upsertAccountProfile(profile: AccountProfileRecord) {
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const range = this.config.accountProfilesRange;
+    const sheetPrefix = getSheetPrefix(range);
+    const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
+    const sheets = this.createSheetsClient();
+
+    await this.ensureSheetForRange(range, spreadsheetId);
+
+    if (rows.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A1:${toColumnName(accountProfileHeaders.length - 1)}2`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            accountProfileHeaders,
+            buildAccountProfileWritableRow(accountProfileHeaders, profile),
+          ],
+        },
+      });
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, accountProfileHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      accountProfileHeaders,
+    );
+    const userIdIndex = findHeaderIndex(headers, ["user_id", "usuario_id"]);
+    const usernameIndex = findHeaderIndex(headers, ["username", "usuario"]);
+    const targetRowIndex = dataRows.findIndex((row) => {
+      const rowUserId = userIdIndex >= 0 ? String(row[userIdIndex] ?? "").trim() : "";
+      const rowUsername =
+        usernameIndex >= 0 ? String(row[usernameIndex] ?? "").trim() : "";
+
+      return rowUserId === profile.userId || rowUsername === profile.username;
+    });
+
+    if (targetRowIndex >= 0) {
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [buildAccountProfileWritableRow(headers, profile)],
+        },
+      });
+      return;
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [buildAccountProfileWritableRow(headers, profile)],
+      },
+    });
+  }
+
   private async readCachedPremiumRows() {
     const spreadsheetId = this.config.spreadsheetId;
 
@@ -3013,6 +3237,111 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
     })
     .filter((player): player is PlayerDirectoryItem => Boolean(player))
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
+function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
+  return rowsToRecords(rows)
+    .map((record) => {
+      const userId = pick(record, ["user_id", "usuario_id"]);
+      const username = pick(record, ["username", "usuario"]);
+
+      if (!userId || !username) {
+        return null;
+      }
+
+      return {
+        userId,
+        username,
+        role: normalizeRoleValue(pick(record, ["rol", "role"])),
+        name: pick(record, ["nombre", "name"]),
+        email: pick(record, ["email", "correo", "mail"]),
+        phone: pick(record, ["telefono", "phone", "whatsapp", "celular"]),
+        profilePhotoDataUrl: pick(record, [
+          "foto_perfil",
+          "profile_photo",
+          "profile_photo_data_url",
+        ]),
+        passwordHash: pick(record, ["password_hash", "hash_password"]),
+        passwordUpdatedAt:
+          parseDateTime(
+            pick(record, ["password_actualizado_en", "password_updated_at"]),
+          ) ?? "",
+        updatedAt: parseDateTime(pick(record, ["actualizado_en", "updated_at"])) ?? "",
+      } satisfies AccountProfileRecord;
+    })
+    .filter((profile): profile is AccountProfileRecord => Boolean(profile));
+}
+
+function buildAccountProfile(
+  user: AuthUser,
+  account?: AccountProfileRecord,
+  player?: PlayerRecord | null,
+): AccountProfile {
+  return {
+    userId: user.id,
+    username: user.username,
+    role: user.role,
+    name: account?.name || player?.name || user.name,
+    email: account?.email ?? "",
+    phone: account?.phone || player?.phone || "",
+    profilePhotoDataUrl: account?.profilePhotoDataUrl ?? "",
+    updatedAt: account?.updatedAt ?? "",
+    passwordUpdatedAt: account?.passwordUpdatedAt ?? "",
+  };
+}
+
+function buildAccountProfileFromInput(
+  input: UpdateAccountProfileInput,
+  existing?: AccountProfileRecord,
+): AccountProfileRecord {
+  return {
+    userId: input.userId,
+    username: input.username,
+    role: input.role,
+    name: input.name.trim(),
+    email: input.email?.trim() ?? "",
+    phone: input.phone?.trim() ?? "",
+    profilePhotoDataUrl: input.profilePhotoDataUrl?.trim() ?? "",
+    passwordHash: existing?.passwordHash ?? "",
+    passwordUpdatedAt: existing?.passwordUpdatedAt ?? "",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function buildAccountProfileWritableRow(
+  headers: string[],
+  profile: AccountProfileRecord,
+) {
+  const values: Record<string, string> = {
+    actualizado_en: profile.updatedAt,
+    email: profile.email,
+    foto_perfil: profile.profilePhotoDataUrl,
+    nombre: profile.name,
+    password_actualizado_en: profile.passwordUpdatedAt,
+    password_hash: profile.passwordHash,
+    phone: profile.phone,
+    profile_photo: profile.profilePhotoDataUrl,
+    profile_photo_data_url: profile.profilePhotoDataUrl,
+    rol: profile.role,
+    role: profile.role,
+    telefono: profile.phone,
+    updated_at: profile.updatedAt,
+    user_id: profile.userId,
+    username: profile.username,
+    usuario: profile.username,
+    usuario_id: profile.userId,
+  };
+
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function normalizeRoleValue(value: string): AuthUser["role"] {
+  return value === "admin" ||
+    value === "treasurer" ||
+    value === "coach" ||
+    value === "player"
+    ? value
+    : "player";
 }
 
 function findPlayerDirectoryRowIndex(
@@ -7585,6 +7914,11 @@ function invalidateDashboardCache() {
 function invalidateSettingsCache() {
   revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:settings");
+}
+
+function invalidateAccountCache() {
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:accounts");
 }
 
 function invalidatePremiumCache() {

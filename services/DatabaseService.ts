@@ -3,6 +3,7 @@ import "server-only";
 import { DEFAULT_APP_SETTINGS } from "@/lib/app-settings";
 import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
+import type { AuthUser } from "@/types/auth";
 import type { CashFlowData, DashboardData, PlayerProfile } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
 import type { FeeCalculatorData } from "@/types/fee-calculator";
@@ -30,6 +31,47 @@ export class DatabaseService implements IDataService {
       "DatabaseService todavia no esta implementado.",
       "UNSUPPORTED_DATA_SOURCE",
     );
+  }
+
+  async getAccountProfile(user: AuthUser) {
+    return {
+      profile: {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        name: user.name,
+        email: "",
+        phone: "",
+        profilePhotoDataUrl: "",
+        updatedAt: "",
+        passwordUpdatedAt: "",
+      },
+      source: {
+        provider: "postgresql" as const,
+        status: "error" as const,
+        message: "DatabaseService todavia no esta implementado.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  async updateAccountProfile(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async updateAccountPassword(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async getAccountAuthOverride() {
+    return null;
   }
 
   async getDashboardData(

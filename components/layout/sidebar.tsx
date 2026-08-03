@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Trophy,
+  UserRound,
   UsersRound,
   WalletCards,
 } from "lucide-react";
@@ -28,6 +29,7 @@ interface SidebarProps {
 }
 
 const iconMap = {
+  account: UserRound,
   api: FileKey2,
   audit: ShieldCheck,
   dashboard: LayoutDashboard,

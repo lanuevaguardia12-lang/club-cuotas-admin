@@ -1,4 +1,11 @@
 import type {
+  AccountAuthOverride,
+  AccountProfileData,
+  UpdateAccountPasswordInput,
+  UpdateAccountProfileInput,
+} from "@/types/account";
+import type { AuthUser } from "@/types/auth";
+import type {
   CashFlowData,
   DashboardData,
   PlayerProfile,
@@ -32,6 +39,13 @@ import type { AppSettingsData, UpdateAppSettingsInput } from "@/types/settings";
 export interface IDataService {
   getAppSettings(): Promise<AppSettingsData>;
   updateAppSettings(input: UpdateAppSettingsInput): Promise<void>;
+  getAccountProfile(user: AuthUser): Promise<AccountProfileData>;
+  updateAccountProfile(input: UpdateAccountProfileInput): Promise<void>;
+  updateAccountPassword(input: UpdateAccountPasswordInput): Promise<void>;
+  getAccountAuthOverride(
+    userId: string,
+    username: string,
+  ): Promise<AccountAuthOverride | null>;
   getDashboardData(period?: string): Promise<DashboardData>;
   getCashFlowData(period?: string): Promise<CashFlowData>;
   upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;

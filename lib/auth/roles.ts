@@ -2,6 +2,7 @@ import type { AuthRole, AuthUser } from "@/types/auth";
 
 export type Permission =
   | "dashboard:read"
+  | "account:manage"
   | "players:read"
   | "players:write"
   | "cash-flow:read"
@@ -36,6 +37,7 @@ export const roleDescriptions: Record<AuthRole, string> = {
 const rolePermissions: Record<AuthRole, Permission[]> = {
   admin: [
     "dashboard:read",
+    "account:manage",
     "players:read",
     "players:write",
     "cash-flow:read",
@@ -55,14 +57,16 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
   ],
   coach: [
     "dashboard:read",
+    "account:manage",
     "players:read",
     "players:write",
     "notifications:manage",
     "player-of-match:vote",
   ],
-  player: ["player:self:read", "player-of-match:vote"],
+  player: ["account:manage", "player:self:read", "player-of-match:vote"],
   treasurer: [
     "dashboard:read",
+    "account:manage",
     "players:read",
     "cash-flow:read",
     "cash-flow:write",
@@ -92,6 +96,10 @@ export function hasPermission(user: AuthUser | null | undefined, permission: Per
 export function canAccessRoute(user: AuthUser, href: string) {
   if (href.startsWith("/settings")) {
     return hasPermission(user, "settings:write");
+  }
+
+  if (href.startsWith("/account")) {
+    return hasPermission(user, "account:manage");
   }
 
   if (href.startsWith("/mi-cuota")) {
