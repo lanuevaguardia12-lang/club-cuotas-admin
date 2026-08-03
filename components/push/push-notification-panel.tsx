@@ -21,7 +21,11 @@ interface PushConfigResponse {
   publicKey: string;
 }
 
-export function PushNotificationPanel() {
+interface PushNotificationPanelProps {
+  playerId?: string;
+}
+
+export function PushNotificationPanel({ playerId }: PushNotificationPanelProps) {
   const [status, setStatus] = useState<PushStatus>("checking");
   const [publicKey, setPublicKey] = useState("");
   const [message, setMessage] = useState("");
@@ -108,7 +112,10 @@ export function PushNotificationPanel() {
         }));
 
       const response = await fetch("/api/push/subscriptions", {
-        body: JSON.stringify(subscription.toJSON()),
+        body: JSON.stringify({
+          ...subscription.toJSON(),
+          playerId,
+        }),
         headers: {
           "content-type": "application/json",
         },

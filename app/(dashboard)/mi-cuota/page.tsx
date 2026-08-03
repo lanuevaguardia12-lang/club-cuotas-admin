@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
+import type { AuthUser } from "@/types/auth";
 import type { PlayerMonthPaymentStatus } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,9 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
     redirect("/login?redirectTo=/mi-cuota");
   }
 
-  if (user.role !== "player" || !user.playerId) {
+  const playerLookups = getPlayerLookupCandidates(user);
+
+  if (user.role !== "player" || playerLookups.length === 0) {
     return (
       <EmptySection
         eyebrow="Acceso de jugador"
@@ -52,14 +55,14 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
 
   const params = await searchParams;
   const selectedYear = parseYear(params.year);
-  const profile = await getDataService().getPlayerProfile(user.playerId, selectedYear);
+  const profile = await findPlayerProfile(playerLookups, selectedYear);
 
   if (!profile) {
     return (
       <EmptySection
         eyebrow="Jugador no encontrado"
         title="Mi cuota"
-        description="No encontramos un jugador asociado a este usuario. Revisá el playerId configurado en AUTH_USERS_JSON."
+        description="No encontramos un jugador asociado a este usuario. Revisá que el playerId o el nombre configurado en AUTH_USERS_JSON coincida con el ABM de jugadores."
       />
     );
   }
@@ -110,7 +113,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
           </CardContent>
         </Card>
 
-        <PushNotificationPanel />
+        <PushNotificationPanel playerId={profile.id} />
       </section>
 
       <Card>
@@ -174,6 +177,30 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+async function findPlayerProfile(playerLookups: string[], year?: number) {
+  const dataService = getDataService();
+
+  for (const lookup of playerLookups) {
+    const profile = await dataService.getPlayerProfile(lookup, year);
+
+    if (profile) {
+      return profile;
+    }
+  }
+
+  return null;
+}
+
+function getPlayerLookupCandidates(user: AuthUser) {
+  return Array.from(
+    new Set(
+      [user.playerId, user.id, user.username, user.name]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
   );
 }
 

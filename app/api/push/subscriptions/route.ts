@@ -15,6 +15,7 @@ const subscriptionSchema = z.object({
     auth: z.string().min(1),
     p256dh: z.string().min(1),
   }),
+  playerId: z.string().trim().min(1).optional(),
 });
 
 const deleteSchema = z.object({
@@ -49,10 +50,12 @@ export async function POST(request: NextRequest) {
   }
 
   const dataService = getDataService();
+  const playerId =
+    user.role === "player" ? (parsed.data.playerId ?? user.playerId) : user.playerId;
 
   await dataService.upsertPushSubscription({
     userId: user.id,
-    playerId: user.playerId,
+    playerId,
     endpoint: parsed.data.endpoint,
     keys: parsed.data.keys,
     userAgent: request.headers.get("user-agent") ?? undefined,
@@ -65,7 +68,7 @@ export async function POST(request: NextRequest) {
       entityId: user.id,
       summary: "Dispositivo suscripto a push notifications.",
       metadata: {
-        playerId: user.playerId ?? null,
+        playerId: playerId ?? null,
       },
     })
     .catch(() => undefined);

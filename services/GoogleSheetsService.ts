@@ -1589,9 +1589,10 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
       const { players, fees } = await this.readDashboardRecords();
+      const lookupKeys = buildPlayerLookupKeys(playerId);
       const player =
-        players.find((candidate) => candidate.id === playerId) ??
-        buildPlayerFromFees(playerId, fees);
+        players.find((candidate) => playerMatchesLookup(candidate, lookupKeys)) ??
+        buildPlayerFromFees(playerId, fees, lookupKeys);
 
       if (!player) {
         return null;
@@ -5592,14 +5593,22 @@ function buildPlayerTableRows(
   });
 }
 
-function buildPlayerFromFees(playerId: string, fees: FeeRecord[]): PlayerRecord | null {
-  if (!fees.some((fee) => fee.playerId === playerId)) {
+function buildPlayerFromFees(
+  playerId: string,
+  fees: FeeRecord[],
+  lookupKeys = buildPlayerLookupKeys(playerId),
+): PlayerRecord | null {
+  const fee = fees.find((candidate) =>
+    lookupSetsIntersect(buildPlayerLookupKeys(candidate.playerId), lookupKeys),
+  );
+
+  if (!fee) {
     return null;
   }
 
   return {
-    id: playerId,
-    name: playerId,
+    id: fee.playerId,
+    name: fee.playerId,
     category: "Sin categoria",
     phone: "-",
     email: "",
@@ -5607,6 +5616,13 @@ function buildPlayerFromFees(playerId: string, fees: FeeRecord[]): PlayerRecord 
     observations: "-",
     status: "",
   };
+}
+
+function playerMatchesLookup(player: PlayerRecord, lookupKeys: Set<string>) {
+  return lookupSetsIntersect(
+    buildPlayerLookupKeys(player.id, player.name, player.email, player.phone),
+    lookupKeys,
+  );
 }
 
 function buildPlayerProfile(
@@ -5835,6 +5851,68 @@ function createClubPlayerId(name: string) {
   }
 
   return normalizeHeader(normalized).replace(/_/g, "-");
+}
+
+function buildPlayerLookupKeys(...values: Array<string | undefined | null>) {
+  const keys = new Set<string>();
+
+  for (const value of values) {
+    addPlayerLookupKeys(keys, value);
+  }
+
+  return keys;
+}
+
+function addPlayerLookupKeys(keys: Set<string>, value?: string | null) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) {
+    return;
+  }
+
+  addPlayerLookupKeyVariants(keys, rawValue);
+
+  try {
+    const decodedValue = decodeURIComponent(rawValue);
+
+    if (decodedValue !== rawValue) {
+      addPlayerLookupKeyVariants(keys, decodedValue);
+    }
+  } catch {
+    // The value can already be a plain ID instead of a URL-encoded segment.
+  }
+}
+
+function addPlayerLookupKeyVariants(keys: Set<string>, value: string) {
+  const trimmedValue = value.trim();
+  const normalizedName = normalizeClubPlayerName(trimmedValue);
+  const headerKey = normalizeHeader(trimmedValue);
+
+  for (const key of [
+    trimmedValue,
+    trimmedValue.toLowerCase(),
+    trimmedValue.replace(/_/g, "-"),
+    trimmedValue.replace(/-/g, "_"),
+    normalizedName,
+    normalizeHeader(normalizedName),
+    createClubPlayerId(normalizedName),
+    headerKey,
+    headerKey.replace(/_/g, "-"),
+  ]) {
+    if (key) {
+      keys.add(key);
+    }
+  }
+}
+
+function lookupSetsIntersect(first: Set<string>, second: Set<string>) {
+  for (const key of first) {
+    if (second.has(key)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function createUniqueClubPlayerId(baseId: string, seenIds: Set<string>) {
