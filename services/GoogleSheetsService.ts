@@ -4547,7 +4547,10 @@ function buildPlayerFeeCalculation({
   const playedMatches = playerMatches.length;
   const attendanceRate =
     totalMatchesPreviousPeriod > 0 ? playedMatches / totalMatchesPreviousPeriod : 0;
-  const refundPercent = findRefundPercent(refundPolicy, attendanceRate * 100);
+  const refundPercent =
+    previousQuotaWithAdjustmentsAndRefunds > 0
+      ? findRefundPercent(refundPolicy, attendanceRate * 100)
+      : 0;
   const refundAmount = previousQuotaWithAdjustmentsAndRefunds * (refundPercent / 100);
   const expenseCredit = expenseCredits
     .filter(
@@ -4630,7 +4633,10 @@ function buildQuotaWithAdjustmentsAndRefundsByPlayerForPeriod({
         getPlayerQuotaValue(previousQuotaByPlayer, player) ?? fallbackPreviousBaseQuota;
       const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
       const attendanceRate = totalMatches > 0 ? playerMatches.length / totalMatches : 0;
-      const refundPercent = findRefundPercent(refundPolicy, attendanceRate * 100);
+      const refundPercent =
+        previousQuotaWithAdjustmentsAndRefunds > 0
+          ? findRefundPercent(refundPolicy, attendanceRate * 100)
+          : 0;
       const refundAmount = previousQuotaWithAdjustmentsAndRefunds * (refundPercent / 100);
 
       setPlayerQuotaValue(quotasByPlayer, player, Math.max(baseQuota - refundAmount, 0));
@@ -7462,6 +7468,14 @@ function getFeeCalculatorQuotaDefinition({
   const previousCosts = activeCosts.filter((cost) =>
     isCostActiveForPeriod(cost, previousPeriod),
   );
+
+  if (previousCosts.length === 0) {
+    return {
+      status: reasons.length > 0 ? "undefined" : "defined",
+      reasons,
+    };
+  }
+
   const requiredActualKinds = [
     { kind: "court" as const, label: "cancha" },
     { kind: "coach" as const, label: "DT" },
