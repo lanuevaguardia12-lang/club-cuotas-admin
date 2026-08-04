@@ -334,19 +334,19 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={CircleDollarSign}
-          label="Cuota base promedio"
+          label="Cuota base"
           value={formatCurrency(data.summary.plannedCurrentQuota)}
-          detail={`Promedio de costos asignados de ${formatPeriod(data.period)}`}
+          detail={`Suma de costos de ${formatPeriod(data.period)}`}
         />
         <MetricCard
           icon={RotateCcw}
-          label="Ajuste reales promedio"
+          label="Ajuste reales"
           value={formatCurrency(data.summary.previousCostVariance)}
           detail={`${data.adjustments.length} conceptos de ${formatPeriod(data.previousPeriod)}`}
         />
         <MetricCard
           icon={CalendarDays}
-          label="Cuota con ajustes promedio"
+          label="Cuota con ajustes"
           value={formatCurrency(data.summary.baseQuota)}
           detail={`Base +/- reales de ${formatPeriod(data.previousPeriod)}`}
         />
