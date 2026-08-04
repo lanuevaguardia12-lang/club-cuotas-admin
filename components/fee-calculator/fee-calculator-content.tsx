@@ -564,7 +564,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
           </CardContent>
         </Card>
 
-        <RefundPolicyEditor rules={data.refundPolicy} />
+        <RefundPolicyEditor period={data.period} rules={data.refundPolicy} />
       </div>
 
       <CostList
@@ -649,7 +649,13 @@ function FeeCalculatorNotice({
   return null;
 }
 
-function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
+function RefundPolicyEditor({
+  period,
+  rules,
+}: {
+  period: string;
+  rules: FeeRefundPolicyRule[];
+}) {
   const router = useRouter();
   const [rows, setRows] = useState(() => rules.map(ruleToEditablePolicyRow));
   const [saving, setSaving] = useState(false);
@@ -687,6 +693,7 @@ function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
 
     try {
       await saveFeeRefundPolicy({
+        period,
         rules: rows.map((row) => ({
           fromPercent: Number(row.fromPercent),
           toPercent: Number(row.toPercent),

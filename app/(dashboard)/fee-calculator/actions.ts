@@ -6,6 +6,7 @@ import { z } from "zod";
 import { userToAuditActor } from "@/lib/audit";
 import { assertPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getNextPeriod, sendDefinedFeeNotifications } from "@/lib/fee-notifications";
 import { getDataService } from "@/services/data-service";
 
 const periodSchema = z.string().regex(/^\d{4}-\d{2}$/);
@@ -32,6 +33,7 @@ const actualSchema = z.object({
 });
 
 const refundPolicySchema = z.object({
+  period: periodSchema.optional(),
   rules: z
     .array(
       z
@@ -125,10 +127,17 @@ export async function saveFeeCalculatorCost(input: unknown) {
         },
       })
       .catch(() => undefined);
+    await sendDefinedFeeNotifications({
+      actor: userToAuditActor(user),
+      period: parsed.period,
+      trigger: "calculator",
+    }).catch(() => undefined);
   }
 
   revalidatePath("/fee-calculator");
   revalidatePath("/cash-flow");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
   revalidatePath("/");
 
   return { ok: true };
@@ -157,6 +166,8 @@ export async function deleteFeeCalculatorCost(costId: string) {
   }
 
   revalidatePath("/fee-calculator");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
 
   return { ok: true };
 }
@@ -184,6 +195,8 @@ export async function resetFeeCalculatorCosts() {
   }
 
   revalidatePath("/fee-calculator");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
   revalidatePath("/");
   revalidatePath("/cash-flow");
 
@@ -214,9 +227,16 @@ export async function saveFeeCalculatorActual(input: unknown) {
         },
       })
       .catch(() => undefined);
+    await sendDefinedFeeNotifications({
+      actor: userToAuditActor(user),
+      period: getNextPeriod(parsed.period),
+      trigger: "calculator",
+    }).catch(() => undefined);
   }
 
   revalidatePath("/fee-calculator");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
 
   return { ok: true };
 }
@@ -242,9 +262,18 @@ export async function saveFeeRefundPolicy(input: unknown) {
         },
       })
       .catch(() => undefined);
+    if (parsed.period) {
+      await sendDefinedFeeNotifications({
+        actor: userToAuditActor(user),
+        period: parsed.period,
+        trigger: "calculator",
+      }).catch(() => undefined);
+    }
   }
 
   revalidatePath("/fee-calculator");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
 
   return { ok: true };
 }
@@ -273,9 +302,18 @@ export async function updateFeeCalculatorPlayerStatus(input: unknown) {
         },
       })
       .catch(() => undefined);
+    if (parsed.status === "active") {
+      await sendDefinedFeeNotifications({
+        actor: userToAuditActor(user),
+        period: parsed.period,
+        trigger: "calculator",
+      }).catch(() => undefined);
+    }
   }
 
   revalidatePath("/fee-calculator");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
   revalidatePath("/");
   revalidatePath("/cash-flow");
 
