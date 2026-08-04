@@ -577,6 +577,11 @@ La cuota base del mes actual se arma con los costos vigentes en
 `CalculadoraCostos`. Cada costo calcula `monto * cantidad_estimada` y luego lo
 divide por `dividir_entre`.
 
+Cada costo puede aplicar a `todos_activos` o a una lista de jugadores en
+`jugadores_asignados`. La asignacion no cambia el divisor: el monto por jugador
+siempre es `monto * cantidad_estimada / dividir_entre`, y esa parte se suma solo
+a los jugadores asignados.
+
 Los montos de costos aceptan decimales finos, por ejemplo `1473.684211`.
 
 Los gastos personales cargados en `Gastos nueva guardia` se aplican siempre a mes
@@ -611,8 +616,8 @@ nombre del costo para `court` y `coach`. Esto evita que una correccion quede
 atada al mes en que se creo originalmente el gasto.
 
 La devolucion ya no toma la cuota base desde el Sheet viejo de cuotas. La app
-calcula la cuota base del mes anterior con la misma estructura de costos y usa
-ese valor como base de devolucion.
+calcula la cuota con ajustes y devoluciones del mes anterior para cada jugador y
+usa ese valor como base de devolucion del mes siguiente.
 
 La devolucion se calcula con `Politica devoluciones`, editable desde la app:
 

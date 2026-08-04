@@ -12,6 +12,7 @@ export interface FeeCalculatorCost {
   amount: number;
   repeatsMonthly: boolean;
   splitBetween: number;
+  assignedPlayerIds: string[];
   forecastUnits: number;
   notes: string;
   active: boolean;
@@ -85,9 +86,11 @@ export interface FeePlayerCalculation {
   baseQuota: number;
   plannedCurrentQuota: number;
   previousBaseQuota: number;
+  previousQuotaWithAdjustmentsAndRefunds: number;
   previousCostVariance: number;
   refundPercent: number;
   refundAmount: number;
+  quotaWithAdjustmentsAndRefunds: number;
   expenseCredit: number;
   finalQuota: number;
   attendanceRate: number;
@@ -137,6 +140,7 @@ export interface UpsertFeeCalculatorCostInput {
   amount: number;
   repeatsMonthly: boolean;
   splitBetween: number;
+  assignedPlayerIds?: string[];
   forecastUnits: number;
   notes?: string;
 }

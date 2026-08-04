@@ -18,6 +18,7 @@ const costSchema = z.object({
   period: periodSchema,
   amount: numericSchema.pipe(z.number().min(0)),
   splitBetween: numericSchema.pipe(z.number().int().min(1)),
+  assignedPlayerIds: z.array(z.string().trim().min(1)).optional(),
   forecastUnits: numericSchema.pipe(z.number().min(0)),
   notes: z.string().trim().max(500).optional(),
 });

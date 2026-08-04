@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CalendarDays,
+  CircleHelp,
   CircleDollarSign,
   Copy,
   ListChecks,
@@ -46,18 +47,30 @@ interface FeeCalculatorContentProps {
   data: FeeCalculatorData;
 }
 
-const costSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().trim().min(2, "Ingresá un nombre.").max(120),
-  type: z.enum(["fixed", "court", "coach", "custom"]),
-  period: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes del costo."),
-  amount: z.number().min(0, "El monto no puede ser negativo."),
-  splitBetween: z.number().int().min(1, "Debe dividirse por al menos 1."),
-  forecastUnits: z.number().min(0, "La cantidad no puede ser negativa."),
-  notes: z.string().trim().max(500).optional(),
-});
+const costSchema = z
+  .object({
+    id: z.string().optional(),
+    name: z.string().trim().min(2, "Ingresá un nombre.").max(120),
+    type: z.enum(["fixed", "court", "coach", "custom"]),
+    period: z.string().regex(/^\d{4}-\d{2}$/, "Elegí el mes del costo."),
+    amount: z.number().min(0, "El monto no puede ser negativo."),
+    splitBetween: z.number().int().min(1, "Debe dividirse por al menos 1."),
+    assignedPlayerIds: z.array(z.string()).default([]),
+    assignmentMode: z.enum(["all_active", "custom"]).default("all_active"),
+    forecastUnits: z.number().min(0, "La cantidad no puede ser negativa."),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .refine(
+    (values) =>
+      values.assignmentMode === "all_active" || values.assignedPlayerIds.length > 0,
+    {
+      message: "Elegí al menos un jugador o usá todos los activos.",
+      path: ["assignedPlayerIds"],
+    },
+  );
 
-type CostFormValues = z.infer<typeof costSchema>;
+type CostFormValues = z.input<typeof costSchema>;
+type CostSubmitValues = z.output<typeof costSchema>;
 
 const typeLabels: Record<FeeCalculatorCostType, string> = {
   coach: "Director técnico",
@@ -99,11 +112,20 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     register,
     reset,
     watch,
-  } = useForm<CostFormValues>({
+  } = useForm<CostFormValues, unknown, CostSubmitValues>({
     resolver: zodResolver(costSchema),
     defaultValues: getDefaultCostValues(data),
   });
   const selectedType = watch("type");
+  const assignmentMode = watch("assignmentMode");
+  const assignedPlayerIds = watch("assignedPlayerIds") ?? [];
+  const activePlayers = useMemo(
+    () =>
+      data.players
+        .filter((player) => player.status === "active")
+        .sort((left, right) => left.name.localeCompare(right.name, "es")),
+    [data.players],
+  );
   const currentPeriodCosts = useMemo(
     () => data.costs.filter((cost) => isCostActiveInPeriod(cost, data.period)),
     [data.costs, data.period],
@@ -125,10 +147,17 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     [data.playerCalculations],
   );
 
-  async function handleSaveCost(values: CostFormValues) {
+  async function handleSaveCost(values: CostSubmitValues) {
     setSavingMessage("");
     const isEditing = Boolean(editingCostName && values.id);
-    const costInput = isEditing ? values : { ...values, id: undefined };
+    const selectedAssignedPlayerIds =
+      values.assignmentMode === "custom" ? values.assignedPlayerIds : [];
+    const costInput = {
+      ...values,
+      id: isEditing ? values.id : undefined,
+      assignedPlayerIds: selectedAssignedPlayerIds,
+      splitBetween: values.splitBetween,
+    };
 
     setLoadingMessage(isEditing ? "Actualizando costo..." : "Guardando costo...");
 
@@ -225,6 +254,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
       period: cost.startPeriod,
       amount: cost.amount,
       splitBetween: cost.splitBetween,
+      assignedPlayerIds: cost.assignedPlayerIds,
+      assignmentMode: cost.assignedPlayerIds.length > 0 ? "custom" : "all_active",
       forecastUnits: cost.forecastUnits,
       notes: cost.notes,
     });
@@ -268,6 +299,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
             period,
             amount: cost.amount,
             splitBetween: cost.splitBetween,
+            assignedPlayerIds: cost.assignedPlayerIds,
             forecastUnits: cost.forecastUnits,
             notes: cost.notes,
           });
@@ -302,19 +334,19 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={CircleDollarSign}
-          label="Cuota base"
+          label="Cuota base promedio"
           value={formatCurrency(data.summary.plannedCurrentQuota)}
-          detail={`Suma de costos de ${formatPeriod(data.period)}`}
+          detail={`Promedio de costos asignados de ${formatPeriod(data.period)}`}
         />
         <MetricCard
           icon={RotateCcw}
-          label="Ajuste reales"
+          label="Ajuste reales promedio"
           value={formatCurrency(data.summary.previousCostVariance)}
           detail={`${data.adjustments.length} conceptos de ${formatPeriod(data.previousPeriod)}`}
         />
         <MetricCard
           icon={CalendarDays}
-          label="Cuota con ajustes"
+          label="Cuota con ajustes promedio"
           value={formatCurrency(data.summary.baseQuota)}
           detail={`Base +/- reales de ${formatPeriod(data.previousPeriod)}`}
         />
@@ -446,6 +478,49 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
                   />
                 </Field>
 
+                <Field label="Aplicar costo a" error={errors.assignedPlayerIds?.message}>
+                  <div className="grid gap-2">
+                    <div className="border-input bg-background grid gap-2 rounded-md border p-3 text-sm">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="all_active"
+                          {...register("assignmentMode")}
+                        />
+                        <span>Todos los activos</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="custom"
+                          {...register("assignmentMode")}
+                        />
+                        <span>Elegir jugadores</span>
+                      </label>
+                    </div>
+                    <select
+                      multiple
+                      size={Math.min(Math.max(activePlayers.length, 4), 8)}
+                      disabled={assignmentMode !== "custom"}
+                      {...register("assignedPlayerIds")}
+                      className="border-input bg-background focus:ring-ring min-h-28 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 disabled:opacity-60"
+                    >
+                      {activePlayers.map((player) => (
+                        <option key={player.id} value={player.id}>
+                          {player.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-muted-foreground text-xs">
+                      El costo se divide por el número cargado arriba y esa parte se suma
+                      solo a los jugadores elegidos.
+                      {assignmentMode === "custom"
+                        ? ` Seleccionados: ${assignedPlayerIds.length}.`
+                        : ` Aplica a ${activePlayers.length} activos.`}
+                    </p>
+                  </div>
+                </Field>
+
                 <Field
                   label={
                     selectedType === "court"
@@ -497,6 +572,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
         costs={currentPeriodCosts}
         onEditCost={handleEditCost}
         period={data.period}
+        players={data.players}
       />
 
       <AdjustmentList data={data} />
@@ -632,7 +708,8 @@ function RefundPolicyEditor({ rules }: { rules: FeeRefundPolicyRule[] }) {
       <CardHeader>
         <CardTitle>Política de devoluciones</CardTitle>
         <p className="text-muted-foreground text-sm">
-          Se aplica sobre la cuota base del mes anterior según asistencia.
+          Se aplica sobre la cuota con ajustes y devoluciones del mes anterior según
+          asistencia.
         </p>
       </CardHeader>
       <CardContent className="grid gap-3">
@@ -719,11 +796,13 @@ function CostList({
   costs,
   onEditCost,
   period,
+  players,
 }: {
   canMaintain: boolean;
   costs: FeeCalculatorCost[];
   onEditCost: (cost: FeeCalculatorCost) => void;
   period: string;
+  players: FeeCalculatorData["players"];
 }) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState("");
@@ -859,9 +938,10 @@ function CostList({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
                 <Info label="Monto unitario" value={formatPreciseCurrency(cost.amount)} />
                 <Info label="Divide" value={String(cost.splitBetween)} />
+                <Info label="Aplica a" value={getCostAssignmentLabel(cost, players)} />
                 <Info
                   label={getUnitLabel(cost)}
                   value={formatNumber(cost.forecastUnits)}
@@ -1344,8 +1424,8 @@ function AttendanceBreakdown({
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
           {data.summary.totalMatchesPreviousPeriod} partidos jugados en el mes. Este
-          porcentaje define la devolución sobre la cuota base calculada por la app para{" "}
-          {formatPeriod(data.previousPeriod)}.
+          porcentaje define la devolución sobre la cuota con ajustes y devoluciones del
+          jugador para {formatPeriod(data.previousPeriod)}.
         </p>
       </div>
 
@@ -1386,7 +1466,7 @@ function AttendanceBreakdown({
                     <td className="px-4 py-3">
                       <div>{formatPercent(row.refundPercent / 100)}</div>
                       <p className="text-muted-foreground text-xs">
-                        sobre {formatCurrency(row.previousBaseQuota)}
+                        sobre {formatCurrency(row.previousQuotaWithAdjustmentsAndRefunds)}
                       </p>
                     </td>
                   </tr>
@@ -1422,7 +1502,7 @@ function AttendanceBreakdown({
                   />
                   <Info
                     label="Base devolución"
-                    value={formatCurrency(row.previousBaseQuota)}
+                    value={formatCurrency(row.previousQuotaWithAdjustmentsAndRefunds)}
                   />
                 </div>
                 <MatchDetails row={row} compact />
@@ -1454,13 +1534,14 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       ) : (
         <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1140px] text-sm">
               <thead className="bg-muted/60">
                 <tr className="border-border border-b">
                   <TableHead>Jugador</TableHead>
                   <TableHead>Base con ajustes</TableHead>
                   <TableHead>Partidos</TableHead>
                   <TableHead>Devolución</TableHead>
+                  <TableHead>Cuota con ajustes y devoluciones</TableHead>
                   <TableHead>Gastos</TableHead>
                   <TableHead>Cuota final</TableHead>
                 </tr>
@@ -1472,27 +1553,51 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                     className="border-border border-b last:border-b-0"
                   >
                     <td className="px-4 py-3 font-medium">{row.playerName}</td>
-                    <td className="px-4 py-3">{formatCurrency(row.baseQuota)}</td>
+                    <td className="px-4 py-3">
+                      <AmountWithHelp
+                        value={formatCurrency(row.baseQuota)}
+                        help={getBaseQuotaHelp(row)}
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <MatchDetails row={row} />
                     </td>
                     <td className="px-4 py-3">
-                      <div>{formatCurrency(row.refundAmount)}</div>
+                      <AmountWithHelp
+                        value={formatCurrency(row.refundAmount)}
+                        help={getRefundHelp(row)}
+                      />
                       <p className="text-muted-foreground text-xs">
                         {formatPercent(row.refundPercent / 100)}
                       </p>
                     </td>
+                    <td className="px-4 py-3 font-medium">
+                      <AmountWithHelp
+                        value={formatCurrency(row.quotaWithAdjustmentsAndRefunds)}
+                        help={getQuotaWithAdjustmentsAndRefundsHelp(row)}
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       {row.expenseCredit > 0 ? (
                         <Badge variant="success">
-                          -{formatCurrency(row.expenseCredit)}
+                          <AmountWithHelp
+                            value={`-${formatCurrency(row.expenseCredit)}`}
+                            help={getExpenseCreditHelp(row)}
+                          />
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground">-</span>
+                        <AmountWithHelp
+                          value="-"
+                          help={getExpenseCreditHelp(row)}
+                          className="text-muted-foreground"
+                        />
                       )}
                     </td>
                     <td className="px-4 py-3 text-base font-semibold">
-                      {formatCurrency(row.finalQuota)}
+                      <AmountWithHelp
+                        value={formatCurrency(row.finalQuota)}
+                        help={getFinalQuotaHelp(row)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -1518,12 +1623,28 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                 <div className="border-primary/20 bg-primary/5 rounded-md border p-3">
                   <p className="text-muted-foreground text-xs">Cuota final</p>
                   <p className="mt-1 text-2xl font-semibold">
-                    {formatCurrency(row.finalQuota)}
+                    <AmountWithHelp
+                      value={formatCurrency(row.finalQuota)}
+                      help={getFinalQuotaHelp(row)}
+                    />
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Info label="Base con ajustes" value={formatCurrency(row.baseQuota)} />
-                  <Info label="Devolución" value={formatCurrency(row.refundAmount)} />
+                  <Info
+                    label="Base con ajustes"
+                    value={formatCurrency(row.baseQuota)}
+                    help={getBaseQuotaHelp(row)}
+                  />
+                  <Info
+                    label="Devolución"
+                    value={formatCurrency(row.refundAmount)}
+                    help={getRefundHelp(row)}
+                  />
+                  <Info
+                    label="Cuota con ajustes y devoluciones"
+                    value={formatCurrency(row.quotaWithAdjustmentsAndRefunds)}
+                    help={getQuotaWithAdjustmentsAndRefundsHelp(row)}
+                  />
                   <Info
                     label="Gastos"
                     value={
@@ -1531,6 +1652,7 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                         ? `-${formatCurrency(row.expenseCredit)}`
                         : "-"
                     }
+                    help={getExpenseCreditHelp(row)}
                   />
                   <Info label="Asistencia" value={formatPercent(row.attendanceRate)} />
                 </div>
@@ -1644,12 +1766,44 @@ function Field({
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({ help, label, value }: { help?: string; label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="text-muted-foreground text-xs">{label}</p>
-      <p className="truncate font-medium">{value}</p>
+      <p className="truncate font-medium">
+        <AmountWithHelp value={value} help={help} />
+      </p>
     </div>
+  );
+}
+
+function AmountWithHelp({
+  className = "",
+  help,
+  value,
+}: {
+  className?: string;
+  help?: string;
+  value: string;
+}) {
+  return (
+    <span className={`inline-flex min-w-0 items-center gap-1 ${className}`}>
+      <span className="truncate">{value}</span>
+      {help ? <HelpIcon text={help} /> : null}
+    </span>
+  );
+}
+
+function HelpIcon({ text }: { text: string }) {
+  return (
+    <span
+      tabIndex={0}
+      title={text}
+      aria-label={text}
+      className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex shrink-0 cursor-help rounded-full outline-none focus-visible:ring-2"
+    >
+      <CircleHelp className="size-3.5" aria-hidden="true" />
+    </span>
   );
 }
 
@@ -1669,9 +1823,57 @@ function getDefaultCostValues(data: FeeCalculatorData): CostFormValues {
     period: data.period,
     amount: 0,
     splitBetween: data.summary.players || 1,
+    assignedPlayerIds: [],
+    assignmentMode: "all_active",
     forecastUnits: 1,
     notes: "",
   };
+}
+
+function getBaseQuotaHelp(row: FeePlayerCalculation) {
+  return [
+    "Base con ajustes.",
+    `Toma los costos asignados a ${row.playerName}, dividiendo cada costo por el campo Dividir por personas.`,
+    `${formatCurrency(row.plannedCurrentQuota)} de cuota base del mes ${formatSignedCurrency(
+      row.previousCostVariance,
+    )} de ajustes reales del mes anterior = ${formatCurrency(row.baseQuota)}.`,
+  ].join(" ");
+}
+
+function getRefundHelp(row: FeePlayerCalculation) {
+  return [
+    "Devolución por asistencia.",
+    `Toma ${formatPercent(row.refundPercent / 100)} sobre ${formatCurrency(
+      row.previousQuotaWithAdjustmentsAndRefunds,
+    )}, que es la cuota con ajustes y devoluciones del mes anterior de ${row.playerName}.`,
+    `Resultado: ${formatCurrency(row.refundAmount)}.`,
+  ].join(" ");
+}
+
+function getQuotaWithAdjustmentsAndRefundsHelp(row: FeePlayerCalculation) {
+  return `Base con ajustes ${formatCurrency(row.baseQuota)} menos devolución ${formatCurrency(
+    row.refundAmount,
+  )} = ${formatCurrency(row.quotaWithAdjustmentsAndRefunds)}. Esta es la base que usa el mes siguiente para calcular devolución.`;
+}
+
+function getExpenseCreditHelp(row: FeePlayerCalculation) {
+  if (row.expenseCredit <= 0) {
+    return `No hay gastos a favor cargados para ${row.playerName} en ${formatPeriod(
+      row.previousPeriod,
+    )}.`;
+  }
+
+  return `Gastos a favor de ${row.playerName} en ${formatPeriod(
+    row.previousPeriod,
+  )}: ${formatCurrency(row.expenseCredit)}. Se restan después de la cuota con ajustes y devoluciones.`;
+}
+
+function getFinalQuotaHelp(row: FeePlayerCalculation) {
+  return `Cuota final = cuota con ajustes y devoluciones ${formatCurrency(
+    row.quotaWithAdjustmentsAndRefunds,
+  )} menos gastos a favor ${formatCurrency(row.expenseCredit)} = ${formatCurrency(
+    row.finalQuota,
+  )}.`;
 }
 
 function ruleToEditablePolicyRow(
@@ -1763,6 +1965,31 @@ function getCostTypeLabel(cost: FeeCalculatorCost) {
   }
 
   return typeLabels[cost.type];
+}
+
+function getCostAssignmentLabel(
+  cost: FeeCalculatorCost,
+  players: FeeCalculatorData["players"],
+) {
+  if (cost.assignedPlayerIds.length === 0) {
+    return "Todos activos";
+  }
+
+  const playerNames = cost.assignedPlayerIds.map((playerId) => {
+    const normalizedPlayerId = normalizeText(playerId);
+    const player = players.find(
+      (candidate) =>
+        candidate.id === playerId || normalizeText(candidate.name) === normalizedPlayerId,
+    );
+
+    return player?.name ?? playerId;
+  });
+
+  if (playerNames.length <= 2) {
+    return playerNames.join(", ");
+  }
+
+  return `${playerNames.slice(0, 2).join(", ")} +${playerNames.length - 2}`;
 }
 
 function getAutoActualCostKind(cost: FeeCalculatorCost): "court" | "coach" | undefined {

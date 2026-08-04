@@ -370,6 +370,7 @@ const feeCalculatorCostHeaders = [
   "monto",
   "repite_mensual",
   "dividir_entre",
+  "jugadores_asignados",
   "cantidad_estimada",
   "notas",
   "activo",
@@ -1298,7 +1299,7 @@ export class GoogleSheetsService implements IDataService {
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: feeCalculatorSpreadsheetId,
-        range: `${sheetPrefix}!A:M`,
+        range: `${sheetPrefix}!A:${toColumnName(feeCalculatorCostHeaders.length - 1)}`,
         valueInputOption: "RAW",
         requestBody: {
           values: [
@@ -1318,7 +1319,25 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const [headerRow = [], ...dataRows] = rows;
-    const headers = normalizeWritableHeaders(headerRow, feeCalculatorCostHeaders);
+    const headers = appendMissingWritableHeaders(
+      normalizeWritableHeaders(headerRow, feeCalculatorCostHeaders),
+      feeCalculatorCostHeaders,
+    );
+    const normalizedHeaderRow = headerRow.map((header) =>
+      normalizeHeader(String(header)),
+    );
+
+    if (headers.join("|") !== normalizedHeaderRow.join("|")) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: feeCalculatorSpreadsheetId,
+        range: `${sheetPrefix}!A1:${toColumnName(headers.length - 1)}1`,
+        valueInputOption: "RAW",
+        requestBody: {
+          values: [headers],
+        },
+      });
+    }
+
     const idIndex = findHeaderIndex(headers, ["id", "costo_id"]);
     const targetId = cost.id || createId("cost");
     const targetRowIndex =
@@ -3767,6 +3786,14 @@ function mapRowsToFeeCalculatorCostRecords(rows: unknown[][]): FeeCalculatorCost
         ),
         1,
       ),
+      assignedPlayerIds: parseAssignedPlayerIds(
+        pick(record, [
+          "jugadores_asignados",
+          "assigned_player_ids",
+          "jugadores_del_costo",
+          "aplica_a",
+        ]),
+      ),
       forecastUnits: Math.max(
         parseMoney(
           pick(record, [
@@ -4308,7 +4335,6 @@ function buildFeeCalculatorData({
   revalidateSeconds: number;
 }): FeeCalculatorData {
   const previousPeriod = getPreviousPeriod(period);
-  const periodBeforePrevious = getPreviousPeriod(previousPeriod);
   const playerStatusMap = buildFeeCalculatorPlayerStatusMap(playerStatuses, period);
   const calculatorPlayers = players.map((player) =>
     mapPlayerToFeeCalculatorPlayer(player, playerStatusMap),
@@ -4323,7 +4349,16 @@ function buildFeeCalculatorData({
   const currentPeriodCosts = activeCosts.filter((cost) =>
     isCostActiveForPeriod(cost, period),
   );
-  const effectiveActuals = [previousPeriod, periodBeforePrevious].reduce(
+  const historyStartPeriod = getFeeCalculatorHistoryStartPeriod(
+    activeCosts,
+    actuals,
+    previousPeriod,
+  );
+  const actualPeriods = buildPeriodRange(
+    getPreviousPeriod(historyStartPeriod),
+    previousPeriod,
+  );
+  const effectiveActuals = actualPeriods.reduce(
     (mergedActuals, actualPeriod) =>
       mergeInferredFeeCalculatorActuals(
         activeCosts,
@@ -4333,26 +4368,21 @@ function buildFeeCalculatorData({
       ),
     actuals,
   );
-  const plannedCurrentQuota = calculateBaseQuotaForPeriod(
-    activeCosts,
-    effectiveActuals,
-    period,
-    "forecast",
-  );
   const adjustments = buildFeeCalculatorAdjustments(
     activeCosts,
     effectiveActuals,
     previousPeriod,
   );
-  const previousPeriodBaseQuota = calculateAppBaseQuotaForPeriod(
-    activeCosts,
-    effectiveActuals,
-    previousPeriod,
-  );
-  const previousCostVariance = adjustments.reduce(
-    (total, adjustment) => total + adjustment.variance,
-    0,
-  );
+  const previousQuotaWithAdjustmentsAndRefundsByPlayer =
+    buildQuotaWithAdjustmentsAndRefundsByPlayerForPeriod({
+      period: previousPeriod,
+      players,
+      costs: activeCosts,
+      actuals: effectiveActuals,
+      playerStatuses,
+      refundPolicy,
+      matches,
+    });
   const previousPeriodMatches = matches.filter(
     (match) => match.period === previousPeriod,
   );
@@ -4361,21 +4391,56 @@ function buildFeeCalculatorData({
     previousPeriodMatches.filter(isLocalMatch).length;
   const coachHoursPreviousPeriod =
     previousPeriodMatches.filter((match) => match.coachAttended).length * 3;
-  const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
-  const calculations = activePlayers.map((player) =>
-    buildPlayerFeeCalculation({
+  const calculations = activePlayers.map((player) => {
+    const plannedCurrentQuota = calculatePlayerBaseQuotaForPeriod(
+      activeCosts,
+      effectiveActuals,
+      period,
+      "forecast",
+      player,
+    );
+    const previousCostVariance = calculatePlayerCostVarianceForPeriod(
+      activeCosts,
+      effectiveActuals,
+      previousPeriod,
+      player,
+    );
+    const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
+    const previousBaseQuota = calculatePlayerAppBaseQuotaForPeriod(
+      activeCosts,
+      effectiveActuals,
+      previousPeriod,
+      player,
+    );
+
+    return buildPlayerFeeCalculation({
       player,
       period,
       previousPeriod,
       baseQuota,
       plannedCurrentQuota,
-      previousBaseQuota: previousPeriodBaseQuota,
+      previousBaseQuota,
+      previousQuotaWithAdjustmentsAndRefunds:
+        getPlayerQuotaValue(previousQuotaWithAdjustmentsAndRefundsByPlayer, player) ??
+        previousBaseQuota,
       previousCostVariance,
       matches,
       refundPolicy,
       expenseCredits,
       totalMatchesPreviousPeriod,
-    }),
+    });
+  });
+  const plannedCurrentQuota = averageCalculations(
+    calculations.map((calculation) => calculation.plannedCurrentQuota),
+  );
+  const previousPeriodBaseQuota = averageCalculations(
+    calculations.map((calculation) => calculation.previousBaseQuota),
+  );
+  const previousCostVariance = averageCalculations(
+    calculations.map((calculation) => calculation.previousCostVariance),
+  );
+  const baseQuota = averageCalculations(
+    calculations.map((calculation) => calculation.baseQuota),
   );
 
   return {
@@ -4427,6 +4492,7 @@ function buildPlayerFeeCalculation({
   baseQuota,
   plannedCurrentQuota,
   previousBaseQuota,
+  previousQuotaWithAdjustmentsAndRefunds,
   previousCostVariance,
   matches,
   refundPolicy,
@@ -4439,6 +4505,7 @@ function buildPlayerFeeCalculation({
   baseQuota: number;
   plannedCurrentQuota: number;
   previousBaseQuota: number;
+  previousQuotaWithAdjustmentsAndRefunds: number;
   previousCostVariance: number;
   matches: MatchRecord[];
   refundPolicy: FeeRefundPolicyRule[];
@@ -4446,23 +4513,12 @@ function buildPlayerFeeCalculation({
   totalMatchesPreviousPeriod: number;
 }): FeePlayerCalculation {
   const normalizedPlayerName = normalizeClubPlayerName(player.name);
-  const playerMatches = matches
-    .filter(
-      (match) =>
-        match.period === previousPeriod &&
-        match.players.some(
-          (name) => normalizeClubPlayerName(name) === normalizedPlayerName,
-        ),
-    )
-    .map<FeeMatchDetail>((match) => ({
-      date: match.date,
-      rival: match.rival,
-    }));
+  const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
   const playedMatches = playerMatches.length;
   const attendanceRate =
     totalMatchesPreviousPeriod > 0 ? playedMatches / totalMatchesPreviousPeriod : 0;
   const refundPercent = findRefundPercent(refundPolicy, attendanceRate * 100);
-  const refundAmount = previousBaseQuota * (refundPercent / 100);
+  const refundAmount = previousQuotaWithAdjustmentsAndRefunds * (refundPercent / 100);
   const expenseCredit = expenseCredits
     .filter(
       (credit) =>
@@ -4470,7 +4526,8 @@ function buildPlayerFeeCalculation({
         normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
     )
     .reduce((total, credit) => total + credit.amount, 0);
-  const finalQuota = Math.max(baseQuota - refundAmount - expenseCredit, 0);
+  const quotaWithAdjustmentsAndRefunds = Math.max(baseQuota - refundAmount, 0);
+  const finalQuota = Math.max(quotaWithAdjustmentsAndRefunds - expenseCredit, 0);
 
   return {
     playerId: player.id,
@@ -4480,9 +4537,11 @@ function buildPlayerFeeCalculation({
     baseQuota,
     plannedCurrentQuota,
     previousBaseQuota,
+    previousQuotaWithAdjustmentsAndRefunds,
     previousCostVariance,
     refundPercent,
     refundAmount,
+    quotaWithAdjustmentsAndRefunds,
     expenseCredit,
     finalQuota,
     attendanceRate,
@@ -4490,6 +4549,116 @@ function buildPlayerFeeCalculation({
     totalMatches: totalMatchesPreviousPeriod,
     matches: playerMatches,
   };
+}
+
+function buildQuotaWithAdjustmentsAndRefundsByPlayerForPeriod({
+  period,
+  players,
+  costs,
+  actuals,
+  playerStatuses,
+  refundPolicy,
+  matches,
+}: {
+  period: string;
+  players: PlayerRecord[];
+  costs: FeeCalculatorCost[];
+  actuals: FeeCalculatorActual[];
+  playerStatuses: FeeCalculatorPlayerStatusRecord[];
+  refundPolicy: FeeRefundPolicyRule[];
+  matches: MatchRecord[];
+}) {
+  const historyStartPeriod = getFeeCalculatorHistoryStartPeriod(costs, actuals, period);
+  const quotasByPeriod = new Map<string, Map<string, number>>();
+
+  for (const calculationPeriod of buildPeriodRange(historyStartPeriod, period)) {
+    const previousPeriod = getPreviousPeriod(calculationPeriod);
+    const activePlayers = getActivePlayersForPeriod(
+      players,
+      playerStatuses,
+      calculationPeriod,
+    );
+    const previousQuotaByPlayer = quotasByPeriod.get(previousPeriod);
+    const periodMatches = matches.filter((match) => match.period === previousPeriod);
+    const totalMatches = periodMatches.length;
+    const quotasByPlayer = new Map<string, number>();
+
+    for (const player of activePlayers) {
+      const baseQuota = calculatePlayerAppBaseQuotaForPeriod(
+        costs,
+        actuals,
+        calculationPeriod,
+        player,
+      );
+      const fallbackPreviousBaseQuota = calculatePlayerAppBaseQuotaForPeriod(
+        costs,
+        actuals,
+        previousPeriod,
+        player,
+      );
+      const previousQuotaWithAdjustmentsAndRefunds =
+        getPlayerQuotaValue(previousQuotaByPlayer, player) ?? fallbackPreviousBaseQuota;
+      const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
+      const attendanceRate = totalMatches > 0 ? playerMatches.length / totalMatches : 0;
+      const refundPercent = findRefundPercent(refundPolicy, attendanceRate * 100);
+      const refundAmount = previousQuotaWithAdjustmentsAndRefunds * (refundPercent / 100);
+
+      setPlayerQuotaValue(quotasByPlayer, player, Math.max(baseQuota - refundAmount, 0));
+    }
+
+    quotasByPeriod.set(calculationPeriod, quotasByPlayer);
+  }
+
+  return quotasByPeriod.get(period) ?? new Map<string, number>();
+}
+
+function getPlayerMatchesForPeriod(
+  player: PlayerRecord,
+  matches: MatchRecord[],
+  period: string,
+) {
+  const normalizedPlayerName = normalizeClubPlayerName(player.name);
+
+  return matches
+    .filter(
+      (match) =>
+        match.period === period &&
+        match.players.some(
+          (name) => normalizeClubPlayerName(name) === normalizedPlayerName,
+        ),
+    )
+    .map<FeeMatchDetail>((match) => ({
+      date: match.date,
+      rival: match.rival,
+    }));
+}
+
+function getPlayerQuotaValue(
+  quotasByPlayer: Map<string, number> | undefined,
+  player: PlayerRecord,
+) {
+  if (!quotasByPlayer) {
+    return undefined;
+  }
+
+  return (
+    quotasByPlayer.get(player.id) ??
+    quotasByPlayer.get(normalizeClubPlayerName(player.name))
+  );
+}
+
+function setPlayerQuotaValue(
+  quotasByPlayer: Map<string, number>,
+  player: PlayerRecord,
+  value: number,
+) {
+  quotasByPlayer.set(player.id, value);
+
+  const normalizedPlayerName = normalizeClubPlayerName(player.name);
+
+  if (normalizedPlayerName) {
+    quotasByPlayer.set(normalizedPlayerName, value);
+  }
 }
 
 function buildFeePlayerMatchSummary(
@@ -6715,6 +6884,7 @@ function normalizeFeeCalculatorCostInput(
     amount: Math.max(Number(input.amount), 0),
     repeatsMonthly: false,
     splitBetween: Math.max(Math.round(Number(input.splitBetween)), 1),
+    assignedPlayerIds: normalizeAssignedPlayerIds(input.assignedPlayerIds),
     forecastUnits: Math.max(Number(input.forecastUnits), 0),
     notes: input.notes?.trim() ?? "",
   };
@@ -6891,6 +7061,11 @@ function buildFeeCalculatorCostWritableRow(headers: string[], cost: FeeCalculato
     dividir_entre: cost.splitBetween,
     personas: cost.splitBetween,
     split_between: cost.splitBetween,
+    jugadores_asignados:
+      cost.assignedPlayerIds.length > 0
+        ? cost.assignedPlayerIds.join(", ")
+        : "todos_activos",
+    assigned_player_ids: cost.assignedPlayerIds.join(", "),
     cantidad_estimada: cost.forecastUnits,
     canchas_estimadas: cost.forecastUnits,
     forecast_units: cost.forecastUnits,
@@ -6999,11 +7174,57 @@ function normalizeWritableHeaders(row: unknown[], fallback: string[]) {
   return headers.some(Boolean) ? headers : fallback;
 }
 
+function appendMissingWritableHeaders(headers: string[], fallback: string[]) {
+  const nextHeaders = [...headers];
+
+  for (const header of fallback) {
+    if (!nextHeaders.includes(header)) {
+      nextHeaders.push(header);
+    }
+  }
+
+  return nextHeaders;
+}
+
 function splitPlayerNames(value: string) {
   return value
     .split(/[,;\n]/)
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+function parseAssignedPlayerIds(value: string) {
+  const normalized = normalizeText(value);
+
+  if (
+    !normalized ||
+    ["todos", "todos activos", "todos_activos", "all", "all_active"].includes(normalized)
+  ) {
+    return [];
+  }
+
+  return normalizeAssignedPlayerIds(splitPlayerNames(value));
+}
+
+function normalizeAssignedPlayerIds(values: string[] = []) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .filter((value) => {
+          const normalized = normalizeText(value);
+
+          return ![
+            "todos",
+            "todos activos",
+            "todos_activos",
+            "all",
+            "all_active",
+          ].includes(normalized);
+        }),
+    ),
+  );
 }
 
 function parseLooseBoolean(value: string, fallback = false) {
@@ -7052,24 +7273,33 @@ function findRefundPercent(rules: FeeRefundPolicyRule[], attendancePercent: numb
   return rule?.refundPercent ?? 0;
 }
 
-function calculateAppBaseQuotaForPeriod(
+function calculatePlayerAppBaseQuotaForPeriod(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
   period: string,
+  player: PlayerRecord,
 ) {
   const previousPeriod = getPreviousPeriod(period);
-  const plannedQuota = calculateBaseQuotaForPeriod(costs, actuals, period, "forecast");
-  const previousPlannedQuota = calculateBaseQuotaForPeriod(
+  const plannedQuota = calculatePlayerBaseQuotaForPeriod(
+    costs,
+    actuals,
+    period,
+    "forecast",
+    player,
+  );
+  const previousPlannedQuota = calculatePlayerBaseQuotaForPeriod(
     costs,
     actuals,
     previousPeriod,
     "forecast",
+    player,
   );
-  const previousActualQuota = calculateBaseQuotaForPeriod(
+  const previousActualQuota = calculatePlayerBaseQuotaForPeriod(
     costs,
     actuals,
     previousPeriod,
     "actual",
+    player,
   );
 
   return Math.max(plannedQuota + previousActualQuota - previousPlannedQuota, 0);
@@ -7089,7 +7319,7 @@ function buildFeeCalculatorAdjustments(
         return null;
       }
 
-      const splitBetween = Math.max(cost.splitBetween, 1);
+      const splitBetween = getCostSplitBetween(cost);
       const forecastUnits = cost.forecastUnits;
       const unitDifference = actualUnits - forecastUnits;
       const forecastAmount = cost.amount * forecastUnits;
@@ -7127,27 +7357,70 @@ function buildFeeCalculatorAdjustments(
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
 }
 
-function calculateBaseQuotaForPeriod(
+function calculatePlayerCostVarianceForPeriod(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+  player: PlayerRecord,
+) {
+  return costs
+    .filter((cost) => isCostActiveForPeriod(cost, period))
+    .reduce((total, cost) => {
+      const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
+
+      if (typeof actualUnits !== "number") {
+        return total;
+      }
+
+      const actualShare = calculatePlayerCostShare(
+        cost,
+        costs,
+        actuals,
+        period,
+        "actual",
+        player,
+      );
+      const forecastShare = calculatePlayerCostShare(
+        cost,
+        costs,
+        actuals,
+        period,
+        "forecast",
+        player,
+      );
+
+      return total + actualShare - forecastShare;
+    }, 0);
+}
+
+function calculatePlayerBaseQuotaForPeriod(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
   period: string,
   mode: "forecast" | "actual",
+  player: PlayerRecord,
 ) {
   return costs
     .filter((cost) => isCostActiveForPeriod(cost, period))
     .reduce(
-      (total, cost) => total + calculateCostShare(cost, costs, actuals, period, mode),
+      (total, cost) =>
+        total + calculatePlayerCostShare(cost, costs, actuals, period, mode, player),
       0,
     );
 }
 
-function calculateCostShare(
+function calculatePlayerCostShare(
   cost: FeeCalculatorCost,
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
   period: string,
   mode: "forecast" | "actual",
+  player: PlayerRecord,
 ) {
+  if (!isCostAssignedToPlayer(cost, player)) {
+    return 0;
+  }
+
   const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
   const units =
     mode === "actual" && typeof actualUnits === "number"
@@ -7158,7 +7431,49 @@ function calculateCostShare(
       ? (findActualAmountForCost(cost, costs, actuals, period) ?? cost.amount * units)
       : cost.amount * units;
 
-  return total / Math.max(cost.splitBetween, 1);
+  return total / getCostSplitBetween(cost);
+}
+
+function getCostSplitBetween(cost: FeeCalculatorCost) {
+  return Math.max(cost.splitBetween, 1);
+}
+
+function isCostAssignedToPlayer(cost: FeeCalculatorCost, player: PlayerRecord) {
+  if (cost.assignedPlayerIds.length === 0) {
+    return true;
+  }
+
+  const lookupKeys = buildPlayerLookupKeys(
+    player.id,
+    player.name,
+    player.email,
+    player.phone,
+  );
+
+  return cost.assignedPlayerIds.some((assignedPlayerId) =>
+    lookupSetsIntersect(lookupKeys, buildPlayerLookupKeys(assignedPlayerId)),
+  );
+}
+
+function getActivePlayersForPeriod(
+  players: PlayerRecord[],
+  playerStatuses: FeeCalculatorPlayerStatusRecord[],
+  period: string,
+) {
+  const playerStatusMap = buildFeeCalculatorPlayerStatusMap(playerStatuses, period);
+
+  return players.filter(
+    (player) =>
+      mapPlayerToFeeCalculatorPlayer(player, playerStatusMap).status === "active",
+  );
+}
+
+function averageCalculations(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
 function mergeInferredFeeCalculatorActuals(
@@ -7371,6 +7686,36 @@ function getPreviousPeriod(period: string) {
   const date = new Date(year, month - 2, 1);
 
   return getCurrentPeriod(date);
+}
+
+function getFeeCalculatorHistoryStartPeriod(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  targetPeriod: string,
+) {
+  const dataPeriods = [
+    ...costs.map((cost) => cost.startPeriod),
+    ...actuals.map((actual) => actual.period),
+  ]
+    .filter((period) => period <= targetPeriod)
+    .sort();
+
+  return dataPeriods[0] ?? targetPeriod;
+}
+
+function buildPeriodRange(startPeriod: string, endPeriod: string) {
+  const [startYear, startMonth] = startPeriod.split("-").map(Number);
+  const [endYear, endMonth] = endPeriod.split("-").map(Number);
+  const cursor = new Date(startYear, startMonth - 1, 1);
+  const end = new Date(endYear, endMonth - 1, 1);
+  const periods: string[] = [];
+
+  while (cursor <= end && periods.length < 240) {
+    periods.push(getCurrentPeriod(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return periods.length > 0 ? periods : [endPeriod];
 }
 
 function buildYearPeriods(year: number) {
