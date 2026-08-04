@@ -8,12 +8,13 @@ import {
   Eye,
   Lock,
   Medal,
+  Sparkles,
   Timer,
   Trophy,
   UsersRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState, useTransition, type CSSProperties } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 
 import { submitPlayerOfMatchVote } from "@/app/(dashboard)/player-of-match/actions";
@@ -21,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { cn } from "@/lib/utils";
 import {
   playerOfMatchVoteSchema,
   type PlayerOfMatchVoteFormValues,
@@ -66,7 +68,7 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
   const canVote = match.players.length >= 2 && !alreadyVoted && !votingClosed;
 
   return (
-    <Card>
+    <Card className="club-animate-fade-up overflow-hidden">
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -140,6 +142,7 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
             type="button"
             variant="outline"
             onClick={() => setShowResults((current) => !current)}
+            className={showResults ? "club-animate-select-pop" : undefined}
           >
             <Eye />
             {showResults ? "Ocultar resultados" : "Ver resultados"}
@@ -155,7 +158,7 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
   const podium = match.results.slice(0, 3);
 
   return (
-    <div className="overflow-hidden rounded-md border bg-[#012f77] text-white shadow-sm">
+    <div className="club-animate-fade-up overflow-hidden rounded-md border bg-[#012f77] text-white shadow-sm">
       <div className="relative grid gap-4 p-4 sm:p-5">
         <div className="absolute inset-x-0 top-0 h-24 bg-[#0094dc]" />
         <div className="relative z-10 flex items-start justify-between gap-3">
@@ -185,10 +188,15 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
           </p>
         ) : (
           <div className="relative z-10 grid gap-2 rounded-md border border-white/15 bg-white/10 p-3">
-            {match.results.slice(0, 6).map((result) => (
+            {match.results.slice(0, 6).map((result, index) => (
               <div
                 key={result.playerName}
-                className="flex items-center justify-between gap-3 text-sm"
+                style={
+                  {
+                    "--club-list-delay": `${Math.min(index, 6) * 45}ms`,
+                  } as CSSProperties
+                }
+                className="club-animate-list-in flex items-center justify-between gap-3 text-sm"
               >
                 <span className="truncate">
                   #{result.rank} {result.playerName}
@@ -221,16 +229,22 @@ function PodiumSpot({
     2: "from-slate-100 to-slate-300 text-[#012f77]",
     3: "from-[#c10202] to-[#8f0101] text-white",
   };
+  const delays = {
+    1: "90ms",
+    2: "0ms",
+    3: "150ms",
+  };
 
   return (
     <div
-      className={`flex ${heightClass} flex-col items-center justify-end rounded-md bg-gradient-to-b ${colors[place]} p-3 text-center shadow-lg`}
+      style={{ "--club-rise-delay": delays[place] } as CSSProperties}
+      className={`club-animate-podium-rise flex ${heightClass} flex-col items-center justify-end rounded-md bg-gradient-to-b ${colors[place]} p-3 text-center shadow-lg`}
     >
       <div className="mb-3">
         {place === 1 ? (
-          <Crown className="mx-auto mb-1 size-6" />
+          <Crown className="club-animate-pop-in mx-auto mb-1 size-6" />
         ) : (
-          <Medal className="mx-auto mb-1 size-5" />
+          <Medal className="club-animate-pop-in mx-auto mb-1 size-5" />
         )}
         <p className="text-xs font-bold uppercase">Puesto {place}</p>
       </div>
@@ -308,13 +322,16 @@ function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
       setSuccess(result.ok);
 
       if (result.ok) {
-        router.refresh();
+        window.setTimeout(() => router.refresh(), 650);
       }
     });
   }
 
   return (
-    <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)}>
+    <form
+      className={cn("relative grid gap-4", success ? "club-vote-success" : undefined)}
+      onSubmit={handleSubmit(onSubmit)}
+    >
       <LoadingModal open={isPending} description="Guardando voto..." />
       <input type="hidden" {...register("matchId")} />
       <VoteSelect
@@ -323,6 +340,7 @@ function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
         label="Primer voto"
         players={match.players}
         registration={register("firstVotePlayerName")}
+        selected={Boolean(firstVote)}
       />
       <VoteSelect
         disabledOption={firstVote}
@@ -330,17 +348,23 @@ function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
         label="Segundo voto"
         players={match.players}
         registration={register("secondVotePlayerName")}
+        selected={Boolean(secondVote)}
       />
-      <Button type="submit" disabled={isPending}>
+      <Button
+        type="submit"
+        disabled={isPending}
+        className={success ? "club-animate-select-pop" : undefined}
+      >
         <Trophy />
         Votar jugador del partido
       </Button>
       {message ? (
         <p
-          className={`text-sm font-medium ${
+          className={`club-animate-fade-up flex items-center gap-2 text-sm font-medium ${
             success ? "text-primary" : "text-destructive"
           }`}
         >
+          {success ? <Sparkles className="size-4" aria-hidden="true" /> : null}
           {message}
         </p>
       ) : null}
@@ -354,18 +378,33 @@ function VoteSelect({
   label,
   players,
   registration,
+  selected,
 }: {
   disabledOption?: string;
   error?: string;
   label: string;
   players: string[];
   registration: UseFormRegisterReturn;
+  selected: boolean;
 }) {
   return (
     <label className="grid gap-2 text-sm">
-      <span className="font-medium">{label}</span>
+      <span className="flex items-center gap-2 font-medium">
+        {label}
+        {selected ? (
+          <CheckCircle2
+            className="club-animate-pop-in text-primary size-4"
+            aria-hidden="true"
+          />
+        ) : null}
+      </span>
       <select
-        className="border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
+        className={cn(
+          "border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm transition-[border-color,background-color,box-shadow] outline-none focus-visible:ring-2",
+          selected
+            ? "club-animate-select-pop border-primary bg-primary/5 shadow-sm"
+            : undefined,
+        )}
         {...registration}
       >
         <option value="">Elegí un jugador</option>
