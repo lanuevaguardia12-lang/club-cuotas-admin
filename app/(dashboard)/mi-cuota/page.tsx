@@ -142,7 +142,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                     .
                   </p>
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <PaymentFormButton
                     period={currentMonth.period}
                     playerName={profile.name}

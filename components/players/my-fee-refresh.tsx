@@ -120,18 +120,21 @@ export function MyFeePullToRefresh() {
 
 export function FormsRefreshButton({ className }: { className?: string }) {
   const { isRefreshing, refreshFromForms } = useFormsRefresh();
+  const label = isRefreshing ? "Buscando pago en Forms..." : "Buscar pago en Forms";
 
   return (
     <Button
       type="button"
-      size="sm"
+      size="icon"
       variant="outline"
-      className={className}
+      className={cn("size-9", className)}
       disabled={isRefreshing}
       onClick={() => void refreshFromForms()}
+      title={label}
+      aria-label={label}
     >
       <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
-      {isRefreshing ? "Buscando..." : "Buscar pago en Forms"}
+      <span className="sr-only">{label}</span>
     </Button>
   );
 }
