@@ -10,6 +10,10 @@ import {
 } from "lucide-react";
 
 import { EmptySection } from "@/components/layout/empty-section";
+import {
+  FormsRefreshButton,
+  MyFeePullToRefresh,
+} from "@/components/players/my-fee-refresh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +87,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
 
   return (
     <main className="grid gap-6">
+      <MyFeePullToRefresh />
       <header className="grid gap-2">
         <p className="text-muted-foreground text-sm font-medium">Jugador</p>
         <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Mi cuota</h1>
@@ -137,10 +142,13 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                     .
                   </p>
                 </div>
-                <PaymentFormButton
-                  period={currentMonth.period}
-                  playerName={profile.name}
-                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <PaymentFormButton
+                    period={currentMonth.period}
+                    playerName={profile.name}
+                  />
+                  <FormsRefreshButton />
+                </div>
               </div>
             ) : null}
           </CardContent>
