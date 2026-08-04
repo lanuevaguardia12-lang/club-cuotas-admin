@@ -1783,8 +1783,17 @@ export class GoogleSheetsService implements IDataService {
       const playerProfileLookupKeys = buildPlayerLookupKeys(player.id, player.name);
       const playerCalculations: FeePlayerCalculation[] = [];
       const matchSummaries = new Map<string, PlayerMonthMatchSummary>();
+      const quotaDefinitions = new Map<
+        string,
+        { status: "defined" | "undefined"; reason: string }
+      >();
 
       for (const periodData of feeCalculatorData) {
+        quotaDefinitions.set(periodData.period, {
+          status: periodData.summary.quotaStatus,
+          reason: periodData.summary.quotaStatusReasons.join(" "),
+        });
+
         const calculation = periodData.playerCalculations.find((candidate) =>
           feePlayerCalculationMatchesLookup(candidate, playerProfileLookupKeys),
         );
@@ -1808,7 +1817,14 @@ export class GoogleSheetsService implements IDataService {
         );
       }
 
-      return buildPlayerProfile(player, fees, year, playerCalculations, matchSummaries);
+      return buildPlayerProfile(
+        player,
+        fees,
+        year,
+        playerCalculations,
+        matchSummaries,
+        quotaDefinitions,
+      );
     } catch {
       return null;
     }
@@ -4386,6 +4402,14 @@ function buildFeeCalculatorData({
   const previousPeriodMatches = matches.filter(
     (match) => match.period === previousPeriod,
   );
+  const quotaDefinition = getFeeCalculatorQuotaDefinition({
+    activeCosts,
+    actuals,
+    currentPeriod: period,
+    effectiveActuals,
+    previousPeriod,
+    previousPeriodMatches,
+  });
   const totalMatchesPreviousPeriod = previousPeriodMatches.length;
   const totalLocalMatchesPreviousPeriod =
     previousPeriodMatches.filter(isLocalMatch).length;
@@ -4462,6 +4486,8 @@ function buildFeeCalculatorData({
     summary: {
       period,
       previousPeriod,
+      quotaStatus: quotaDefinition.status,
+      quotaStatusReasons: quotaDefinition.reasons,
       plannedCurrentQuota,
       previousBaseQuota: previousPeriodBaseQuota,
       previousCostVariance,
@@ -6455,6 +6481,10 @@ function buildPlayerProfile(
   year: number,
   feeCalculations: FeePlayerCalculation[] = [],
   matchSummaries = new Map<string, PlayerMonthMatchSummary>(),
+  quotaDefinitions = new Map<
+    string,
+    { status: "defined" | "undefined"; reason: string }
+  >(),
 ): PlayerProfile {
   const playerFees = fees.filter((fee) => fee.playerId === player.id);
 
@@ -6466,7 +6496,13 @@ function buildPlayerProfile(
     observations: player.observations,
     year,
     history: buildPlayerHistory(playerFees),
-    months: buildYearMonths(playerFees, year, feeCalculations, matchSummaries),
+    months: buildYearMonths(
+      playerFees,
+      year,
+      feeCalculations,
+      matchSummaries,
+      quotaDefinitions,
+    ),
   };
 }
 
@@ -6486,6 +6522,10 @@ function buildYearMonths(
   year: number,
   feeCalculations: FeePlayerCalculation[] = [],
   matchSummaries = new Map<string, PlayerMonthMatchSummary>(),
+  quotaDefinitions = new Map<
+    string,
+    { status: "defined" | "undefined"; reason: string }
+  >(),
 ): PlayerYearMonth[] {
   return Array.from({ length: 12 }, (_, index) => {
     const period = `${year}-${String(index + 1).padStart(2, "0")}`;
@@ -6500,11 +6540,22 @@ function buildYearMonths(
       : fee?.amount && fee.amount > 0
         ? "payments"
         : "none";
+    const quotaDefinition = quotaDefinitions.get(period);
+    const quotaStatus =
+      quotaDefinition?.status ??
+      (amountSource === "calculator" || amountSource === "payments"
+        ? "defined"
+        : "undefined");
+    const quotaStatusReason =
+      quotaDefinition?.reason ||
+      (quotaStatus === "undefined" ? "Falta definir la cuota de este mes." : "");
 
     return {
       period,
       label: formatFullMonthLabel(period),
       status: fee?.status === "paid" ? "paid" : "unpaid",
+      quotaStatus,
+      quotaStatusReason,
       amount: amountValue > 0 ? formatCurrency(amountValue) : "-",
       amountValue,
       amountSource,
@@ -7382,6 +7433,68 @@ function buildFeeCalculatorAdjustments(
     })
     .filter((adjustment): adjustment is FeeCalculatorAdjustment => Boolean(adjustment))
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
+function getFeeCalculatorQuotaDefinition({
+  activeCosts,
+  actuals,
+  currentPeriod,
+  effectiveActuals,
+  previousPeriod,
+  previousPeriodMatches,
+}: {
+  activeCosts: FeeCalculatorCost[];
+  actuals: FeeCalculatorActual[];
+  currentPeriod: string;
+  effectiveActuals: FeeCalculatorActual[];
+  previousPeriod: string;
+  previousPeriodMatches: MatchRecord[];
+}): { status: "defined" | "undefined"; reasons: string[] } {
+  const reasons: string[] = [];
+  const currentCosts = activeCosts.filter((cost) =>
+    isCostActiveForPeriod(cost, currentPeriod),
+  );
+
+  if (currentCosts.length === 0) {
+    reasons.push("Faltan gastos definidos para este mes.");
+  }
+
+  const previousCosts = activeCosts.filter((cost) =>
+    isCostActiveForPeriod(cost, previousPeriod),
+  );
+  const requiredActualKinds = [
+    { kind: "court" as const, label: "cancha" },
+    { kind: "coach" as const, label: "DT" },
+  ];
+
+  for (const required of requiredActualKinds) {
+    const cost = previousCosts.find(
+      (candidate) => getAutoActualCostKind(candidate) === required.kind,
+    );
+
+    if (!cost) {
+      reasons.push(`Falta el costo de ${required.label} del mes anterior.`);
+      continue;
+    }
+
+    const explicitActual = findActualForCost(cost, activeCosts, actuals, previousPeriod);
+    const effectiveActual = findActualForCost(
+      cost,
+      activeCosts,
+      effectiveActuals,
+      previousPeriod,
+    );
+    const canUseInferredActual = previousPeriodMatches.length > 0 && effectiveActual;
+
+    if (!explicitActual && !canUseInferredActual) {
+      reasons.push(`Falta cargar el ajuste real de ${required.label}.`);
+    }
+  }
+
+  return {
+    status: reasons.length > 0 ? "undefined" : "defined",
+    reasons,
+  };
 }
 
 function calculateBaseQuotaForPeriod(

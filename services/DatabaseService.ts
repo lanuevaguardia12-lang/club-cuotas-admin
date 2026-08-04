@@ -308,6 +308,8 @@ export class DatabaseService implements IDataService {
       summary: {
         period,
         previousPeriod,
+        quotaStatus: "undefined",
+        quotaStatusReasons: ["DatabaseService todavía no calcula la cuota."],
         plannedCurrentQuota: 0,
         previousBaseQuota: 0,
         previousCostVariance: 0,

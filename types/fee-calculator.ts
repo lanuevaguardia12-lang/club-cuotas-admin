@@ -102,6 +102,8 @@ export interface FeePlayerCalculation {
 export interface FeeCalculatorSummary {
   period: string;
   previousPeriod: string;
+  quotaStatus: "defined" | "undefined";
+  quotaStatusReasons: string[];
   plannedCurrentQuota: number;
   previousBaseQuota: number;
   previousCostVariance: number;

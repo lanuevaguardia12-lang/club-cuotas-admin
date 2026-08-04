@@ -122,15 +122,35 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
               <Metric
                 label="Cuota actual"
                 value={currentMonth?.amount ?? "-"}
-                detail={currentMonth ? formatPeriod(currentMonth.period) : "Sin datos"}
+                detail={
+                  currentMonth
+                    ? currentMonth.quotaStatus === "undefined"
+                      ? `Monto parcial · ${formatPeriod(currentMonth.period)}`
+                      : formatPeriod(currentMonth.period)
+                    : "Sin datos"
+                }
               />
               <Metric
                 label="Estado"
                 value={
-                  currentMonth ? monthStatusLabels[currentMonth.status] : "Sin datos"
+                  currentMonth
+                    ? currentMonth.quotaStatus === "undefined"
+                      ? "Cuota sin definir"
+                      : monthStatusLabels[currentMonth.status]
+                    : "Sin datos"
                 }
-                detail={currentMonth?.paidAt || currentMonth?.dueDate || "-"}
-                tone={currentMonth?.status === "paid" ? "success" : "danger"}
+                detail={
+                  currentMonth?.quotaStatus === "undefined"
+                    ? currentMonth.quotaStatusReason || "Faltan datos del calculador."
+                    : currentMonth?.paidAt || currentMonth?.dueDate || "-"
+                }
+                tone={
+                  currentMonth?.quotaStatus === "undefined"
+                    ? "warning"
+                    : currentMonth?.status === "paid"
+                      ? "success"
+                      : "danger"
+                }
               />
               <Metric
                 label="Pendientes"
@@ -145,7 +165,9 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                 summary={currentMonth.matchSummary}
               />
             ) : null}
-            {currentMonth?.status === "unpaid" ? (
+            {currentMonth?.quotaStatus === "undefined" ? (
+              <UndefinedQuotaNotice month={currentMonth} />
+            ) : currentMonth?.status === "unpaid" ? (
               <div className="flex flex-col gap-2 rounded-md border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium">¿Ya hiciste el pago?</p>
@@ -259,6 +281,9 @@ function MonthPreviewCard({
           <div className="grid gap-3">
             <p className="text-2xl font-semibold">{month.amount}</p>
             <div className="grid gap-1 text-sm">
+              {month.quotaStatus === "undefined" ? (
+                <p className="text-muted-foreground">Monto parcial</p>
+              ) : null}
               <p className="text-muted-foreground">Vence {month.dueDate}</p>
               {month.paidAt ? (
                 <p className="text-muted-foreground">Pagada el {month.paidAt}</p>
@@ -369,7 +394,7 @@ function MonthHistoryRow({
       </div>
       <div className="flex items-center gap-2 sm:justify-end">
         <MonthStatusBadge month={month} />
-        {month.status === "unpaid" ? (
+        {month.status === "unpaid" && month.quotaStatus === "defined" ? (
           <PaymentFormButton compact period={month.period} playerName={playerName} />
         ) : null}
       </div>
@@ -378,6 +403,10 @@ function MonthHistoryRow({
 }
 
 function MonthStatusBadge({ month }: { month: PlayerYearMonth }) {
+  if (month.quotaStatus === "undefined") {
+    return <Badge variant="warning">Cuota sin definir</Badge>;
+  }
+
   const Icon = month.status === "paid" ? CheckCircle2 : XCircle;
 
   return (
@@ -385,6 +414,26 @@ function MonthStatusBadge({ month }: { month: PlayerYearMonth }) {
       <Icon className="size-3.5" />
       {monthStatusLabels[month.status]}
     </Badge>
+  );
+}
+
+function UndefinedQuotaNotice({ month }: { month: PlayerYearMonth }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-dashed border-[#f4ce0f]/50 bg-[#f4ce0f]/10 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-medium">Cuota sin definir</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            El monto mostrado para {formatPeriod(month.period)} es parcial. Todavía no
+            conviene registrar el pago hasta cerrar costos y ajustes reales.
+          </p>
+        </div>
+        <Badge variant="warning">Monto parcial</Badge>
+      </div>
+      {month.quotaStatusReason ? (
+        <p className="text-muted-foreground text-xs">{month.quotaStatusReason}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -506,7 +555,7 @@ function Metric({
 }: {
   detail: string;
   label: string;
-  tone?: "neutral" | "success" | "danger";
+  tone?: "neutral" | "success" | "danger" | "warning";
   value: string;
 }) {
   const toneClass =
@@ -514,7 +563,9 @@ function Metric({
       ? "text-emerald-700 dark:text-emerald-300"
       : tone === "danger"
         ? "text-destructive"
-        : "text-foreground";
+        : tone === "warning"
+          ? "text-[#8a7200] dark:text-[#f4ce0f]"
+          : "text-foreground";
 
   return (
     <div className="border-border bg-background rounded-md border p-3">

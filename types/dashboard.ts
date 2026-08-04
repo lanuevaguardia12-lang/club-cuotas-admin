@@ -164,6 +164,7 @@ export interface UpsertCashFlowTransactionInput {
 
 export type PlayerPaymentStatus = "paid" | "debt" | "pending";
 export type PlayerMonthPaymentStatus = "paid" | "unpaid";
+export type PlayerMonthQuotaStatus = "defined" | "undefined";
 
 export interface PlayerTableRow {
   id: string;
@@ -208,6 +209,8 @@ export interface PlayerYearMonth {
   period: string;
   label: string;
   status: PlayerMonthPaymentStatus;
+  quotaStatus: PlayerMonthQuotaStatus;
+  quotaStatusReason: string;
   amount: string;
   amountValue: number;
   amountSource: "calculator" | "payments" | "none";
