@@ -1787,7 +1787,7 @@ function AmountWithHelp({
   value: string;
 }) {
   return (
-    <span className={`inline-flex min-w-0 items-center gap-1 ${className}`}>
+    <span className={`relative inline-flex min-w-0 items-center gap-1 ${className}`}>
       <span className="truncate">{value}</span>
       {help ? <HelpIcon text={help} /> : null}
     </span>
@@ -1795,14 +1795,39 @@ function AmountWithHelp({
 }
 
 function HelpIcon({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+
   return (
     <span
-      tabIndex={0}
-      title={text}
-      aria-label={text}
-      className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex shrink-0 cursor-help rounded-full outline-none focus-visible:ring-2"
+      className="relative inline-flex"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
-      <CircleHelp className="size-3.5" aria-hidden="true" />
+      <button
+        type="button"
+        aria-label="Ver cálculo"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex shrink-0 cursor-help rounded-full outline-none focus-visible:ring-2"
+      >
+        <CircleHelp className="size-3.5" aria-hidden="true" />
+      </button>
+      {open ? (
+        <span className="bg-popover text-popover-foreground border-border absolute top-5 right-0 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-md border p-3 text-left text-xs leading-relaxed font-normal whitespace-normal shadow-lg">
+          {text}
+        </span>
+      ) : null}
     </span>
   );
 }
