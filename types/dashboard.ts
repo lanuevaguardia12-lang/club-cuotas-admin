@@ -1,4 +1,4 @@
-export type DataSourceProvider = "google-sheets" | "postgresql";
+export type DataSourceProvider = "google-sheets" | "postgresql" | "liga-country-sur";
 export type DataSourceStatus = "ready" | "empty" | "error";
 
 export interface DashboardMetric {

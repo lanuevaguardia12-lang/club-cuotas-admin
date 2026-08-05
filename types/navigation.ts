@@ -5,6 +5,7 @@ export type NavigationIcon =
   | "account"
   | "myFee"
   | "playerOfMatch"
+  | "fixture"
   | "players"
   | "cashFlow"
   | "feeCalculator"

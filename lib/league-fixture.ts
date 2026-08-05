@@ -1,0 +1,663 @@
+import "server-only";
+
+import type {
+  LeagueCategoryOption,
+  LeagueFixtureData,
+  LeagueFixtureMatch,
+  LeagueFixtureRound,
+  LeagueMatchStatus,
+  LeagueStandingRow,
+  LeagueTournamentOption,
+} from "@/types/fixture";
+
+const LEAGUE_BASE_URL = "https://ligacountrysur.com.ar";
+const LEAGUE_FOOTBALL_URL = `${LEAGUE_BASE_URL}/futbol`;
+const DEFAULT_TOURNAMENT_ID = "327";
+const DEFAULT_CATEGORY_ID = "4201";
+const SOURCE_TEAM_NAME = "Barrio Dorrego";
+export const APP_TEAM_NAME = "La Nueva Guardia";
+
+const FALLBACK_TOURNAMENTS: LeagueTournamentOption[] = [
+  {
+    id: "327",
+    name: "Apertura 2026",
+    categories: [
+      {
+        id: "4201",
+        name: 'Primera "C"',
+        tournamentId: "327",
+      },
+      {
+        id: "4200",
+        name: 'Primera "B"',
+        tournamentId: "327",
+      },
+    ],
+  },
+];
+
+interface GetLeagueFixtureDataInput {
+  competition?: string;
+  tournamentId?: string;
+  categoryId?: string;
+}
+
+interface LeagueRawCategory {
+  id?: string | number;
+  torneo_id?: string | number;
+  name?: string;
+  deporte?: {
+    name?: string;
+  };
+  categoria?: {
+    name?: string;
+  };
+  torneo?: {
+    name?: string;
+  };
+}
+
+export async function getLeagueFixtureData(
+  input: GetLeagueFixtureDataInput = {},
+): Promise<LeagueFixtureData> {
+  const fetchedAt = new Date().toISOString();
+  const metadata = await loadLeagueMetadata();
+  const selected = selectCompetition(metadata.tournaments, input);
+  const sourceUrl = buildFixtureUrl(selected.category.id, selected.tournament.id);
+
+  try {
+    const html = await fetchLeagueHtml(sourceUrl, { ajax: true });
+    const standings = parseStandings(html);
+    const rounds = parseFixtureRounds(html, selected.tournament.name);
+    const matches = rounds.flatMap((round) => round.matches);
+    const clubMatches = matches.filter((match) => match.isClubMatch);
+    const nextMatches = clubMatches
+      .filter((match) => match.status === "pending" && !match.involvesBye)
+      .slice(0, 3);
+
+    return {
+      selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+      selectedTournamentId: selected.tournament.id,
+      selectedCategoryId: selected.category.id,
+      selectedTournamentName: selected.tournament.name,
+      selectedCategoryName: selected.category.name,
+      tournaments: metadata.tournaments,
+      standings,
+      matches,
+      rounds,
+      clubStanding: standings.find((row) => row.isClub),
+      clubMatches,
+      nextMatches,
+      source: {
+        provider: "liga-country-sur",
+        status: standings.length > 0 || matches.length > 0 ? "ready" : "empty",
+        fetchedAt,
+        sourceUrl,
+        cachedAt: fetchedAt,
+        revalidateSeconds: 300,
+        message:
+          standings.length > 0 || matches.length > 0
+            ? "Datos leidos desde Liga Country Sur."
+            : "La liga no devolvio datos para este torneo y categoria.",
+      },
+    };
+  } catch (error) {
+    return {
+      selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+      selectedTournamentId: selected.tournament.id,
+      selectedCategoryId: selected.category.id,
+      selectedTournamentName: selected.tournament.name,
+      selectedCategoryName: selected.category.name,
+      tournaments: metadata.tournaments,
+      standings: [],
+      matches: [],
+      rounds: [],
+      clubMatches: [],
+      nextMatches: [],
+      source: {
+        provider: "liga-country-sur",
+        status: "error",
+        fetchedAt,
+        sourceUrl,
+        cachedAt: fetchedAt,
+        revalidateSeconds: 300,
+        message:
+          error instanceof Error
+            ? error.message
+            : "No se pudo leer el fixture de Liga Country Sur.",
+      },
+    };
+  }
+}
+
+async function loadLeagueMetadata() {
+  try {
+    const html = await fetchLeagueHtml(LEAGUE_FOOTBALL_URL);
+    const tournaments = parseTournamentOptions(html);
+    return {
+      tournaments: tournaments.length > 0 ? tournaments : FALLBACK_TOURNAMENTS,
+    };
+  } catch {
+    return {
+      tournaments: FALLBACK_TOURNAMENTS,
+    };
+  }
+}
+
+async function fetchLeagueHtml(url: string, options: { ajax?: boolean } = {}) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "text/html,application/xhtml+xml",
+      ...(options.ajax ? { "X-Requested-With": "XMLHttpRequest" } : {}),
+    },
+    next: {
+      revalidate: 300,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Liga Country Sur respondio ${response.status}`);
+  }
+
+  return response.text();
+}
+
+function buildFixtureUrl(categoryId: string, tournamentId: string) {
+  return `${LEAGUE_BASE_URL}/liga/tabla-resultados-alt/${categoryId}/${tournamentId}`;
+}
+
+function selectCompetition(
+  tournaments: LeagueTournamentOption[],
+  input: GetLeagueFixtureDataInput,
+) {
+  const parsedCompetition = parseCompetitionKey(input.competition);
+  const requestedTournamentId = parsedCompetition?.tournamentId ?? input.tournamentId;
+  const requestedCategoryId = parsedCompetition?.categoryId ?? input.categoryId;
+  const requested = findCompetition(
+    tournaments,
+    requestedTournamentId,
+    requestedCategoryId,
+  );
+
+  if (requested) {
+    return requested;
+  }
+
+  return (
+    findByTournamentAndCategoryName(tournaments, "Clausura 2026", 'Primera "B"') ??
+    findCompetition(tournaments, DEFAULT_TOURNAMENT_ID, DEFAULT_CATEGORY_ID) ??
+    findByTournamentAndCategoryName(tournaments, "Apertura 2026", 'Primera "B"') ??
+    firstAvailableCompetition(tournaments) ??
+    firstAvailableCompetition(FALLBACK_TOURNAMENTS)!
+  );
+}
+
+function parseCompetitionKey(value?: string) {
+  const match = /^(\d+):(\d+)$/.exec(value ?? "");
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    tournamentId: match[1],
+    categoryId: match[2],
+  };
+}
+
+function findCompetition(
+  tournaments: LeagueTournamentOption[],
+  tournamentId?: string,
+  categoryId?: string,
+) {
+  if (!tournamentId || !categoryId) {
+    return undefined;
+  }
+
+  const tournament = tournaments.find((item) => item.id === tournamentId);
+  const category = tournament?.categories.find((item) => item.id === categoryId);
+
+  return tournament && category ? { tournament, category } : undefined;
+}
+
+function findByTournamentAndCategoryName(
+  tournaments: LeagueTournamentOption[],
+  tournamentName: string,
+  categoryName: string,
+) {
+  const tournament = tournaments.find((item) => item.name === tournamentName);
+  const category = tournament?.categories.find((item) => item.name === categoryName);
+
+  return tournament && category ? { tournament, category } : undefined;
+}
+
+function firstAvailableCompetition(tournaments: LeagueTournamentOption[]) {
+  const tournament = tournaments.find((item) => item.categories.length > 0);
+  const category = tournament?.categories[0];
+
+  return tournament && category ? { tournament, category } : undefined;
+}
+
+function parseTournamentOptions(html: string): LeagueTournamentOption[] {
+  const options = parseLeagueSelectOptions(html);
+  const categoriesByTournament = parseLeagueCategoriesByTournament(html);
+
+  return options
+    .map((option) => {
+      const categories = (categoriesByTournament[option.id] ?? [])
+        .filter(isRelevantCategory)
+        .map((category): LeagueCategoryOption => {
+          const categoryName = normalizeWhitespace(
+            category.categoria?.name ?? category.name ?? `Categoria ${category.id}`,
+          );
+
+          return {
+            id: String(category.id),
+            name: categoryName,
+            tournamentId: String(category.torneo_id ?? option.id),
+          };
+        });
+
+      return {
+        ...option,
+        categories,
+      };
+    })
+    .filter(
+      (tournament) => isRelevantTournament(tournament) && tournament.categories.length,
+    )
+    .sort(sortTournaments);
+}
+
+function parseLeagueSelectOptions(html: string) {
+  const selectMatch = /<select[^>]*id=["']la_torneo["'][^>]*>([\s\S]*?)<\/select>/i.exec(
+    html,
+  );
+
+  if (!selectMatch) {
+    return FALLBACK_TOURNAMENTS.map(({ id, name }) => ({ id, name }));
+  }
+
+  return [
+    ...selectMatch[1].matchAll(
+      /<option[^>]*value=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/gi,
+    ),
+  ]
+    .map((match) => ({
+      id: match[1],
+      name: normalizeWhitespace(decodeHtml(stripTags(match[2]))),
+    }))
+    .filter((option) => option.id && option.name);
+}
+
+function parseLeagueCategoriesByTournament(html: string) {
+  const marker = "var campeonatosXTorneo";
+  const markerIndex = html.indexOf(marker);
+
+  if (markerIndex < 0) {
+    return {};
+  }
+
+  const jsonStart = html.indexOf("{", markerIndex);
+  const semicolonIndex = html.indexOf("\n    ;", jsonStart);
+  const jsonEnd =
+    semicolonIndex >= 0
+      ? semicolonIndex
+      : html.indexOf(";\n\n    var selTorneo", jsonStart);
+
+  if (jsonStart < 0 || jsonEnd < 0) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(html.slice(jsonStart, jsonEnd).trim()) as Record<
+      string,
+      LeagueRawCategory[]
+    >;
+  } catch {
+    return {};
+  }
+}
+
+function isRelevantTournament(tournament: { name: string }) {
+  return /2026/i.test(tournament.name);
+}
+
+function isRelevantCategory(category: LeagueRawCategory) {
+  const sport = normalizeWhitespace(category.deporte?.name ?? "");
+  const categoryName = normalizeWhitespace(
+    category.categoria?.name ?? category.name ?? "",
+  );
+
+  return (
+    /futbol mayores/i.test(sport) &&
+    /(primera|promoci[oó]n|play\s*off|semifinal|final)/i.test(categoryName)
+  );
+}
+
+function sortTournaments(a: LeagueTournamentOption, b: LeagueTournamentOption) {
+  const aYear = Number(/\b(20\d{2})\b/.exec(a.name)?.[1] ?? 0);
+  const bYear = Number(/\b(20\d{2})\b/.exec(b.name)?.[1] ?? 0);
+
+  if (aYear !== bYear) {
+    return bYear - aYear;
+  }
+
+  return a.name.localeCompare(b.name, "es-AR");
+}
+
+function parseStandings(html: string): LeagueStandingRow[] {
+  const tableMatch =
+    /<table[^>]*class=["'][^"']*alt-table[^"']*["'][^>]*>[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i.exec(
+      html,
+    );
+
+  if (!tableMatch) {
+    return [];
+  }
+
+  return [...tableMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const rowHtml = match[1];
+      const cellTexts = [...rowHtml.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(
+        (cell) => decodeHtml(stripTags(cell[1])),
+      );
+      const teamName = normalizeTeamName(
+        decodeHtml(
+          stripTags(
+            /<span[^>]*class=["'][^"']*team-nm[^"']*["'][^>]*>([\s\S]*?)<\/span>/i.exec(
+              rowHtml,
+            )?.[1] ??
+              cellTexts[1] ??
+              "",
+          ),
+        ),
+      );
+
+      if (!teamName) {
+        return undefined;
+      }
+
+      const goalsFor = toNumber(cellTexts[6]);
+      const goalsAgainst = toNumber(cellTexts[7]);
+
+      return {
+        position: toNumber(cellTexts[0]),
+        teamName,
+        played: toNumber(cellTexts[2]),
+        won: toNumber(cellTexts[3]),
+        drawn: toNumber(cellTexts[4]),
+        lost: toNumber(cellTexts[5]),
+        goalsFor,
+        goalsAgainst,
+        goalDifference: goalsFor - goalsAgainst,
+        points: toNumber(cellTexts[8]),
+        isClub: isSourceTeamName(teamName),
+      };
+    })
+    .filter((row): row is LeagueStandingRow => Boolean(row));
+}
+
+function parseFixtureRounds(html: string, tournamentName: string): LeagueFixtureRound[] {
+  const fragments = html
+    .split(/(?=<div class=["']alt-round["'][^>]*>)/i)
+    .filter((fragment) => /^<div class=["']alt-round["'][^>]*>/i.test(fragment.trim()));
+  const year = Number(/\b(20\d{2})\b/.exec(tournamentName)?.[1]);
+
+  return fragments
+    .map((roundHtml) => {
+      const name =
+        extractText(
+          roundHtml,
+          /<span[^>]*class=["'][^"']*alt-round-badge[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+        ) || "Fecha";
+      const date =
+        extractText(
+          roundHtml,
+          /<span[^>]*class=["'][^"']*alt-round-date[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+        ) || "";
+      const dateIso = parseSpanishFixtureDate(date, year);
+      const matches = parseRoundMatches(roundHtml, name, date, dateIso);
+
+      return {
+        name,
+        date,
+        matches,
+      };
+    })
+    .filter((round) => round.matches.length > 0);
+}
+
+function parseRoundMatches(
+  roundHtml: string,
+  round: string,
+  roundDate: string,
+  dateIso?: string,
+) {
+  const starts = [...roundHtml.matchAll(/<div class=["']alt-match\b[^"']*["'][^>]*>/gi)]
+    .map((match) => match.index)
+    .filter((index): index is number => typeof index === "number");
+
+  return starts
+    .map((start, index): LeagueFixtureMatch | undefined => {
+      const matchHtml = roundHtml.slice(start, starts[index + 1] ?? roundHtml.length);
+      const id =
+        /data-fixture-hashed=["']([^"']+)["']/i.exec(matchHtml)?.[1] ??
+        `${round}-${index + 1}`;
+      const time = extractText(
+        matchHtml,
+        /<div[^>]*class=["'][^"']*amd-time[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+      );
+      const localTeam = normalizeTeamName(
+        extractText(
+          matchHtml,
+          /<div[^>]*class=["'][^"']*amd-team[^"']*amd-local[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+        ),
+      );
+      const visitorTeam = normalizeTeamName(
+        extractText(
+          matchHtml,
+          /<div[^>]*class=["'][^"']*amd-team[^"']*amd-visitor[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+        ),
+      );
+
+      if (!localTeam || !visitorTeam) {
+        return undefined;
+      }
+
+      const scoreText = extractText(
+        matchHtml,
+        /<div[^>]*class=["'][^"']*amd-score[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+      );
+      const score = parseScore(scoreText);
+      const status = parseMatchStatus(matchHtml, score, dateIso);
+      const detailUrl = parseDetailUrl(matchHtml);
+      const goals = parseDetailList(matchHtml, ["gol", "goles"]);
+      const cards = parseDetailList(matchHtml, ["tarjeta", "amonestacion"]);
+      const isClubMatch = isSourceTeamName(localTeam) || isSourceTeamName(visitorTeam);
+      const involvesBye =
+        /^(libre|bye)$/i.test(localTeam) || /^(libre|bye)$/i.test(visitorTeam);
+
+      return {
+        id,
+        round,
+        roundDate,
+        dateIso,
+        time,
+        localTeam,
+        visitorTeam,
+        status,
+        localScore: score?.local,
+        visitorScore: score?.visitor,
+        detailUrl,
+        goals,
+        cards,
+        isClubMatch,
+        involvesBye,
+      };
+    })
+    .filter((match): match is LeagueFixtureMatch => Boolean(match));
+}
+
+function parseMatchStatus(
+  matchHtml: string,
+  score: { local: number; visitor: number } | undefined,
+  dateIso?: string,
+): LeagueMatchStatus {
+  if (score || /badge-fin|finalizad|jugad/i.test(matchHtml)) {
+    return "played";
+  }
+
+  if (dateIso && new Date(`${dateIso}T23:59:59-03:00`) < new Date()) {
+    return "without-result";
+  }
+
+  return "pending";
+}
+
+function parseScore(value: string) {
+  const match = /(\d+)\s*[-–]\s*(\d+)/.exec(value);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    local: Number(match[1]),
+    visitor: Number(match[2]),
+  };
+}
+
+function parseDetailUrl(matchHtml: string) {
+  const raw =
+    /data-detail-url=["']([^"']+)["']/i.exec(matchHtml)?.[1] ??
+    /href=["']([^"']+)["'][^>]*class=["'][^"']*modal-load/i.exec(matchHtml)?.[1];
+
+  if (!raw) {
+    return undefined;
+  }
+
+  return raw.startsWith("http") ? raw : `${LEAGUE_BASE_URL}${raw}`;
+}
+
+function parseDetailList(matchHtml: string, labels: string[]) {
+  const items = [
+    ...matchHtml.matchAll(/<(?:li|span|div)[^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi),
+  ]
+    .map((match) => decodeHtml(stripTags(match[1])))
+    .map(normalizeWhitespace)
+    .filter(Boolean);
+
+  return items.filter((item) =>
+    labels.some((label) => item.toLowerCase().includes(label.toLowerCase())),
+  );
+}
+
+function parseSpanishFixtureDate(value: string, year: number) {
+  if (!value || !Number.isFinite(year)) {
+    return undefined;
+  }
+
+  const months: Record<string, number> = {
+    enero: 0,
+    febrero: 1,
+    marzo: 2,
+    abril: 3,
+    mayo: 4,
+    junio: 5,
+    julio: 6,
+    agosto: 7,
+    septiembre: 8,
+    setiembre: 8,
+    octubre: 9,
+    noviembre: 10,
+    diciembre: 11,
+  };
+  const normalized = normalizeWhitespace(value).toLowerCase();
+  const match = /(\d{1,2})\s+de\s+([a-záéíóúñ]+)/i.exec(normalized);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const day = Number(match[1]);
+  const month = months[removeAccents(match[2])];
+
+  if (!day || month === undefined) {
+    return undefined;
+  }
+
+  return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
+}
+
+function extractText(html: string, pattern: RegExp) {
+  return normalizeWhitespace(decodeHtml(stripTags(pattern.exec(html)?.[1] ?? "")));
+}
+
+function normalizeTeamName(value: string) {
+  const normalized = normalizeWhitespace(value);
+
+  return isSourceTeamName(normalized) ? APP_TEAM_NAME : normalized;
+}
+
+function isSourceTeamName(value: string) {
+  const normalized = removeAccents(normalizeWhitespace(value)).toLowerCase();
+
+  return (
+    normalized === removeAccents(SOURCE_TEAM_NAME).toLowerCase() ||
+    normalized === removeAccents(APP_TEAM_NAME).toLowerCase()
+  );
+}
+
+function toNumber(value: string | undefined) {
+  const parsed = Number(String(value ?? "").replace(/[^\d-]/g, ""));
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function stripTags(value: string) {
+  return value.replace(/<[^>]*>/g, " ");
+}
+
+function decodeHtml(value: string) {
+  const namedEntities: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    quot: '"',
+    nbsp: " ",
+    lt: "<",
+    gt: ">",
+    aacute: "á",
+    eacute: "é",
+    iacute: "í",
+    oacute: "ó",
+    uacute: "ú",
+    ntilde: "ñ",
+    Aacute: "Á",
+    Eacute: "É",
+    Iacute: "Í",
+    Oacute: "Ó",
+    Uacute: "Ú",
+    Ntilde: "Ñ",
+  };
+
+  return value.replace(/&(#x?[0-9a-f]+|[a-zA-Z]+);/g, (entity, code: string) => {
+    if (code.startsWith("#x")) {
+      return String.fromCodePoint(Number.parseInt(code.slice(2), 16));
+    }
+
+    if (code.startsWith("#")) {
+      return String.fromCodePoint(Number.parseInt(code.slice(1), 10));
+    }
+
+    return namedEntities[code] ?? entity;
+  });
+}
+
+function normalizeWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function removeAccents(value: string) {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}

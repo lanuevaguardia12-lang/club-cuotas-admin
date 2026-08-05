@@ -26,6 +26,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "player-of-match:vote",
   },
   {
+    label: "Fixture",
+    href: "/fixture",
+    icon: "fixture",
+    permission: "fixture:read",
+  },
+  {
     label: "Jugadores",
     href: "/players",
     icon: "players",

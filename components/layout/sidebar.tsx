@@ -3,6 +3,7 @@
 import {
   Bell,
   Calculator,
+  CalendarDays,
   CreditCard,
   FileKey2,
   BarChart3,
@@ -36,6 +37,7 @@ const iconMap = {
   dashboard: LayoutDashboard,
   myFee: BadgeDollarSign,
   playerOfMatch: Trophy,
+  fixture: CalendarDays,
   feeCalculator: Calculator,
   cashFlow: WalletCards,
   players: UsersRound,
