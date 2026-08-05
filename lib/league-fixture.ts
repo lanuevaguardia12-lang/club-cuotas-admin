@@ -14,6 +14,8 @@ const LEAGUE_BASE_URL = "https://ligacountrysur.com.ar";
 const LEAGUE_FOOTBALL_URL = `${LEAGUE_BASE_URL}/futbol`;
 const DEFAULT_TOURNAMENT_ID = "327";
 const DEFAULT_CATEGORY_ID = "4201";
+const DEFAULT_YEAR = 2026;
+const MIN_TOURNAMENT_YEAR = 2025;
 const SOURCE_TEAM_NAME = "Barrio Dorrego";
 export const APP_TEAM_NAME = "La Nueva Guardia";
 
@@ -40,6 +42,7 @@ interface GetLeagueFixtureDataInput {
   competition?: string;
   tournamentId?: string;
   categoryId?: string;
+  year?: string;
 }
 
 interface LeagueRawCategory {
@@ -63,6 +66,7 @@ export async function getLeagueFixtureData(
   const fetchedAt = new Date().toISOString();
   const metadata = await loadLeagueMetadata();
   const selected = selectCompetition(metadata.tournaments, input);
+  const selectedYear = getTournamentYear(selected.tournament.name) ?? DEFAULT_YEAR;
   const sourceUrl = buildFixtureUrl(selected.category.id, selected.tournament.id);
 
   try {
@@ -76,7 +80,9 @@ export async function getLeagueFixtureData(
       .slice(0, 3);
 
     return {
+      availableYears: metadata.availableYears,
       selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+      selectedYear,
       selectedTournamentId: selected.tournament.id,
       selectedCategoryId: selected.category.id,
       selectedTournamentName: selected.tournament.name,
@@ -103,7 +109,9 @@ export async function getLeagueFixtureData(
     };
   } catch (error) {
     return {
+      availableYears: metadata.availableYears,
       selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+      selectedYear,
       selectedTournamentId: selected.tournament.id,
       selectedCategoryId: selected.category.id,
       selectedTournamentName: selected.tournament.name,
@@ -136,10 +144,14 @@ async function loadLeagueMetadata() {
     const tournaments = parseTournamentOptions(html);
     return {
       tournaments: tournaments.length > 0 ? tournaments : FALLBACK_TOURNAMENTS,
+      availableYears: getAvailableYears(
+        tournaments.length > 0 ? tournaments : FALLBACK_TOURNAMENTS,
+      ),
     };
   } catch {
     return {
       tournaments: FALLBACK_TOURNAMENTS,
+      availableYears: getAvailableYears(FALLBACK_TOURNAMENTS),
     };
   }
 }
@@ -171,6 +183,7 @@ function selectCompetition(
   input: GetLeagueFixtureDataInput,
 ) {
   const parsedCompetition = parseCompetitionKey(input.competition);
+  const requestedYear = parseRequestedYear(input.year);
   const requestedTournamentId = parsedCompetition?.tournamentId ?? input.tournamentId;
   const requestedCategoryId = parsedCompetition?.categoryId ?? input.categoryId;
   const requested = findCompetition(
@@ -179,17 +192,47 @@ function selectCompetition(
     requestedCategoryId,
   );
 
-  if (requested) {
+  if (
+    requested &&
+    (!requestedYear || getTournamentYear(requested.tournament.name) === requestedYear)
+  ) {
     return requested;
   }
 
+  const yearTournaments = filterTournamentsByYear(
+    tournaments,
+    requestedYear ?? DEFAULT_YEAR,
+  );
+  const fallbackYearTournaments =
+    yearTournaments.length > 0 ? yearTournaments : tournaments;
+
   return (
-    findByTournamentAndCategoryName(tournaments, "Clausura 2026", 'Primera "B"') ??
-    findCompetition(tournaments, DEFAULT_TOURNAMENT_ID, DEFAULT_CATEGORY_ID) ??
-    findByTournamentAndCategoryName(tournaments, "Apertura 2026", 'Primera "B"') ??
-    firstAvailableCompetition(tournaments) ??
+    findByTournamentAndCategoryName(
+      fallbackYearTournaments,
+      "Clausura 2026",
+      'Primera "B"',
+    ) ??
+    findCompetition(
+      fallbackYearTournaments,
+      DEFAULT_TOURNAMENT_ID,
+      DEFAULT_CATEGORY_ID,
+    ) ??
+    findByTournamentAndCategoryName(
+      fallbackYearTournaments,
+      "Apertura 2026",
+      'Primera "B"',
+    ) ??
+    firstAvailableCompetition(fallbackYearTournaments) ??
     firstAvailableCompetition(FALLBACK_TOURNAMENTS)!
   );
+}
+
+function parseRequestedYear(value?: string) {
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed >= 2020 && parsed <= 2100
+    ? parsed
+    : undefined;
 }
 
 function parseCompetitionKey(value?: string) {
@@ -236,6 +279,20 @@ function firstAvailableCompetition(tournaments: LeagueTournamentOption[]) {
   const category = tournament?.categories[0];
 
   return tournament && category ? { tournament, category } : undefined;
+}
+
+function filterTournamentsByYear(tournaments: LeagueTournamentOption[], year: number) {
+  return tournaments.filter((tournament) => getTournamentYear(tournament.name) === year);
+}
+
+function getAvailableYears(tournaments: LeagueTournamentOption[]) {
+  return Array.from(
+    new Set(
+      tournaments
+        .map((tournament) => getTournamentYear(tournament.name))
+        .filter((year): year is number => Boolean(year)),
+    ),
+  ).sort((left, right) => right - left);
 }
 
 function parseTournamentOptions(html: string): LeagueTournamentOption[] {
@@ -320,7 +377,15 @@ function parseLeagueCategoriesByTournament(html: string) {
 }
 
 function isRelevantTournament(tournament: { name: string }) {
-  return /2026/i.test(tournament.name);
+  const year = getTournamentYear(tournament.name);
+
+  return Boolean(year && year >= MIN_TOURNAMENT_YEAR);
+}
+
+function getTournamentYear(name: string) {
+  const year = Number(/\b(20\d{2})\b/.exec(name)?.[1]);
+
+  return Number.isFinite(year) && year > 0 ? year : undefined;
 }
 
 function isRelevantCategory(category: LeagueRawCategory) {

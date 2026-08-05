@@ -13,9 +13,12 @@ import { redirect } from "next/navigation";
 
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
+import { HomeSummary } from "@/components/dashboard/home-summary";
 import { SendPendingNotificationsButton } from "@/components/dashboard/send-pending-notifications-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getLeagueFixtureData } from "@/lib/league-fixture";
+import { findPlayerProfileForUser } from "@/lib/player-profile";
 import { getDataService } from "@/services/data-service";
 
 export const dynamic = "force-dynamic";
@@ -46,13 +49,41 @@ interface DashboardPageProps {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const user = await getCurrentUser();
 
-  if (user?.role === "player") {
-    redirect("/mi-cuota");
+  if (!user) {
+    redirect("/login");
   }
 
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
-  const dashboard = await getDataService().getDashboardData(period);
+  const fixturePromise = getLeagueFixtureData();
+
+  if (user.role === "player") {
+    const [fixture, playerProfile] = await Promise.all([
+      fixturePromise,
+      findPlayerProfileForUser(user),
+    ]);
+
+    return (
+      <main className="grid gap-6">
+        <header className="grid gap-2">
+          <p className="text-muted-foreground text-sm font-medium">Inicio</p>
+          <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+            Hola, {user.name}
+          </h1>
+          <p className="text-muted-foreground max-w-2xl text-sm">
+            Tu cuota, el proximo partido y la tabla del torneo en una vista rapida.
+          </p>
+        </header>
+
+        <HomeSummary fixture={fixture} playerProfile={playerProfile} />
+      </main>
+    );
+  }
+
+  const [dashboard, fixture] = await Promise.all([
+    getDataService().getDashboardData(period),
+    fixturePromise,
+  ]);
 
   return (
     <main className="grid gap-6">
@@ -60,9 +91,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <p className="text-muted-foreground text-sm font-medium">Inicio</p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
-              Dashboard avanzado
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Inicio</h1>
             <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
               Indicadores operativos, morosidad, ingresos y cuotas calculadas por mes.
             </p>
@@ -90,6 +119,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         </div>
       </header>
+
+      <HomeSummary fixture={fixture} />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {dashboard.metrics.map((item) => {

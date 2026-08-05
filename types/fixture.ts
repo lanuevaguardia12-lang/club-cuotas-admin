@@ -53,7 +53,9 @@ export interface LeagueFixtureRound {
 }
 
 export interface LeagueFixtureData {
+  availableYears: number[];
   selectedCompetitionKey: string;
+  selectedYear: number;
   selectedTournamentId: string;
   selectedCategoryId: string;
   selectedTournamentName: string;

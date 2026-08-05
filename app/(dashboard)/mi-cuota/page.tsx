@@ -20,8 +20,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getDataService } from "@/services/data-service";
-import type { AuthUser } from "@/types/auth";
+import {
+  findPlayerProfileForUser,
+  formatPeriod,
+  getCurrentPeriod,
+  getPlayerLookupCandidates,
+  parseYear,
+} from "@/lib/player-profile";
 import type {
   PlayerMonthMatchSummary,
   PlayerMonthPaymentStatus,
@@ -70,7 +75,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
 
   const params = await searchParams;
   const selectedYear = parseYear(params.year);
-  const profile = await findPlayerProfile(playerLookups, selectedYear);
+  const profile = await findPlayerProfileForUser(user, selectedYear);
 
   if (!profile) {
     return (
@@ -523,30 +528,6 @@ function getMonthAmountSourceLabel(month: PlayerYearMonth) {
   return "Sin monto calculado para este mes.";
 }
 
-async function findPlayerProfile(playerLookups: string[], year?: number) {
-  const dataService = getDataService();
-
-  for (const lookup of playerLookups) {
-    const profile = await dataService.getPlayerProfile(lookup, year);
-
-    if (profile) {
-      return profile;
-    }
-  }
-
-  return null;
-}
-
-function getPlayerLookupCandidates(user: AuthUser) {
-  return Array.from(
-    new Set(
-      [user.playerId, user.id, user.username, user.name]
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-}
-
 function Metric({
   detail,
   label,
@@ -574,28 +555,6 @@ function Metric({
       <p className="text-muted-foreground mt-1 text-xs">{detail}</p>
     </div>
   );
-}
-
-function parseYear(year?: string) {
-  const parsed = Number(year);
-
-  return Number.isInteger(parsed) && parsed >= 2020 && parsed <= 2100
-    ? parsed
-    : undefined;
-}
-
-function getCurrentPeriod() {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function formatPeriod(period: string) {
-  const [year, month] = period.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-
-  return new Intl.DateTimeFormat("es-AR", {
-    month: "long",
-    year: "numeric",
-  }).format(date);
 }
 
 function buildPaymentFormUrl(playerName: string, period: string) {

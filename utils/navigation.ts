@@ -2,7 +2,7 @@ import type { NavigationItem } from "@/types/navigation";
 
 export const navigationItems: NavigationItem[] = [
   {
-    label: "Dashboard",
+    label: "Inicio",
     href: "/",
     icon: "dashboard",
     permission: "dashboard:read",

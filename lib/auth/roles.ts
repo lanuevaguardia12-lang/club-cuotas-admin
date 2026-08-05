@@ -66,7 +66,13 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "fixture:read",
     "player-of-match:vote",
   ],
-  player: ["account:manage", "fixture:read", "player:self:read", "player-of-match:vote"],
+  player: [
+    "dashboard:read",
+    "account:manage",
+    "fixture:read",
+    "player:self:read",
+    "player-of-match:vote",
+  ],
   treasurer: [
     "dashboard:read",
     "account:manage",

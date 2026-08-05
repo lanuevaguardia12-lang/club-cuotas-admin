@@ -15,6 +15,7 @@ interface FixturePageProps {
     competition?: string;
     torneo?: string;
     campeonato?: string;
+    year?: string;
   }>;
 }
 
@@ -40,6 +41,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
     competition: params.competition,
     tournamentId: params.torneo,
     categoryId: params.campeonato,
+    year: params.year,
   });
 
   return (

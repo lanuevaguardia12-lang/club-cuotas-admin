@@ -4,12 +4,12 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
-  ListChecks,
   Table2,
   Trophy,
   UsersRound,
 } from "lucide-react";
 
+import { FixtureFilters } from "@/components/fixture/fixture-filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,7 @@ import type {
   LeagueFixtureMatch,
   LeagueFixtureRound,
   LeagueMatchStatus,
+  LeagueStandingRow,
 } from "@/types/fixture";
 
 interface FixtureContentProps {
@@ -78,37 +79,12 @@ function CompetitionSelector({ data }: FixtureContentProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" method="GET">
-          <label className="grid gap-2 text-sm font-medium">
-            <span className="text-muted-foreground text-xs font-semibold uppercase">
-              Competencia
-            </span>
-            <select
-              name="competition"
-              defaultValue={data.selectedCompetitionKey}
-              className="border-input bg-background focus:ring-ring h-10 min-w-0 rounded-md border px-3 text-sm outline-none focus:ring-2"
-            >
-              {data.tournaments.map((tournament) => (
-                <optgroup key={tournament.id} label={tournament.name}>
-                  {tournament.categories.map((category) => (
-                    <option
-                      key={`${tournament.id}:${category.id}`}
-                      value={`${tournament.id}:${category.id}`}
-                    >
-                      {category.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-end">
-            <Button className="w-full sm:w-auto">
-              <ListChecks />
-              Ver
-            </Button>
-          </div>
-        </form>
+        <FixtureFilters
+          availableYears={data.availableYears}
+          selectedCompetitionKey={data.selectedCompetitionKey}
+          selectedYear={data.selectedYear}
+          tournaments={data.tournaments}
+        />
 
         <div className="border-border mt-4 grid gap-2 border-t pt-4 text-sm sm:grid-cols-2">
           <InfoPill label="Torneo" value={data.selectedTournamentName} />
@@ -170,66 +146,118 @@ function StandingsTable({ data }: FixtureContentProps) {
       </CardHeader>
       <CardContent>
         {data.standings.length > 0 ? (
-          <div className="border-border overflow-x-auto rounded-md border">
-            <table className="w-full min-w-[42rem] text-sm">
-              <thead className="bg-muted/60 text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">#</th>
-                  <th className="px-3 py-2 text-left font-semibold">Equipo</th>
-                  <th className="px-3 py-2 text-center font-semibold">J</th>
-                  <th className="px-3 py-2 text-center font-semibold">G</th>
-                  <th className="px-3 py-2 text-center font-semibold">E</th>
-                  <th className="px-3 py-2 text-center font-semibold">P</th>
-                  <th className="px-3 py-2 text-center font-semibold">GF</th>
-                  <th className="px-3 py-2 text-center font-semibold">GC</th>
-                  <th className="px-3 py-2 text-center font-semibold">Dif</th>
-                  <th className="px-3 py-2 text-center font-semibold">Pts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.standings.map((row) => (
-                  <tr
-                    key={`${row.position}-${row.teamName}`}
-                    className={cn(
-                      "border-border border-t",
-                      row.isClub ? "bg-secondary/80 font-semibold" : "bg-card",
-                    )}
-                  >
-                    <td className="px-3 py-2">
-                      <span
-                        className={cn(
-                          "inline-grid size-7 place-items-center rounded-md text-xs font-bold",
-                          row.isClub
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {row.position}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">{row.teamName}</td>
-                    <td className="px-3 py-2 text-center">{row.played}</td>
-                    <td className="px-3 py-2 text-center">{row.won}</td>
-                    <td className="px-3 py-2 text-center">{row.drawn}</td>
-                    <td className="px-3 py-2 text-center">{row.lost}</td>
-                    <td className="px-3 py-2 text-center">{row.goalsFor}</td>
-                    <td className="px-3 py-2 text-center">{row.goalsAgainst}</td>
-                    <td className="px-3 py-2 text-center">
-                      {row.goalDifference > 0
-                        ? `+${row.goalDifference}`
-                        : row.goalDifference}
-                    </td>
-                    <td className="px-3 py-2 text-center font-bold">{row.points}</td>
+          <>
+            <StandingsMobileCards rows={data.standings} />
+            <div className="border-border hidden overflow-x-auto rounded-md border md:block">
+              <table className="w-full min-w-[42rem] text-sm">
+                <thead className="bg-muted/60 text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">#</th>
+                    <th className="px-3 py-2 text-left font-semibold">Equipo</th>
+                    <th className="px-3 py-2 text-center font-semibold">J</th>
+                    <th className="px-3 py-2 text-center font-semibold">G</th>
+                    <th className="px-3 py-2 text-center font-semibold">E</th>
+                    <th className="px-3 py-2 text-center font-semibold">P</th>
+                    <th className="px-3 py-2 text-center font-semibold">GF</th>
+                    <th className="px-3 py-2 text-center font-semibold">GC</th>
+                    <th className="px-3 py-2 text-center font-semibold">Dif</th>
+                    <th className="px-3 py-2 text-center font-semibold">Pts</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.standings.map((row) => (
+                    <tr
+                      key={`${row.position}-${row.teamName}`}
+                      className={cn(
+                        "border-border border-t",
+                        row.isClub ? "bg-secondary/80 font-semibold" : "bg-card",
+                      )}
+                    >
+                      <td className="px-3 py-2">
+                        <span
+                          className={cn(
+                            "inline-grid size-7 place-items-center rounded-md text-xs font-bold",
+                            row.isClub
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {row.position}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">{row.teamName}</td>
+                      <td className="px-3 py-2 text-center">{row.played}</td>
+                      <td className="px-3 py-2 text-center">{row.won}</td>
+                      <td className="px-3 py-2 text-center">{row.drawn}</td>
+                      <td className="px-3 py-2 text-center">{row.lost}</td>
+                      <td className="px-3 py-2 text-center">{row.goalsFor}</td>
+                      <td className="px-3 py-2 text-center">{row.goalsAgainst}</td>
+                      <td className="px-3 py-2 text-center">
+                        {row.goalDifference > 0
+                          ? `+${row.goalDifference}`
+                          : row.goalDifference}
+                      </td>
+                      <td className="px-3 py-2 text-center font-bold">{row.points}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <EmptyInline title="Sin tabla" detail="La liga no devolvio posiciones." />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function StandingsMobileCards({ rows }: { rows: LeagueStandingRow[] }) {
+  return (
+    <div className="grid gap-2 md:hidden">
+      {rows.map((row) => (
+        <article
+          key={`${row.position}-${row.teamName}`}
+          className={cn(
+            "border-border bg-background rounded-md border p-3",
+            row.isClub && "border-primary/30 bg-secondary/80",
+          )}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={cn(
+                  "bg-muted text-muted-foreground grid size-8 shrink-0 place-items-center rounded-md text-sm font-bold",
+                  row.isClub && "bg-primary text-primary-foreground",
+                )}
+              >
+                {row.position}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate font-semibold">{row.teamName}</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {row.played} PJ · {row.won}G {row.drawn}E {row.lost}P
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xl font-bold">{row.points}</p>
+              <p className="text-muted-foreground text-xs">pts</p>
+            </div>
+          </div>
+          <div className="text-muted-foreground mt-3 grid grid-cols-3 gap-2 text-xs">
+            <StatPill label="GF" value={row.goalsFor} />
+            <StatPill label="GC" value={row.goalsAgainst} />
+            <StatPill
+              label="Dif"
+              value={
+                row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference
+              }
+            />
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -319,7 +347,9 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
         {match.time || "-"}
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)] items-center gap-2">
+      <MatchTeamsCard match={match} />
+
+      <div className="hidden grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)] items-center gap-2 md:grid">
         <TeamName name={match.localTeam} align="right" />
         <MatchScore match={match} />
         <TeamName name={match.visitorTeam} />
@@ -361,11 +391,66 @@ function CompactMatch({ match }: { match: LeagueFixtureMatch }) {
         </div>
         <StatusBadge status={match.status} />
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)] items-center gap-2 text-sm">
-        <TeamName name={match.localTeam} align="right" />
+      <MatchTeamsCard className="md:grid" match={match} />
+    </div>
+  );
+}
+
+function MatchTeamsCard({
+  className,
+  match,
+}: {
+  className?: string;
+  match: LeagueFixtureMatch;
+}) {
+  return (
+    <div className={cn("grid gap-2 md:hidden", className)}>
+      <MatchTeamLine
+        label="Local"
+        score={match.localScore}
+        showScore={match.status === "played"}
+        teamName={match.localTeam}
+      />
+      <div className="text-muted-foreground flex items-center justify-center">
         <MatchScore match={match} />
-        <TeamName name={match.visitorTeam} />
       </div>
+      <MatchTeamLine
+        label="Visita"
+        score={match.visitorScore}
+        showScore={match.status === "played"}
+        teamName={match.visitorTeam}
+      />
+    </div>
+  );
+}
+
+function MatchTeamLine({
+  label,
+  score,
+  showScore,
+  teamName,
+}: {
+  label: string;
+  score?: number;
+  showScore: boolean;
+  teamName: string;
+}) {
+  const isClub = teamName === APP_TEAM_NAME;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm",
+        isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
+      )}
+    >
+      <div className="min-w-0">
+        <p className="truncate font-semibold">{teamName}</p>
+        <p className="text-xs opacity-75">{label}</p>
+      </div>
+      {showScore ? (
+        <span className="text-xl font-bold tracking-normal">{score ?? 0}</span>
+      ) : null}
     </div>
   );
 }
@@ -443,6 +528,15 @@ function MetricBox({ label, value }: { label: string; value: string }) {
     <div className="bg-muted/50 rounded-md p-3">
       <p className="text-muted-foreground text-xs font-semibold uppercase">{label}</p>
       <p className="mt-1 text-2xl font-bold tracking-normal">{value}</p>
+    </div>
+  );
+}
+
+function StatPill({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="bg-muted/70 rounded-md px-2 py-1 text-center">
+      <p className="text-foreground font-semibold">{value}</p>
+      <p>{label}</p>
     </div>
   );
 }
