@@ -66,7 +66,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     return (
       <main className="grid gap-6">
         <header className="grid gap-2">
-          <p className="text-muted-foreground text-sm font-medium">Inicio</p>
+          <p className="text-muted-foreground text-sm font-medium">Home</p>
           <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Hola, {user.name}
           </h1>
@@ -88,10 +88,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   return (
     <main className="grid gap-6">
       <header className="flex flex-col gap-2">
-        <p className="text-muted-foreground text-sm font-medium">Inicio</p>
+        <p className="text-muted-foreground text-sm font-medium">Home</p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Inicio</h1>
+            <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Home</h1>
             <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
               Indicadores operativos, morosidad, ingresos y cuotas calculadas por mes.
             </p>

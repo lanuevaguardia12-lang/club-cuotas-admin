@@ -9,6 +9,10 @@ import {
   UsersRound,
 } from "lucide-react";
 
+import {
+  CompetitionBadge,
+  getCompetitionCardClass,
+} from "@/components/fixture/competition-badge";
 import { FixtureFilters } from "@/components/fixture/fixture-filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,6 +93,9 @@ function CompetitionSelector({ data }: FixtureContentProps) {
         <div className="border-border mt-4 grid gap-2 border-t pt-4 text-sm sm:grid-cols-2">
           <InfoPill label="Torneo" value={data.selectedTournamentName} />
           <InfoPill label="Categoria" value={data.selectedCategoryName} />
+        </div>
+        <div className="mt-3">
+          <CompetitionBadge kind={data.selectedCompetitionKind} />
         </div>
       </CardContent>
     </Card>
@@ -338,8 +345,10 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
   return (
     <div
       className={cn(
-        "border-border grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[5rem_minmax(0,1fr)_auto] md:items-center",
-        match.isClubMatch ? "bg-secondary/50" : "bg-card",
+        "grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[5rem_minmax(0,1fr)_auto] md:items-center",
+        match.isClubMatch
+          ? getCompetitionCardClass(match.competitionKind)
+          : "border-border bg-card",
       )}
     >
       <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -356,6 +365,7 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        <CompetitionBadge kind={match.competitionKind} />
         <StatusBadge status={match.status} />
         {match.detailUrl ? (
           <Button asChild size="sm" variant="outline">
@@ -379,7 +389,12 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
 
 function CompactMatch({ match }: { match: LeagueFixtureMatch }) {
   return (
-    <div className="border-border bg-background grid gap-3 rounded-md border p-3">
+    <div
+      className={cn(
+        "grid gap-3 rounded-md border p-3",
+        getCompetitionCardClass(match.competitionKind),
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-muted-foreground flex items-center gap-2 text-xs">
           <CalendarDays className="size-3.5" />
@@ -389,7 +404,10 @@ function CompactMatch({ match }: { match: LeagueFixtureMatch }) {
             {match.time ? ` · ${match.time}` : ""}
           </span>
         </div>
-        <StatusBadge status={match.status} />
+        <div className="flex flex-wrap gap-2">
+          <CompetitionBadge kind={match.competitionKind} />
+          <StatusBadge status={match.status} />
+        </div>
       </div>
       <MatchTeamsCard className="md:grid" match={match} />
     </div>

@@ -8,6 +8,10 @@ import {
   XCircle,
 } from "lucide-react";
 
+import {
+  CompetitionBadge,
+  getCompetitionCardClass,
+} from "@/components/fixture/competition-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,7 +86,9 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
             Proximo partido
           </CardTitle>
           <p className="text-muted-foreground mt-2 text-sm">
-            {fixture.selectedTournamentName} · {fixture.selectedCategoryName}
+            {nextMatch
+              ? `${nextMatch.competitionName} · ${nextMatch.categoryName}`
+              : `${fixture.selectedTournamentName} · ${fixture.selectedCategoryName}`}
           </p>
         </CardHeader>
         <CardContent>
@@ -145,7 +151,12 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
 
 function HomeMatchCard({ match }: { match: LeagueFixtureMatch }) {
   return (
-    <div className="border-border bg-background grid gap-3 rounded-md border p-3">
+    <div
+      className={cn(
+        "grid gap-3 rounded-md border p-3",
+        getCompetitionCardClass(match.competitionKind),
+      )}
+    >
       <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
         <span>
           {match.round}
@@ -153,6 +164,7 @@ function HomeMatchCard({ match }: { match: LeagueFixtureMatch }) {
         </span>
         <span>{match.time || "-"}</span>
       </div>
+      <CompetitionBadge kind={match.competitionKind} />
       <div className="grid gap-2 text-sm">
         <TeamLine local name={match.localTeam} />
         <div className="text-muted-foreground px-3 text-xs font-bold">vs</div>

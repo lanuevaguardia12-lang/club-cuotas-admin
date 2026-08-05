@@ -1,6 +1,7 @@
 import type { DataSourceState } from "@/types/dashboard";
 
 export type LeagueMatchStatus = "pending" | "played" | "without-result";
+export type LeagueCompetitionKind = "league" | "cup" | "friendly";
 
 export interface LeagueCategoryOption {
   id: string;
@@ -30,6 +31,9 @@ export interface LeagueStandingRow {
 
 export interface LeagueFixtureMatch {
   id: string;
+  competitionKind: LeagueCompetitionKind;
+  competitionName: string;
+  categoryName: string;
   round: string;
   roundDate: string;
   dateIso?: string;
@@ -55,6 +59,7 @@ export interface LeagueFixtureRound {
 export interface LeagueFixtureData {
   availableYears: number[];
   selectedCompetitionKey: string;
+  selectedCompetitionKind: LeagueCompetitionKind;
   selectedYear: number;
   selectedTournamentId: string;
   selectedCategoryId: string;

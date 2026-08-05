@@ -410,7 +410,7 @@ export class DatabaseService implements IDataService {
     return {
       matches: [],
       emptyState: {
-        title: "Jugador del partido pendiente",
+        title: "MVP pendiente",
         description:
           "El contrato IDataService ya esta listo para implementar votaciones en PostgreSQL.",
       },

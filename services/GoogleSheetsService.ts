@@ -10,6 +10,7 @@ import {
   normalizeHexColor,
   parseBooleanValue,
 } from "@/lib/app-settings";
+import { APP_TEAM_NAME, getLeagueClubMatchesForYear } from "@/lib/league-fixture";
 import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type {
@@ -68,6 +69,7 @@ import type {
   UpdateFeeRefundPolicyInput,
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
+import type { LeagueCompetitionKind, LeagueFixtureMatch } from "@/types/fixture";
 import type {
   AppLogEntry,
   AppLogLevel,
@@ -187,6 +189,11 @@ interface MatchRecord {
   date: string;
   period: string;
   rival: string;
+  sourceType?: LeagueCompetitionKind;
+  sourceLabel?: string;
+  resultLabel?: string;
+  localTeam?: string;
+  visitorTeam?: string;
   players: string[];
   venue: string;
   coachAttended: boolean;
@@ -1927,11 +1934,13 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
 
-      const [matches, votes, accountProfiles] = await Promise.all([
+      const [sheetMatches, fixtureMatches, votes, accountProfiles] = await Promise.all([
         this.readPlayerOfMatchMatches(),
+        getLeagueClubMatchesForYear().catch(() => []),
         this.readPlayerOfMatchVotes(),
         this.readAccountProfiles().catch(() => []),
       ]);
+      const matches = mergePlayerOfMatchMatches(sheetMatches, fixtureMatches);
       const voterVotes = votes.filter((vote) => vote.voterUserId === voterUserId);
 
       return buildPlayerOfMatchData({
@@ -1962,10 +1971,12 @@ export class GoogleSheetsService implements IDataService {
   async submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void> {
     this.assertConfigured();
 
-    const [matches, votes] = await Promise.all([
+    const [sheetMatches, fixtureMatches, votes] = await Promise.all([
       this.readPlayerOfMatchMatches(),
+      getLeagueClubMatchesForYear().catch(() => []),
       this.readPlayerOfMatchVotes(),
     ]);
+    const matches = mergePlayerOfMatchMatches(sheetMatches, fixtureMatches);
     const match = matches.find((candidate) => candidate.id === input.matchId);
 
     if (!match) {
@@ -1977,7 +1988,7 @@ export class GoogleSheetsService implements IDataService {
 
     if (!isPlayerOfMatchVotingOpen(match)) {
       throw new DataServiceError(
-        "La votacion de este partido ya cerro.",
+        "La votacion de este partido todavia no esta abierta o ya cerro.",
         "CONFIGURATION_ERROR",
       );
     }
@@ -4021,6 +4032,144 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
+function mergePlayerOfMatchMatches(
+  sheetMatches: MatchRecord[],
+  fixtureMatches: LeagueFixtureMatch[],
+) {
+  const matchedSheetIds = new Set<string>();
+  const officialMatches = fixtureMatches
+    .filter((match) => match.dateIso && match.isClubMatch && !match.involvesBye)
+    .map((fixtureMatch) => {
+      const sheetMatch = findSheetMatchForFixture(
+        sheetMatches,
+        fixtureMatch,
+        matchedSheetIds,
+      );
+
+      if (sheetMatch) {
+        matchedSheetIds.add(sheetMatch.id);
+      }
+
+      const rival = getFixtureRival(fixtureMatch);
+      const date = fixtureMatch.dateIso ?? sheetMatch?.date ?? "";
+
+      return {
+        id: sheetMatch?.id ?? createFixturePlayerOfMatchId(fixtureMatch),
+        date,
+        period: getPeriodFromDate(date) ?? getCurrentPeriod(),
+        rival,
+        sourceType: fixtureMatch.competitionKind,
+        sourceLabel: getPlayerOfMatchSourceLabel(fixtureMatch.competitionKind),
+        resultLabel: getFixtureResultLabel(fixtureMatch),
+        localTeam: fixtureMatch.localTeam,
+        visitorTeam: fixtureMatch.visitorTeam,
+        players: sheetMatch?.players ?? [],
+        venue: sheetMatch?.venue ?? "",
+        coachAttended: sheetMatch?.coachAttended ?? false,
+        loadedAt: sheetMatch?.loadedAt ?? date,
+      } satisfies MatchRecord;
+    });
+  const formOnlyMatches = sheetMatches
+    .filter((match) => !matchedSheetIds.has(match.id))
+    .map((match) => enrichFormOnlyPlayerOfMatch(match));
+
+  return [...officialMatches, ...formOnlyMatches].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+}
+
+function findSheetMatchForFixture(
+  sheetMatches: MatchRecord[],
+  fixtureMatch: LeagueFixtureMatch,
+  matchedSheetIds: Set<string>,
+) {
+  const date = fixtureMatch.dateIso;
+
+  if (!date) {
+    return undefined;
+  }
+
+  const fixtureRivalKey = normalizeClubPlayerName(getFixtureRival(fixtureMatch));
+  const candidates = sheetMatches.filter(
+    (match) =>
+      match.date === date &&
+      !matchedSheetIds.has(match.id) &&
+      !isFriendlyMatchRecord(match),
+  );
+  const exactMatch = candidates.find((match) =>
+    areComparableRivals(normalizeClubPlayerName(match.rival), fixtureRivalKey),
+  );
+
+  return exactMatch ?? (candidates.length === 1 ? candidates[0] : undefined);
+}
+
+function enrichFormOnlyPlayerOfMatch(match: MatchRecord): MatchRecord {
+  const sourceType: LeagueCompetitionKind = isFriendlyMatchRecord(match)
+    ? "friendly"
+    : "league";
+  const rival = sourceType === "friendly" ? cleanFriendlyRival(match.rival) : match.rival;
+
+  return {
+    ...match,
+    rival,
+    sourceType,
+    sourceLabel: getPlayerOfMatchSourceLabel(sourceType),
+    resultLabel: match.resultLabel ?? "Pendiente",
+  };
+}
+
+function isFriendlyMatchRecord(match: MatchRecord) {
+  return /^amistoso\b/i.test(removeFriendlyAccents(match.rival));
+}
+
+function cleanFriendlyRival(value: string) {
+  return value.replace(/^\s*amistoso\s*[:\-]?\s*/i, "").trim() || "Rival amistoso";
+}
+
+function removeFriendlyAccents(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function areComparableRivals(left: string, right: string) {
+  return (
+    left === right ||
+    (left.length >= 4 && right.includes(left)) ||
+    (right.length >= 4 && left.includes(right))
+  );
+}
+
+function getFixtureRival(match: LeagueFixtureMatch) {
+  return match.localTeam === APP_TEAM_NAME ? match.visitorTeam : match.localTeam;
+}
+
+function getPlayerOfMatchSourceLabel(kind: LeagueCompetitionKind) {
+  return {
+    cup: "Copa",
+    friendly: "Amistoso",
+    league: "Liga",
+  }[kind];
+}
+
+function getFixtureResultLabel(match: LeagueFixtureMatch) {
+  if (
+    match.status === "played" &&
+    typeof match.localScore === "number" &&
+    typeof match.visitorScore === "number"
+  ) {
+    return `${match.localTeam} ${match.localScore}-${match.visitorScore} ${match.visitorTeam}`;
+  }
+
+  if (match.status === "without-result") {
+    return "Sin resultado publicado";
+  }
+
+  return "Pendiente";
+}
+
+function createFixturePlayerOfMatchId(match: LeagueFixtureMatch) {
+  return `fixture-${match.id}`;
+}
+
 function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
   return rowsToRecords(rows)
     .map<PlayerOfMatchVote | null>((record, index) => {
@@ -4088,13 +4237,17 @@ function buildPlayerOfMatchData({
     .map<PlayerOfMatchMatch>((match) => {
       const votingWindow = getPlayerOfMatchVotingWindow(match);
       const matchVotes = votes.filter((vote) => vote.matchId === match.id);
+      const sourceType = match.sourceType ?? "league";
 
       return {
         id: match.id,
-        title: `La Nueva Guardia vs ${match.rival}`,
+        title: `MVP vs ${match.rival}`,
         date: match.date,
         period: match.period,
         rival: match.rival,
+        sourceType,
+        sourceLabel: match.sourceLabel ?? getPlayerOfMatchSourceLabel(sourceType),
+        resultLabel: match.resultLabel ?? "Pendiente",
         players: match.players,
         results: buildPlayerOfMatchResults(match, matchVotes, playerPhotoMap),
         totalVotes: matchVotes.length * 2,
@@ -4102,7 +4255,7 @@ function buildPlayerOfMatchData({
         userVote: votesByMatchId.get(match.id),
         votingEndsAt: votingWindow.endsAt,
         votingStartsAt: votingWindow.startsAt,
-        votingStatus: votingWindow.isOpen ? "open" : "closed",
+        votingStatus: votingWindow.status,
       };
     });
 
@@ -4116,7 +4269,7 @@ function buildPlayerOfMatchData({
       description:
         status === "error"
           ? (message ?? "Revisá la conexión con Google Sheets.")
-          : "Cuando el formulario de partidos tenga fecha, rival y jugadores, van a aparecer aca.",
+          : "Cuando el fixture o el formulario de partidos tengan fecha, rival y jugadores, van a aparecer aca.",
     },
     source: {
       provider: "google-sheets",
@@ -4124,7 +4277,7 @@ function buildPlayerOfMatchData({
       message:
         message ??
         (formattedMatches.length > 0
-          ? "Partidos y votos obtenidos desde Google Sheets."
+          ? "Partidos, fixture y votos obtenidos correctamente."
           : "Google Sheets conectado, sin partidos cargados para votar."),
       cachedAt,
       revalidateSeconds,
@@ -4216,22 +4369,22 @@ function buildPlayerOfMatchPhotoMap(
 }
 
 function getPlayerOfMatchVotingWindow(match: MatchRecord) {
-  const startsAt = match.loadedAt || match.date;
-  const startsAtDate = new Date(`${startsAt}T00:00:00`);
-  const fallbackDate = new Date(`${match.date}T00:00:00`);
-  const safeStartDate = !Number.isNaN(startsAtDate.getTime())
-    ? startsAtDate
-    : !Number.isNaN(fallbackDate.getTime())
-      ? fallbackDate
-      : new Date();
-  const endsAtDate = new Date(safeStartDate);
-
-  endsAtDate.setDate(endsAtDate.getDate() + 7);
+  const startsAtDate = new Date(`${match.date}T20:00:00-03:00`);
+  const safeStartDate = !Number.isNaN(startsAtDate.getTime()) ? startsAtDate : new Date();
+  const endsAtDate = new Date(safeStartDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const now = Date.now();
+  const status: PlayerOfMatchMatch["votingStatus"] =
+    now < safeStartDate.getTime()
+      ? "scheduled"
+      : now <= endsAtDate.getTime()
+        ? "open"
+        : "closed";
 
   return {
-    endsAt: endsAtDate.toISOString().slice(0, 10),
-    isOpen: Date.now() <= endsAtDate.getTime(),
-    startsAt: safeStartDate.toISOString().slice(0, 10),
+    endsAt: endsAtDate.toISOString(),
+    isOpen: status === "open",
+    startsAt: safeStartDate.toISOString(),
+    status,
   };
 }
 

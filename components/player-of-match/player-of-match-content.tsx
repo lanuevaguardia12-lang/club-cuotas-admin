@@ -18,6 +18,10 @@ import { useState, useTransition, type CSSProperties } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 
 import { submitPlayerOfMatchVote } from "@/app/(dashboard)/player-of-match/actions";
+import {
+  CompetitionBadge,
+  getCompetitionCardClass,
+} from "@/components/fixture/competition-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,10 +69,35 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
   const [showResults, setShowResults] = useState(false);
   const alreadyVoted = Boolean(match.userVote);
   const votingClosed = match.votingStatus === "closed";
-  const canVote = match.players.length >= 2 && !alreadyVoted && !votingClosed;
+  const votingScheduled = match.votingStatus === "scheduled";
+  const canVote =
+    match.players.length >= 2 && !alreadyVoted && match.votingStatus === "open";
+  const statusConfig = {
+    closed: {
+      icon: Lock,
+      label: "Cerrada",
+      variant: "secondary" as const,
+    },
+    open: {
+      icon: Timer,
+      label: "Abierta",
+      variant: "success" as const,
+    },
+    scheduled: {
+      icon: CalendarDays,
+      label: "Próxima",
+      variant: "warning" as const,
+    },
+  }[match.votingStatus];
+  const StatusIcon = statusConfig.icon;
 
   return (
-    <Card className="club-animate-fade-up overflow-hidden">
+    <Card
+      className={cn(
+        "club-animate-fade-up overflow-hidden",
+        getCompetitionCardClass(match.sourceType),
+      )}
+    >
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -80,18 +109,15 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
               <CalendarDays className="size-4" />
               {formatDate(match.date)}
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <CompetitionBadge kind={match.sourceType} />
+              <Badge variant="outline">{match.resultLabel}</Badge>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge
-              variant={votingClosed ? "secondary" : "success"}
-              className="w-fit gap-1.5"
-            >
-              {votingClosed ? (
-                <Lock className="size-3.5" />
-              ) : (
-                <Timer className="size-3.5" />
-              )}
-              {votingClosed ? "Cerrada" : "Abierta"}
+            <Badge variant={statusConfig.variant} className="w-fit gap-1.5">
+              <StatusIcon className="size-3.5" />
+              {statusConfig.label}
             </Badge>
             {alreadyVoted ? (
               <Badge variant="success" className="w-fit gap-1.5">
@@ -111,7 +137,10 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
             <Timer className="size-3.5" />
             <span>
-              Hasta {formatDate(match.votingEndsAt)} · {match.totalVoters} votantes
+              {votingScheduled
+                ? `Abre ${formatDateTime(match.votingStartsAt)}`
+                : `Hasta ${formatDateTime(match.votingEndsAt)}`}{" "}
+              · {match.totalVoters} votantes
             </span>
           </div>
         </div>
@@ -126,6 +155,10 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
           </div>
         ) : canVote ? (
           <PlayerVoteForm match={match} />
+        ) : votingScheduled ? (
+          <p className="text-muted-foreground text-sm">
+            La votación abre el día del partido a las 20:00.
+          </p>
         ) : votingClosed ? (
           <p className="text-muted-foreground text-sm">
             La votación de este partido ya cerró. Podés ver cómo quedó el podio.
@@ -356,7 +389,7 @@ function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
         className={success ? "club-animate-select-pop" : undefined}
       >
         <Trophy />
-        Votar jugador del partido
+        Votar MVP
       </Button>
       {message ? (
         <p
@@ -433,7 +466,7 @@ function VoteResult({ label, value }: { label: string; value: string }) {
 }
 
 function formatDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
+  const date = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -443,6 +476,22 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "long",
     year: "numeric",
+  }).format(date);
+}
+
+function formatDateTime(value: string) {
+  const date = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "long",
+    timeZone: "America/Argentina/Buenos_Aires",
   }).format(date);
 }
 

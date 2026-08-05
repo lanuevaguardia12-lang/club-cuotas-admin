@@ -10,6 +10,7 @@ import {
   changeAccountPassword,
   saveAccountProfile,
 } from "@/app/(dashboard)/account/actions";
+import { LogoutButton } from "@/components/auth/logout-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
@@ -129,15 +130,66 @@ export function AccountContent({ profile }: AccountContentProps) {
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <LoadingModal open={isLoading} description={loadingMessage || "Guardando..."} />
 
-      <form className="grid gap-4" onSubmit={handleProfileSubmit(onProfileSubmit)}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserRound className="text-primary size-5" />
-              Tu información
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserRound className="text-primary size-5" />
+            Tu información
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-5">
+          <div className="border-border bg-muted/30 flex flex-col gap-4 rounded-md border p-4 sm:flex-row sm:items-center">
+            <div className="bg-muted grid size-28 shrink-0 place-items-center overflow-hidden rounded-full border">
+              {photoDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photoDataUrl}
+                  alt="Foto de perfil"
+                  className="size-full object-cover"
+                />
+              ) : (
+                <UserRound className="text-muted-foreground size-10" />
+              )}
+            </div>
+            <div className="grid min-w-0 flex-1 gap-3">
+              <div>
+                <p className="font-semibold">{profile.name}</p>
+                <p className="text-muted-foreground mt-1 truncate text-sm">
+                  {profile.email || profile.username}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Camera />
+                  Cargar foto
+                </Button>
+                {photoDataUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      setValue("profilePhotoDataUrl", "", { shouldDirty: true })
+                    }
+                  >
+                    Quitar foto
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <form className="grid gap-4" onSubmit={handleProfileSubmit(onProfileSubmit)}>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Nombre" error={profileErrors.name?.message}>
                 <input {...registerProfile("name")} className={inputClassName} />
@@ -171,58 +223,21 @@ export function AccountContent({ profile }: AccountContentProps) {
                 <span className="text-muted-foreground text-sm">{profileMessage}</span>
               ) : null}
             </div>
-          </CardContent>
-        </Card>
-      </form>
+          </form>
+
+          <div className="border-border flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">Sesión</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Cerrá tu sesión en este dispositivo.
+              </p>
+            </div>
+            <LogoutButton className="w-full sm:w-auto" />
+          </div>
+        </CardContent>
+      </Card>
 
       <aside className="grid gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Camera className="text-primary size-5" />
-              Foto de perfil
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="bg-muted mx-auto grid size-36 place-items-center overflow-hidden rounded-full border">
-              {photoDataUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photoDataUrl}
-                  alt="Foto de perfil"
-                  className="size-full object-cover"
-                />
-              ) : (
-                <UserRound className="text-muted-foreground size-12" />
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={handlePhotoChange}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Camera />
-              Cargar foto
-            </Button>
-            {photoDataUrl ? (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setValue("profilePhotoDataUrl", "", { shouldDirty: true })}
-              >
-                Quitar foto
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">

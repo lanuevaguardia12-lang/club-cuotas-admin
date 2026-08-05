@@ -2,7 +2,7 @@ import type { NavigationItem } from "@/types/navigation";
 
 export const navigationItems: NavigationItem[] = [
   {
-    label: "Inicio",
+    label: "Home",
     href: "/",
     icon: "dashboard",
     permission: "dashboard:read",
@@ -20,7 +20,7 @@ export const navigationItems: NavigationItem[] = [
     permission: "player:self:read",
   },
   {
-    label: "Jugador del partido",
+    label: "MVP",
     href: "/player-of-match",
     icon: "playerOfMatch",
     permission: "player-of-match:vote",

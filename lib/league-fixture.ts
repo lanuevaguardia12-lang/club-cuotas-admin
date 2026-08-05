@@ -2,6 +2,7 @@ import "server-only";
 
 import type {
   LeagueCategoryOption,
+  LeagueCompetitionKind,
   LeagueFixtureData,
   LeagueFixtureMatch,
   LeagueFixtureRound,
@@ -16,6 +17,7 @@ const DEFAULT_TOURNAMENT_ID = "327";
 const DEFAULT_CATEGORY_ID = "4201";
 const DEFAULT_YEAR = 2026;
 const MIN_TOURNAMENT_YEAR = 2025;
+const MAX_CLUB_COMPETITION_TARGETS = 14;
 const SOURCE_TEAM_NAME = "Barrio Dorrego";
 export const APP_TEAM_NAME = "La Nueva Guardia";
 
@@ -33,6 +35,17 @@ const FALLBACK_TOURNAMENTS: LeagueTournamentOption[] = [
         id: "4200",
         name: 'Primera "B"',
         tournamentId: "327",
+      },
+    ],
+  },
+  {
+    id: "387",
+    name: "Copa de Liga 2026",
+    categories: [
+      {
+        id: "4225",
+        name: "Primera",
+        tournamentId: "387",
       },
     ],
   },
@@ -60,6 +73,11 @@ interface LeagueRawCategory {
   };
 }
 
+interface LeagueCompetitionTarget {
+  tournament: Pick<LeagueTournamentOption, "id" | "name">;
+  category: LeagueCategoryOption;
+}
+
 export async function getLeagueFixtureData(
   input: GetLeagueFixtureDataInput = {},
 ): Promise<LeagueFixtureData> {
@@ -68,20 +86,29 @@ export async function getLeagueFixtureData(
   const selected = selectCompetition(metadata.tournaments, input);
   const selectedYear = getTournamentYear(selected.tournament.name) ?? DEFAULT_YEAR;
   const sourceUrl = buildFixtureUrl(selected.category.id, selected.tournament.id);
+  const selectedCompetitionKind = getLeagueCompetitionKind(
+    selected.tournament.name,
+    selected.category.name,
+  );
 
   try {
     const html = await fetchLeagueHtml(sourceUrl, { ajax: true });
     const standings = parseStandings(html);
-    const rounds = parseFixtureRounds(html, selected.tournament.name);
+    const rounds = parseFixtureRounds(html, selected);
     const matches = rounds.flatMap((round) => round.matches);
     const clubMatches = matches.filter((match) => match.isClubMatch);
-    const nextMatches = clubMatches
-      .filter((match) => match.status === "pending" && !match.involvesBye)
-      .slice(0, 3);
+    const allClubMatches = await getLeagueClubMatchesForYear(
+      selectedYear,
+      metadata.tournaments,
+    ).catch(() => []);
+    const nextMatches = buildNextMatches(
+      allClubMatches.length > 0 ? allClubMatches : clubMatches,
+    );
 
     return {
       availableYears: metadata.availableYears,
       selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+      selectedCompetitionKind,
       selectedYear,
       selectedTournamentId: selected.tournament.id,
       selectedCategoryId: selected.category.id,
@@ -111,6 +138,7 @@ export async function getLeagueFixtureData(
     return {
       availableYears: metadata.availableYears,
       selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+      selectedCompetitionKind,
       selectedYear,
       selectedTournamentId: selected.tournament.id,
       selectedCategoryId: selected.category.id,
@@ -136,6 +164,38 @@ export async function getLeagueFixtureData(
       },
     };
   }
+}
+
+export async function getLeagueClubMatchesForYear(
+  year = DEFAULT_YEAR,
+  tournaments?: LeagueTournamentOption[],
+) {
+  const metadata = tournaments ? { tournaments } : await loadLeagueMetadata();
+  const targets = getClubCompetitionTargets(metadata.tournaments, year).slice(
+    0,
+    MAX_CLUB_COMPETITION_TARGETS,
+  );
+  const settledResults = await Promise.allSettled(
+    targets.map(async (target) => {
+      const html = await fetchLeagueHtml(
+        buildFixtureUrl(target.category.id, target.tournament.id),
+        { ajax: true },
+      );
+      const rounds = parseFixtureRounds(html, target);
+
+      return rounds
+        .flatMap((round) => round.matches)
+        .filter((match) => match.isClubMatch && !match.involvesBye);
+    }),
+  );
+
+  return sortMatchesBySchedule(
+    dedupeLeagueMatches(
+      settledResults.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : [],
+      ),
+    ),
+  );
 }
 
 async function loadLeagueMetadata() {
@@ -281,6 +341,17 @@ function firstAvailableCompetition(tournaments: LeagueTournamentOption[]) {
   return tournament && category ? { tournament, category } : undefined;
 }
 
+function getClubCompetitionTargets(tournaments: LeagueTournamentOption[], year: number) {
+  return filterTournamentsByYear(tournaments, year)
+    .flatMap((tournament) =>
+      tournament.categories.map((category): LeagueCompetitionTarget => ({
+        tournament,
+        category,
+      })),
+    )
+    .sort(sortCompetitionTargets);
+}
+
 function filterTournamentsByYear(tournaments: LeagueTournamentOption[], year: number) {
   return tournaments.filter((tournament) => getTournamentYear(tournament.name) === year);
 }
@@ -390,14 +461,78 @@ function getTournamentYear(name: string) {
 
 function isRelevantCategory(category: LeagueRawCategory) {
   const sport = normalizeWhitespace(category.deporte?.name ?? "");
+  const tournamentName = normalizeWhitespace(category.torneo?.name ?? "");
   const categoryName = normalizeWhitespace(
     category.categoria?.name ?? category.name ?? "",
   );
+  const normalizedCategory = removeAccents(categoryName).toLowerCase();
+  const normalizedTournament = removeAccents(tournamentName).toLowerCase();
 
   return (
     /futbol mayores/i.test(sport) &&
-    /(primera|promoci[oó]n|play\s*off|semifinal|final)/i.test(categoryName)
+    /^primera\b/i.test(normalizedCategory) &&
+    !/femenino|junior|master|senior|super master/i.test(normalizedCategory) &&
+    !/menores/i.test(normalizedTournament)
   );
+}
+
+export function getLeagueCompetitionKind(
+  tournamentName: string,
+  categoryName = "",
+): LeagueCompetitionKind {
+  const normalized = removeAccents(`${tournamentName} ${categoryName}`).toLowerCase();
+
+  if (/\bamistoso\b/.test(normalized)) {
+    return "friendly";
+  }
+
+  if (/\bcopa\b|play\s*off|semifinal|final|promocion/.test(normalized)) {
+    return "cup";
+  }
+
+  return "league";
+}
+
+function sortCompetitionTargets(
+  left: LeagueCompetitionTarget,
+  right: LeagueCompetitionTarget,
+) {
+  const priorityDiff =
+    getCompetitionPriority(right) - getCompetitionPriority(left) ||
+    getTournamentIdNumber(right.tournament.id) -
+      getTournamentIdNumber(left.tournament.id);
+
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+
+  return left.category.name.localeCompare(right.category.name, "es-AR");
+}
+
+function getCompetitionPriority(target: LeagueCompetitionTarget) {
+  const normalized = removeAccents(
+    `${target.tournament.name} ${target.category.name}`,
+  ).toLowerCase();
+
+  if (/\bcopa\b/.test(normalized)) {
+    return 3;
+  }
+
+  if (/clausura/.test(normalized)) {
+    return 2;
+  }
+
+  if (/apertura/.test(normalized)) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getTournamentIdNumber(value: string) {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function sortTournaments(a: LeagueTournamentOption, b: LeagueTournamentOption) {
@@ -463,11 +598,14 @@ function parseStandings(html: string): LeagueStandingRow[] {
     .filter((row): row is LeagueStandingRow => Boolean(row));
 }
 
-function parseFixtureRounds(html: string, tournamentName: string): LeagueFixtureRound[] {
+function parseFixtureRounds(
+  html: string,
+  competition: LeagueCompetitionTarget,
+): LeagueFixtureRound[] {
   const fragments = html
     .split(/(?=<div class=["']alt-round["'][^>]*>)/i)
     .filter((fragment) => /^<div class=["']alt-round["'][^>]*>/i.test(fragment.trim()));
-  const year = Number(/\b(20\d{2})\b/.exec(tournamentName)?.[1]);
+  const year = Number(/\b(20\d{2})\b/.exec(competition.tournament.name)?.[1]);
 
   return fragments
     .map((roundHtml) => {
@@ -482,7 +620,7 @@ function parseFixtureRounds(html: string, tournamentName: string): LeagueFixture
           /<span[^>]*class=["'][^"']*alt-round-date[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
         ) || "";
       const dateIso = parseSpanishFixtureDate(date, year);
-      const matches = parseRoundMatches(roundHtml, name, date, dateIso);
+      const matches = parseRoundMatches(roundHtml, name, date, dateIso, competition);
 
       return {
         name,
@@ -498,7 +636,19 @@ function parseRoundMatches(
   round: string,
   roundDate: string,
   dateIso?: string,
+  competition?: LeagueCompetitionTarget,
 ) {
+  const safeCompetition =
+    competition ??
+    ({
+      tournament: { id: "fallback", name: "Liga Country Sur" },
+      category: { id: "fallback", name: "Primera", tournamentId: "fallback" },
+    } satisfies LeagueCompetitionTarget);
+  const competitionKind = getLeagueCompetitionKind(
+    safeCompetition.tournament.name,
+    safeCompetition.category.name,
+  );
+
   const starts = [...roundHtml.matchAll(/<div class=["']alt-match\b[^"']*["'][^>]*>/gi)]
     .map((match) => match.index)
     .filter((index): index is number => typeof index === "number");
@@ -544,7 +694,10 @@ function parseRoundMatches(
         /^(libre|bye)$/i.test(localTeam) || /^(libre|bye)$/i.test(visitorTeam);
 
       return {
-        id,
+        id: createLeagueMatchId(safeCompetition, id),
+        competitionKind,
+        competitionName: safeCompetition.tournament.name,
+        categoryName: safeCompetition.category.name,
         round,
         roundDate,
         dateIso,
@@ -562,6 +715,58 @@ function parseRoundMatches(
       };
     })
     .filter((match): match is LeagueFixtureMatch => Boolean(match));
+}
+
+function createLeagueMatchId(competition: LeagueCompetitionTarget, fixtureId: string) {
+  return `${competition.tournament.id}:${competition.category.id}:${fixtureId}`;
+}
+
+function buildNextMatches(matches: LeagueFixtureMatch[]) {
+  return sortMatchesBySchedule(
+    matches.filter((match) => match.status === "pending" && !match.involvesBye),
+  ).slice(0, 3);
+}
+
+function dedupeLeagueMatches(matches: LeagueFixtureMatch[]) {
+  const seen = new Set<string>();
+  const uniqueMatches: LeagueFixtureMatch[] = [];
+
+  for (const match of matches) {
+    const key = [
+      match.competitionKind,
+      normalizeTextKey(match.competitionName),
+      match.dateIso ?? match.roundDate,
+      normalizeTextKey(match.localTeam),
+      normalizeTextKey(match.visitorTeam),
+    ].join("|");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueMatches.push(match);
+  }
+
+  return uniqueMatches;
+}
+
+function sortMatchesBySchedule(matches: LeagueFixtureMatch[]) {
+  return [...matches].sort(
+    (left, right) => getMatchSortValue(left) - getMatchSortValue(right),
+  );
+}
+
+function getMatchSortValue(match: LeagueFixtureMatch) {
+  const date = match.dateIso ?? "";
+  const time = /^(\d{1,2}):(\d{2})/.exec(match.time);
+  const hour = time ? Number(time[1]) : 23;
+  const minute = time ? Number(time[2]) : 59;
+  const value = new Date(
+    `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00-03:00`,
+  ).getTime();
+
+  return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
 }
 
 function parseMatchStatus(
@@ -721,6 +926,10 @@ function decodeHtml(value: string) {
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeTextKey(value: string) {
+  return removeAccents(normalizeWhitespace(value)).toLowerCase();
 }
 
 function removeAccents(value: string) {

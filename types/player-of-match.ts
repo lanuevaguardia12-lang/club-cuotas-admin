@@ -1,4 +1,5 @@
 import type { DataSourceState } from "@/types/dashboard";
+import type { LeagueCompetitionKind } from "@/types/fixture";
 
 export interface PlayerOfMatchVote {
   id: string;
@@ -19,13 +20,16 @@ export interface PlayerOfMatchMatch {
   date: string;
   period: string;
   rival: string;
+  sourceType: LeagueCompetitionKind;
+  sourceLabel: string;
+  resultLabel: string;
   players: string[];
   results: PlayerOfMatchResult[];
   totalVotes: number;
   totalVoters: number;
   votingStartsAt: string;
   votingEndsAt: string;
-  votingStatus: "open" | "closed";
+  votingStatus: "scheduled" | "open" | "closed";
   userVote?: PlayerOfMatchVote;
 }
 

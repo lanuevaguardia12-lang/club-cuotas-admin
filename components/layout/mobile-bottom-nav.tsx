@@ -8,7 +8,7 @@ import {
   CalendarDays,
   CreditCard,
   FileKey2,
-  LayoutDashboard,
+  House,
   Settings,
   ShieldCheck,
   Trophy,
@@ -32,7 +32,7 @@ const iconMap = {
   account: UserRound,
   api: FileKey2,
   audit: ShieldCheck,
-  dashboard: LayoutDashboard,
+  dashboard: House,
   myFee: BadgeDollarSign,
   playerOfMatch: Trophy,
   fixture: CalendarDays,
@@ -51,11 +51,12 @@ export function MobileBottomNav({ user }: MobileBottomNavProps) {
   const visibleItems = navigationItems.filter((item) =>
     hasPermission(user, item.permission),
   );
+  const orderedItems = centerHomeItem(visibleItems);
 
   return (
-    <nav className="border-border bg-card/95 fixed inset-x-0 bottom-0 z-50 border-t shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+    <nav className="bg-primary text-primary-foreground border-primary fixed inset-x-0 bottom-0 z-50 border-t shadow-[0_-12px_30px_rgba(1,47,119,0.2)] backdrop-blur lg:hidden">
       <div className="flex gap-1 overflow-x-auto px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-        {visibleItems.map((item) => {
+        {orderedItems.map((item) => {
           const Icon = iconMap[item.icon];
           const active = isActivePath(pathname, item.href);
 
@@ -65,8 +66,8 @@ export function MobileBottomNav({ user }: MobileBottomNavProps) {
               href={item.href}
               loadingMessage={`Cargando ${item.label}...`}
               className={cn(
-                "text-muted-foreground flex min-w-[4.75rem] flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-[0.7rem] leading-tight font-medium transition-colors",
-                active && "bg-secondary text-primary",
+                "flex min-w-[4.75rem] flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-[0.7rem] leading-tight font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white",
+                active && "text-primary hover:text-primary bg-white hover:bg-white",
               )}
             >
               <Icon className="size-5" aria-hidden="true" />
@@ -77,6 +78,23 @@ export function MobileBottomNav({ user }: MobileBottomNavProps) {
       </div>
     </nav>
   );
+}
+
+function centerHomeItem<T extends { href: string }>(items: T[]) {
+  const homeItem = items.find((item) => item.href === "/");
+
+  if (!homeItem) {
+    return items;
+  }
+
+  const otherItems = items.filter((item) => item.href !== "/");
+  const centerIndex = Math.ceil(otherItems.length / 2);
+
+  return [
+    ...otherItems.slice(0, centerIndex),
+    homeItem,
+    ...otherItems.slice(centerIndex),
+  ];
 }
 
 function isActivePath(pathname: string, href: string) {

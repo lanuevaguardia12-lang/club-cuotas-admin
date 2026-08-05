@@ -27,7 +27,7 @@ export default async function PlayerOfMatchPage() {
           </p>
           <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-normal sm:text-3xl">
             <Trophy className="text-primary size-7" />
-            Jugador del partido
+            MVP
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
             Votá dos jugadores por partido. Solo aparecen los jugadores que figuran como
