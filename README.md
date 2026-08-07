@@ -215,6 +215,8 @@ GOOGLE_SHEETS_NOTIFICATIONS_RANGE="Notificaciones!A:Z"
 GOOGLE_SHEETS_REMINDERS_RANGE="Recordatorios!A:Z"
 GOOGLE_SHEETS_PAYMENTS_RANGE="Pagos!A:Z"
 GOOGLE_SHEETS_PUSH_SUBSCRIPTIONS_RANGE="PushSubscriptions!A:Z"
+GOOGLE_SHEETS_PLAYER_OF_MATCH_VOTES_RANGE="JugadorPartidoVotos!A:Z"
+GOOGLE_SHEETS_PLAYER_OF_MATCH_OVERRIDES_RANGE="JugadorPartidoAjustes!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE="CalculadoraCostos!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_ACTUALS_RANGE="CalculadoraReales!A:Z"
 GOOGLE_SHEETS_FEE_CALCULATOR_PLAYER_STATUSES_RANGE="CalculadoraJugadores!A:Z"
@@ -492,11 +494,24 @@ Hoja externa `Partidos jugados formulario`:
 | ----------------- | ----------- | -------- | ------------------------ |
 | 7/6/2026 16:25:19 | Green Ville | 6/6/2026 | Juan Perez, Pedro Gomez  |
 
+Si la hoja trae la columna `Competencia`, los valores soportados son `Torneo`,
+`Copa` y `Amistoso`. Torneo y Copa se cruzan con el fixture oficial por fecha,
+rival y competencia. Amistoso genera una card propia sin resultado oficial.
+
 Hoja `JugadorPartidoVotos`:
 
 | id      | partido_id                | fecha_partido | rival       | votante_user_id | votante_player_id | votante_nombre | primer_voto_jugador | segundo_voto_jugador | creado_en            |
 | ------- | ------------------------- | ------------- | ----------- | --------------- | ----------------- | -------------- | ------------------- | -------------------- | -------------------- |
 | vote-01 | match-2026-06-06-green... | 2026-06-06    | Green Ville | ivo             | ivo-unzaga        | Ivo Unzaga     | Juan Perez          | Pedro Gomez          | 2026-06-07T10:00:00Z |
+
+Hoja `JugadorPartidoAjustes`:
+
+| partido_id | fecha      | rival       | competencia | jugadores               | actualizado_por_user_id | actualizado_por | actualizado_en       |
+| ---------- | ---------- | ----------- | ----------- | ----------------------- | ----------------------- | --------------- | -------------------- |
+| match-...  | 2026-08-07 | Rival Libre | Amistoso    | Juan Perez, Pedro Gomez | admin                   | Administrador   | 2026-08-07T10:00:00Z |
+
+Esta hoja guarda correcciones admin de amistosos. No modifica las respuestas
+crudas del formulario.
 
 Reglas de votación:
 
@@ -510,6 +525,9 @@ Reglas de votación:
   iniciales como fallback.
 - La pantalla muestra cada partido como `La Nueva Guardia vs Rival` y la fecha
   del encuentro.
+- Solo el rol Administrador puede editar cards de `Amistoso`. Los partidos
+  oficiales de Torneo/Copa se consideran fuente de fixture y no se editan desde
+  la app.
 
 Hoja `CuentasUsuario`:
 

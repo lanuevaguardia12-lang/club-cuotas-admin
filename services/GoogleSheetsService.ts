@@ -98,6 +98,7 @@ import type {
   PlayerOfMatchMatch,
   PlayerOfMatchVote,
   SubmitPlayerOfMatchVoteInput,
+  UpdatePlayerOfMatchMatchInput,
 } from "@/types/player-of-match";
 import type {
   PlayerDirectoryData,
@@ -139,6 +140,7 @@ interface GoogleSheetsConfig {
   paymentsRange: string;
   pushSubscriptionsRange: string;
   playerOfMatchVotesRange: string;
+  playerOfMatchOverridesRange: string;
   feeCalculatorCostsRange: string;
   feeCalculatorActualsRange: string;
   feeCalculatorPlayerStatusesRange: string;
@@ -192,12 +194,24 @@ interface MatchRecord {
   sourceType?: LeagueCompetitionKind;
   sourceLabel?: string;
   resultLabel?: string;
+  canEdit?: boolean;
   localTeam?: string;
   visitorTeam?: string;
   players: string[];
   venue: string;
   coachAttended: boolean;
   loadedAt: string;
+}
+
+interface PlayerOfMatchOverrideRecord {
+  matchId: string;
+  date: string;
+  rival: string;
+  sourceType: LeagueCompetitionKind;
+  players: string[];
+  updatedByUserId: string;
+  updatedByName: string;
+  updatedAt: string;
 }
 
 interface AccountProfileRecord extends AccountProfile {
@@ -237,6 +251,7 @@ const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
 const DEFAULT_PUSH_SUBSCRIPTIONS_RANGE = "PushSubscriptions!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE = "JugadorPartidoVotos!A:Z";
+const DEFAULT_PLAYER_OF_MATCH_OVERRIDES_RANGE = "JugadorPartidoAjustes!A:Z";
 const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
 const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
@@ -333,6 +348,17 @@ const playerOfMatchVoteHeaders = [
   "primer_voto_jugador",
   "segundo_voto_jugador",
   "creado_en",
+];
+
+const playerOfMatchOverrideHeaders = [
+  "partido_id",
+  "fecha",
+  "rival",
+  "competencia",
+  "jugadores",
+  "actualizado_por_user_id",
+  "actualizado_por",
+  "actualizado_en",
 ];
 
 const cashFlowHeaders = [
@@ -483,6 +509,10 @@ export class GoogleSheetsService implements IDataService {
         config.playerOfMatchVotesRange ??
         process.env.GOOGLE_SHEETS_PLAYER_OF_MATCH_VOTES_RANGE ??
         DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE,
+      playerOfMatchOverridesRange:
+        config.playerOfMatchOverridesRange ??
+        process.env.GOOGLE_SHEETS_PLAYER_OF_MATCH_OVERRIDES_RANGE ??
+        DEFAULT_PLAYER_OF_MATCH_OVERRIDES_RANGE,
       feeCalculatorCostsRange:
         config.feeCalculatorCostsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE ??
@@ -1934,13 +1964,18 @@ export class GoogleSheetsService implements IDataService {
     try {
       this.assertConfigured();
 
-      const [sheetMatches, fixtureMatches, votes, accountProfiles] = await Promise.all([
-        this.readPlayerOfMatchMatches(),
-        getLeagueClubMatchesForYear().catch(() => []),
-        this.readPlayerOfMatchVotes(),
-        this.readAccountProfiles().catch(() => []),
-      ]);
-      const matches = mergePlayerOfMatchMatches(sheetMatches, fixtureMatches);
+      const [sheetMatches, fixtureMatches, votes, accountProfiles, overrides] =
+        await Promise.all([
+          this.readPlayerOfMatchMatches(),
+          getLeagueClubMatchesForYear().catch(() => []),
+          this.readPlayerOfMatchVotes(),
+          this.readAccountProfiles().catch(() => []),
+          this.readPlayerOfMatchOverrides(),
+        ]);
+      const matches = applyPlayerOfMatchOverrides(
+        mergePlayerOfMatchMatches(sheetMatches, fixtureMatches),
+        overrides,
+      );
       const voterVotes = votes.filter((vote) => vote.voterUserId === voterUserId);
 
       return buildPlayerOfMatchData({
@@ -1971,12 +2006,16 @@ export class GoogleSheetsService implements IDataService {
   async submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void> {
     this.assertConfigured();
 
-    const [sheetMatches, fixtureMatches, votes] = await Promise.all([
+    const [sheetMatches, fixtureMatches, votes, overrides] = await Promise.all([
       this.readPlayerOfMatchMatches(),
       getLeagueClubMatchesForYear().catch(() => []),
       this.readPlayerOfMatchVotes(),
+      this.readPlayerOfMatchOverrides(),
     ]);
-    const matches = mergePlayerOfMatchMatches(sheetMatches, fixtureMatches);
+    const matches = applyPlayerOfMatchOverrides(
+      mergePlayerOfMatchMatches(sheetMatches, fixtureMatches),
+      overrides,
+    );
     const match = matches.find((candidate) => candidate.id === input.matchId);
 
     if (!match) {
@@ -2047,6 +2086,124 @@ export class GoogleSheetsService implements IDataService {
       }),
       spreadsheetId,
     );
+    invalidatePlayerOfMatchCache();
+  }
+
+  async updatePlayerOfMatchMatch(input: UpdatePlayerOfMatchMatchInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const [sheetMatches, fixtureMatches, overrides] = await Promise.all([
+      this.readPlayerOfMatchMatches(),
+      getLeagueClubMatchesForYear().catch(() => []),
+      this.readPlayerOfMatchOverrides(),
+    ]);
+    const matches = applyPlayerOfMatchOverrides(
+      mergePlayerOfMatchMatches(sheetMatches, fixtureMatches),
+      overrides,
+    );
+    const match = matches.find((candidate) => candidate.id === input.matchId);
+
+    if (!match) {
+      throw new DataServiceError(
+        "No se encontro el partido para editar.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    if (!isEditablePlayerOfMatchRecord(match) || input.sourceType !== "friendly") {
+      throw new DataServiceError(
+        "Solo se pueden editar partidos amistosos cargados desde el formulario.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const normalizedPlayers = uniquePlayerNames(input.players);
+
+    if (normalizedPlayers.length < 2) {
+      throw new DataServiceError(
+        "Cargá al menos dos jugadores para habilitar la votacion.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const override: PlayerOfMatchOverrideRecord = {
+      matchId: input.matchId,
+      date: input.date,
+      rival: input.rival.trim(),
+      sourceType: input.sourceType,
+      players: normalizedPlayers,
+      updatedByUserId: input.updatedByUserId,
+      updatedByName: input.updatedByName,
+      updatedAt: new Date().toISOString(),
+    };
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(this.config.playerOfMatchOverridesRange);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.playerOfMatchOverridesRange,
+    );
+
+    await this.ensureSheetForRange(
+      this.config.playerOfMatchOverridesRange,
+      spreadsheetId,
+    );
+
+    if (rows.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A:${toColumnName(playerOfMatchOverrideHeaders.length - 1)}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            playerOfMatchOverrideHeaders,
+            buildPlayerOfMatchOverrideWritableRow(playerOfMatchOverrideHeaders, override),
+          ],
+        },
+      });
+      invalidatePlayerOfMatchCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, playerOfMatchOverrideHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      playerOfMatchOverrideHeaders,
+    );
+    const matchIdIndex = findHeaderIndex(headers, ["partido_id", "match_id"]);
+    const targetRowIndex =
+      matchIdIndex >= 0
+        ? dataRows.findIndex(
+            (row) => String(row[matchIdIndex] ?? "").trim() === input.matchId,
+          )
+        : -1;
+
+    if (targetRowIndex >= 0) {
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [buildPlayerOfMatchOverrideWritableRow(headers, override)],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${sheetPrefix}!A:${toColumnName(headers.length - 1)}`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [buildPlayerOfMatchOverrideWritableRow(headers, override)],
+        },
+      });
+    }
+
     invalidatePlayerOfMatchCache();
   }
 
@@ -2751,6 +2908,29 @@ export class GoogleSheetsService implements IDataService {
         "google-sheets-player-of-match-votes",
         spreadsheetId,
         this.config.playerOfMatchVotesRange,
+      ],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:player-of-match"],
+      },
+    )();
+  }
+
+  private async readPlayerOfMatchOverrides(): Promise<PlayerOfMatchOverrideRecord[]> {
+    const spreadsheetId = this.getAppSpreadsheetId();
+
+    return unstable_cache(
+      async () =>
+        mapRowsToPlayerOfMatchOverrides(
+          await this.readOptionalValuesFromSpreadsheet(
+            spreadsheetId,
+            this.config.playerOfMatchOverridesRange,
+          ),
+        ),
+      [
+        "google-sheets-player-of-match-overrides",
+        spreadsheetId,
+        this.config.playerOfMatchOverridesRange,
       ],
       {
         revalidate: this.config.cacheTtlSeconds,
@@ -3974,7 +4154,7 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
   const seenIds = new Set<string>();
 
   return rowsToRecords(rows)
-    .map((record) => {
+    .map<MatchRecord | null>((record) => {
       const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
       const loadedAt =
         parseClubDateTime(
@@ -3987,6 +4167,16 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
           ]),
         ) ?? date;
       const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
+      const sourceType = parsePlayerOfMatchCompetition(
+        pick(record, [
+          "competencia",
+          "competition",
+          "tipo_competencia",
+          "tipo_de_competencia",
+          "torneo_copa_amistoso",
+          "tipo",
+        ]),
+      );
       const venue = pick(record, [
         "local_visitante",
         "local_o_visitante",
@@ -4017,7 +4207,7 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
 
       const rawId = pick(record, ["id", "partido_id", "match_id"]);
 
-      return {
+      const match: MatchRecord = {
         id: createUniqueMatchId(rawId || createMatchId(date, rival), seenIds),
         date,
         period: getPeriodFromDate(date) ?? getCurrentPeriod(),
@@ -4026,7 +4216,13 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
         venue,
         coachAttended,
         loadedAt: loadedAt ?? date,
-      } satisfies MatchRecord;
+      };
+
+      if (sourceType) {
+        match.sourceType = sourceType;
+      }
+
+      return match;
     })
     .filter((match): match is MatchRecord => Boolean(match))
     .sort((left, right) => left.date.localeCompare(right.date));
@@ -4061,6 +4257,7 @@ function mergePlayerOfMatchMatches(
         sourceType: fixtureMatch.competitionKind,
         sourceLabel: getPlayerOfMatchSourceLabel(fixtureMatch.competitionKind),
         resultLabel: getFixtureResultLabel(fixtureMatch),
+        canEdit: false,
         localTeam: fixtureMatch.localTeam,
         visitorTeam: fixtureMatch.visitorTeam,
         players: sheetMatch?.players ?? [],
@@ -4094,7 +4291,8 @@ function findSheetMatchForFixture(
     (match) =>
       match.date === date &&
       !matchedSheetIds.has(match.id) &&
-      !isFriendlyMatchRecord(match),
+      !isFriendlyMatchRecord(match) &&
+      isCompatiblePlayerOfMatchCompetition(match, fixtureMatch.competitionKind),
   );
   const exactMatch = candidates.find((match) =>
     areComparableRivals(normalizeClubPlayerName(match.rival), fixtureRivalKey),
@@ -4104,9 +4302,8 @@ function findSheetMatchForFixture(
 }
 
 function enrichFormOnlyPlayerOfMatch(match: MatchRecord): MatchRecord {
-  const sourceType: LeagueCompetitionKind = isFriendlyMatchRecord(match)
-    ? "friendly"
-    : "league";
+  const sourceType: LeagueCompetitionKind =
+    match.sourceType ?? (isFriendlyMatchRecord(match) ? "friendly" : "league");
   const rival = sourceType === "friendly" ? cleanFriendlyRival(match.rival) : match.rival;
 
   return {
@@ -4114,12 +4311,91 @@ function enrichFormOnlyPlayerOfMatch(match: MatchRecord): MatchRecord {
     rival,
     sourceType,
     sourceLabel: getPlayerOfMatchSourceLabel(sourceType),
-    resultLabel: match.resultLabel ?? "Pendiente",
+    resultLabel:
+      match.resultLabel ??
+      (sourceType === "friendly" ? "Sin resultado oficial" : "Pendiente"),
+    canEdit: sourceType === "friendly",
   };
 }
 
 function isFriendlyMatchRecord(match: MatchRecord) {
-  return /^amistoso\b/i.test(removeFriendlyAccents(match.rival));
+  return (
+    match.sourceType === "friendly" ||
+    /^amistoso\b/i.test(removeFriendlyAccents(match.rival))
+  );
+}
+
+function isEditablePlayerOfMatchRecord(match: MatchRecord) {
+  return Boolean(match.canEdit && match.sourceType === "friendly");
+}
+
+function isCompatiblePlayerOfMatchCompetition(
+  match: MatchRecord,
+  fixtureCompetitionKind: LeagueCompetitionKind,
+) {
+  return !match.sourceType || match.sourceType === fixtureCompetitionKind;
+}
+
+function parsePlayerOfMatchCompetition(value: string): LeagueCompetitionKind | undefined {
+  const normalized = normalizeText(value);
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized.includes("amistoso") || normalized === "friendly") {
+    return "friendly";
+  }
+
+  if (normalized.includes("copa") || normalized === "cup") {
+    return "cup";
+  }
+
+  if (
+    normalized.includes("torneo") ||
+    normalized.includes("liga") ||
+    normalized === "league"
+  ) {
+    return "league";
+  }
+
+  return undefined;
+}
+
+function applyPlayerOfMatchOverrides(
+  matches: MatchRecord[],
+  overrides: PlayerOfMatchOverrideRecord[],
+) {
+  if (overrides.length === 0) {
+    return matches;
+  }
+
+  const overridesByMatchId = new Map(
+    overrides.map((override) => [override.matchId, override]),
+  );
+
+  return matches
+    .map((match) => {
+      const override = overridesByMatchId.get(match.id);
+
+      if (!override || !isEditablePlayerOfMatchRecord(match)) {
+        return match;
+      }
+
+      return {
+        ...match,
+        date: override.date,
+        period: getPeriodFromDate(override.date) ?? match.period,
+        rival: cleanFriendlyRival(override.rival),
+        sourceType: "friendly",
+        sourceLabel: getPlayerOfMatchSourceLabel("friendly"),
+        resultLabel: "Sin resultado oficial",
+        players: override.players,
+        canEdit: true,
+        loadedAt: override.updatedAt || match.loadedAt,
+      } satisfies MatchRecord;
+    })
+    .sort((left, right) => left.date.localeCompare(right.date));
 }
 
 function cleanFriendlyRival(value: string) {
@@ -4168,6 +4444,46 @@ function getFixtureResultLabel(match: LeagueFixtureMatch) {
 
 function createFixturePlayerOfMatchId(match: LeagueFixtureMatch) {
   return `fixture-${match.id}`;
+}
+
+function mapRowsToPlayerOfMatchOverrides(
+  rows: unknown[][],
+): PlayerOfMatchOverrideRecord[] {
+  return rowsToRecords(rows)
+    .map<PlayerOfMatchOverrideRecord | null>((record) => {
+      const matchId = pick(record, ["partido_id", "match_id"]);
+      const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
+      const rival = pick(record, ["rival", "oponente", "contrario"]);
+      const sourceType =
+        parsePlayerOfMatchCompetition(
+          pick(record, ["competencia", "competition", "tipo_competencia"]),
+        ) ?? "friendly";
+      const players = uniquePlayerNames(
+        splitPlayerNames(pick(record, ["jugadores", "players", "participantes"])),
+      );
+
+      if (!matchId || !date || !rival || sourceType !== "friendly") {
+        return null;
+      }
+
+      return {
+        matchId,
+        date,
+        rival,
+        sourceType,
+        players,
+        updatedByUserId: pick(record, [
+          "actualizado_por_user_id",
+          "updated_by_user_id",
+          "user_id",
+        ]),
+        updatedByName: pick(record, ["actualizado_por", "updated_by", "usuario"]),
+        updatedAt:
+          parseDateTime(pick(record, ["actualizado_en", "updated_at", "timestamp"])) ??
+          "",
+      } satisfies PlayerOfMatchOverrideRecord;
+    })
+    .filter((override): override is PlayerOfMatchOverrideRecord => Boolean(override));
 }
 
 function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
@@ -4252,6 +4568,7 @@ function buildPlayerOfMatchData({
         results: buildPlayerOfMatchResults(match, matchVotes, playerPhotoMap),
         totalVotes: matchVotes.length * 2,
         totalVoters: matchVotes.length,
+        canEdit: isEditablePlayerOfMatchRecord(match),
         userVote: votesByMatchId.get(match.id),
         votingEndsAt: votingWindow.endsAt,
         votingStartsAt: votingWindow.startsAt,
@@ -4412,6 +4729,35 @@ function buildPlayerOfMatchVoteWritableRow(headers: string[], vote: PlayerOfMatc
     votante_nombre: vote.voterName,
     votante_player_id: vote.voterPlayerId ?? "",
     votante_user_id: vote.voterUserId,
+  };
+
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function buildPlayerOfMatchOverrideWritableRow(
+  headers: string[],
+  override: PlayerOfMatchOverrideRecord,
+) {
+  const playersText = override.players.join("\n");
+  const values: Record<string, string> = {
+    actualizacion: override.updatedAt,
+    actualizado_en: override.updatedAt,
+    actualizado_por: override.updatedByName,
+    actualizado_por_user_id: override.updatedByUserId,
+    competencia: getPlayerOfMatchSourceLabel(override.sourceType),
+    competition: override.sourceType,
+    date: override.date,
+    fecha: override.date,
+    jugadores: playersText,
+    match_id: override.matchId,
+    participantes: playersText,
+    partido_id: override.matchId,
+    players: playersText,
+    rival: override.rival,
+    tipo_competencia: getPlayerOfMatchSourceLabel(override.sourceType),
+    updated_at: override.updatedAt,
+    updated_by: override.updatedByName,
+    updated_by_user_id: override.updatedByUserId,
   };
 
   return headers.map((header) => values[normalizeHeader(header)] ?? "");
@@ -7405,6 +7751,21 @@ function splitPlayerNames(value: string) {
     .split(/[,;\n]/)
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+function uniquePlayerNames(players: string[]) {
+  const seen = new Set<string>();
+
+  return players.filter((player) => {
+    const key = normalizeClubPlayerName(player);
+
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 function parseAssignedPlayerIds(value: string) {

@@ -19,7 +19,8 @@ export type Permission =
   | "api:write"
   | "fixture:read"
   | "player:self:read"
-  | "player-of-match:vote";
+  | "player-of-match:vote"
+  | "player-of-match:manage";
 
 export const roleLabels: Record<AuthRole, string> = {
   admin: "Administrador",
@@ -56,6 +57,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "fixture:read",
     "player:self:read",
     "player-of-match:vote",
+    "player-of-match:manage",
   ],
   coach: [
     "dashboard:read",

@@ -8,6 +8,8 @@ import {
   Eye,
   Lock,
   Medal,
+  Pencil,
+  Save,
   Sparkles,
   Timer,
   Trophy,
@@ -17,7 +19,10 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type CSSProperties } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 
-import { submitPlayerOfMatchVote } from "@/app/(dashboard)/player-of-match/actions";
+import {
+  submitPlayerOfMatchVote,
+  updatePlayerOfMatchMatch,
+} from "@/app/(dashboard)/player-of-match/actions";
 import {
   CompetitionBadge,
   getCompetitionCardClass,
@@ -28,7 +33,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { cn } from "@/lib/utils";
 import {
+  playerOfMatchEditSchema,
   playerOfMatchVoteSchema,
+  type PlayerOfMatchEditFormValues,
   type PlayerOfMatchVoteFormValues,
 } from "@/lib/player-of-match/validation";
 import type {
@@ -38,10 +45,11 @@ import type {
 } from "@/types/player-of-match";
 
 interface PlayerOfMatchContentProps {
+  canManage: boolean;
   data: PlayerOfMatchData;
 }
 
-export function PlayerOfMatchContent({ data }: PlayerOfMatchContentProps) {
+export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentProps) {
   if (data.matches.length === 0) {
     return (
       <Card className="border-dashed">
@@ -59,14 +67,21 @@ export function PlayerOfMatchContent({ data }: PlayerOfMatchContentProps) {
   return (
     <section className="grid gap-4 xl:grid-cols-2">
       {data.matches.map((match) => (
-        <MatchVoteCard key={match.id} match={match} />
+        <MatchVoteCard canManage={canManage} key={match.id} match={match} />
       ))}
     </section>
   );
 }
 
-function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
+function MatchVoteCard({
+  canManage,
+  match,
+}: {
+  canManage: boolean;
+  match: PlayerOfMatchMatch;
+}) {
   const [showResults, setShowResults] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
   const alreadyVoted = Boolean(match.userVote);
   const votingClosed = match.votingStatus === "closed";
   const votingScheduled = match.votingStatus === "scheduled";
@@ -111,7 +126,9 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <CompetitionBadge kind={match.sourceType} />
-              <Badge variant="outline">{match.resultLabel}</Badge>
+              {match.sourceType !== "friendly" ? (
+                <Badge variant="outline">{match.resultLabel}</Badge>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -129,6 +146,24 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
+        {canManage && match.canEdit ? (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowEditor((current) => !current)}
+            >
+              <Pencil />
+              {showEditor ? "Cerrar edición" : "Editar amistoso"}
+            </Button>
+          </div>
+        ) : null}
+
+        {canManage && match.canEdit && showEditor ? (
+          <FriendlyMatchEditForm match={match} onSaved={() => setShowEditor(false)} />
+        ) : null}
+
         <div className="border-border bg-muted/30 grid gap-2 rounded-md border p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div className="flex min-w-0 items-center gap-2">
             <UsersRound className="text-muted-foreground size-4" />
@@ -184,6 +219,123 @@ function MatchVoteCard({ match }: { match: PlayerOfMatchMatch }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function FriendlyMatchEditForm({
+  match,
+  onSaved,
+}: {
+  match: PlayerOfMatchMatch;
+  onSaved: () => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState("");
+  const [success, setSuccess] = useState(false);
+  const {
+    formState: { errors },
+    handleSubmit,
+    register,
+  } = useForm<PlayerOfMatchEditFormValues>({
+    defaultValues: {
+      date: match.date,
+      matchId: match.id,
+      playersText: match.players.join("\n"),
+      rival: match.rival,
+      sourceType: "friendly",
+    },
+    resolver: zodResolver(playerOfMatchEditSchema),
+  });
+
+  function onSubmit(values: PlayerOfMatchEditFormValues) {
+    setMessage("");
+    setSuccess(false);
+
+    startTransition(async () => {
+      const result = await updatePlayerOfMatchMatch(values);
+
+      setMessage(result.message);
+      setSuccess(result.ok);
+
+      if (result.ok) {
+        window.setTimeout(() => {
+          onSaved();
+          router.refresh();
+        }, 500);
+      }
+    });
+  }
+
+  return (
+    <form
+      className="club-animate-fade-up border-border bg-background grid gap-3 rounded-md border p-3"
+      onSubmit={handleSubmit(onSubmit)}
+    >
+      <LoadingModal open={isPending} description="Guardando amistoso..." />
+      <input type="hidden" {...register("matchId")} />
+      <input type="hidden" value="friendly" {...register("sourceType")} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-2 text-sm">
+          <span className="font-medium">Fecha</span>
+          <input
+            type="date"
+            className="border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
+            {...register("date")}
+          />
+          {errors.date?.message ? (
+            <span className="text-destructive text-xs">{errors.date.message}</span>
+          ) : null}
+        </label>
+        <label className="grid gap-2 text-sm">
+          <span className="font-medium">Competencia</span>
+          <input
+            disabled
+            value="Amistoso"
+            className="border-input bg-muted text-muted-foreground h-10 rounded-md border px-3 text-sm"
+          />
+        </label>
+      </div>
+
+      <label className="grid gap-2 text-sm">
+        <span className="font-medium">Rival</span>
+        <input
+          className="border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
+          placeholder="Nombre del rival"
+          {...register("rival")}
+        />
+        {errors.rival?.message ? (
+          <span className="text-destructive text-xs">{errors.rival.message}</span>
+        ) : null}
+      </label>
+
+      <label className="grid gap-2 text-sm">
+        <span className="font-medium">Jugadores que participaron</span>
+        <textarea
+          className="border-input bg-background focus-visible:ring-ring min-h-32 rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2"
+          placeholder="Un jugador por línea"
+          {...register("playersText")}
+        />
+        {errors.playersText?.message ? (
+          <span className="text-destructive text-xs">{errors.playersText.message}</span>
+        ) : null}
+      </label>
+
+      <Button type="submit" disabled={isPending}>
+        <Save />
+        Guardar amistoso
+      </Button>
+      {message ? (
+        <p
+          className={`text-sm font-medium ${
+            success ? "text-primary" : "text-destructive"
+          }`}
+        >
+          {message}
+        </p>
+      ) : null}
+    </form>
   );
 }
 

@@ -4,6 +4,7 @@ import { Trophy } from "lucide-react";
 import { PlayerOfMatchContent } from "@/components/player-of-match/player-of-match-content";
 import { Badge } from "@/components/ui/badge";
 import { LOGIN_PATH } from "@/lib/auth/constants";
+import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
@@ -17,6 +18,7 @@ export default async function PlayerOfMatchPage() {
   }
 
   const data = await getDataService().getPlayerOfMatchData(user.id);
+  const canManage = hasPermission(user, "player-of-match:manage");
 
   return (
     <main className="grid gap-6">
@@ -39,7 +41,7 @@ export default async function PlayerOfMatchPage() {
         </Badge>
       </header>
 
-      <PlayerOfMatchContent data={data} />
+      <PlayerOfMatchContent canManage={canManage} data={data} />
     </main>
   );
 }

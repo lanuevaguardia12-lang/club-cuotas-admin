@@ -30,6 +30,7 @@ export interface PlayerOfMatchMatch {
   votingStartsAt: string;
   votingEndsAt: string;
   votingStatus: "scheduled" | "open" | "closed";
+  canEdit: boolean;
   userVote?: PlayerOfMatchVote;
 }
 
@@ -56,4 +57,14 @@ export interface SubmitPlayerOfMatchVoteInput {
   voterName: string;
   firstVotePlayerName: string;
   secondVotePlayerName: string;
+}
+
+export interface UpdatePlayerOfMatchMatchInput {
+  matchId: string;
+  date: string;
+  rival: string;
+  sourceType: LeagueCompetitionKind;
+  players: string[];
+  updatedByUserId: string;
+  updatedByName: string;
 }
