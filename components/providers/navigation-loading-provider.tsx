@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { LoadingModal } from "@/components/ui/loading-modal";
@@ -14,15 +22,60 @@ const NavigationLoadingContext = createContext<NavigationLoadingContextValue | n
   null,
 );
 
-export function NavigationLoadingProvider({ children }: { children: React.ReactNode }) {
+interface NavigationLoadingProviderProps {
+  children: React.ReactNode;
+  delayMs?: number;
+}
+
+export function NavigationLoadingProvider({
+  children,
+  delayMs = 0,
+}: NavigationLoadingProviderProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [description, setDescription] = useState("");
+  const timeoutRef = useRef<number | null>(null);
   const routeKey = `${pathname}?${searchParams.toString()}`;
 
-  useEffect(() => {
+  const clearPendingLoading = useCallback(() => {
+    if (timeoutRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  }, []);
+
+  const hideNavigationLoading = useCallback(() => {
+    clearPendingLoading();
     setDescription("");
-  }, [routeKey]);
+  }, [clearPendingLoading]);
+
+  const showNavigationLoading = useCallback(
+    (nextDescription?: string) => {
+      const resolvedDescription = nextDescription ?? "Cargando sección...";
+
+      clearPendingLoading();
+
+      if (delayMs <= 0) {
+        setDescription(resolvedDescription);
+        return;
+      }
+
+      setDescription("");
+      timeoutRef.current = window.setTimeout(() => {
+        setDescription(resolvedDescription);
+        timeoutRef.current = null;
+      }, delayMs);
+    },
+    [clearPendingLoading, delayMs],
+  );
+
+  useEffect(() => {
+    hideNavigationLoading();
+  }, [hideNavigationLoading, routeKey]);
+
+  useEffect(() => hideNavigationLoading, [hideNavigationLoading]);
 
   useEffect(() => {
     if (!description) {
@@ -36,11 +89,10 @@ export function NavigationLoadingProvider({ children }: { children: React.ReactN
 
   const value = useMemo<NavigationLoadingContextValue>(
     () => ({
-      hideNavigationLoading: () => setDescription(""),
-      showNavigationLoading: (nextDescription) =>
-        setDescription(nextDescription ?? "Cargando sección..."),
+      hideNavigationLoading,
+      showNavigationLoading,
     }),
-    [],
+    [hideNavigationLoading, showNavigationLoading],
   );
 
   return (

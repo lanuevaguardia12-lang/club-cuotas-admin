@@ -15,7 +15,7 @@ interface AppShellProps {
 export function AppShell({ children, settings, user }: AppShellProps) {
   return (
     <AppSettingsProvider initialSettings={settings}>
-      <NavigationLoadingProvider>
+      <NavigationLoadingProvider delayMs={user.role === "player" ? 900 : 0}>
         <div className="bg-background min-h-dvh overflow-x-clip">
           <Sidebar
             user={user}

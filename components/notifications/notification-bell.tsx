@@ -50,16 +50,18 @@ interface NotificationHistoryResponse {
 }
 
 interface NotificationBellProps {
+  hydrateDelayMs?: number;
   user: AuthUser;
 }
 
-export function NotificationBell({ user }: NotificationBellProps) {
+export function NotificationBell({ hydrateDelayMs = 0, user }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<PushStatus>("checking");
   const [publicKey, setPublicKey] = useState("");
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [message, setMessage] = useState("");
+  const [hydrated, setHydrated] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -87,12 +89,16 @@ export function NotificationBell({ user }: NotificationBellProps) {
 
   useEffect(() => {
     let active = true;
+    let timeoutId: number | undefined;
 
     async function hydrate() {
       await loadHistory();
 
       if (!isPushSupported()) {
-        setStatus("unsupported");
+        if (active) {
+          setStatus("unsupported");
+          setHydrated(true);
+        }
         return;
       }
 
@@ -106,6 +112,7 @@ export function NotificationBell({ user }: NotificationBellProps) {
 
       if (!config.configured || !config.publicKey) {
         setStatus("unconfigured");
+        setHydrated(true);
         return;
       }
 
@@ -113,6 +120,7 @@ export function NotificationBell({ user }: NotificationBellProps) {
 
       if (Notification.permission === "denied") {
         setStatus("denied");
+        setHydrated(true);
         return;
       }
 
@@ -125,23 +133,34 @@ export function NotificationBell({ user }: NotificationBellProps) {
         }
 
         setStatus(subscription ? "subscribed" : "unsubscribed");
+        setHydrated(true);
       } catch {
         setStatus("unsupported");
+        setHydrated(true);
       }
     }
 
-    hydrate();
+    if (hydrated) {
+      return;
+    }
+
+    if (hydrateDelayMs > 0 && !open) {
+      timeoutId = window.setTimeout(() => void hydrate(), hydrateDelayMs);
+    } else {
+      void hydrate();
+    }
 
     return () => {
       active = false;
+      window.clearTimeout(timeoutId);
     };
-  }, [loadHistory]);
+  }, [hydrateDelayMs, hydrated, loadHistory, open]);
 
   useEffect(() => {
-    if (open) {
+    if (open && hydrated) {
       void loadHistory();
     }
-  }, [loadHistory, open]);
+  }, [hydrated, loadHistory, open]);
 
   async function subscribe() {
     setMessage("");

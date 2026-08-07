@@ -67,7 +67,10 @@ export function Navbar({ user }: NavbarProps) {
             <p className="text-muted-foreground mt-1 text-xs">{roleLabels[user.role]}</p>
           </div>
           <ThemeToggle />
-          <NotificationBell user={user} />
+          <NotificationBell
+            user={user}
+            hydrateDelayMs={user.role === "player" ? 1200 : 0}
+          />
         </div>
       </div>
     </header>
