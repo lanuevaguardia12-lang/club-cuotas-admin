@@ -44,7 +44,7 @@ export function FixtureContent({
   const hasPublishedResults = data.matches.some((match) => match.status === "played");
 
   return (
-    <div className="grid gap-6">
+    <div className={cn("grid", tab === "posiciones" ? "gap-3" : "gap-6")}>
       <FixtureTabNav data={data} activeTab={tab} />
 
       {data.source.status === "error" ? (
@@ -91,14 +91,14 @@ function FixtureTabNav({
   ];
 
   return (
-    <nav className="border-border bg-card flex gap-2 overflow-x-auto rounded-lg border p-2">
+    <nav className="border-border bg-card flex gap-1 overflow-x-auto rounded-lg border p-1">
       {tabs.map((tab) => (
         <NavigationLink
           key={tab.value}
           href={buildFixtureHref(data, tab.value)}
           loadingMessage={`Cargando ${tab.label}...`}
           className={cn(
-            "rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+            "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
             activeTab === tab.value
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -341,15 +341,15 @@ function TeamRecentForm({
 function StandingsTable({ data }: FixtureContentProps) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Table2 className="text-primary size-5" />
+      <CardHeader className="p-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Table2 className="text-primary size-4" />
           Tabla de posiciones
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0">
         {data.standings.length > 0 ? (
-          <div className="grid gap-4">
+          <div className="grid gap-2">
             <UnifiedStandingsTable matches={data.matches} rows={data.standings} />
             <StandingsLegend />
           </div>
@@ -369,19 +369,21 @@ function UnifiedStandingsTable({
   rows: LeagueStandingRow[];
 }) {
   return (
-    <div className="border-border max-h-[70dvh] overflow-auto rounded-md border">
-      <table className="min-w-[48rem] text-sm">
+    <div className="border-border max-h-[72dvh] overflow-y-auto border-t">
+      <table className="w-full table-fixed text-[0.68rem] leading-tight sm:text-sm">
         <thead className="bg-muted text-muted-foreground sticky top-0 z-10">
           <tr>
-            <th className="w-12 px-2 py-2 text-left font-semibold">#</th>
-            <th className="px-2 py-2 text-left font-semibold">Equipo</th>
-            <th className="w-20 px-2 py-2 text-center font-semibold">Puntos</th>
-            <th className="w-16 px-2 py-2 text-center font-semibold">VS</th>
-            <th className="w-14 px-2 py-2 text-center font-semibold">PJ</th>
-            <th className="w-12 px-2 py-2 text-center font-semibold">G</th>
-            <th className="w-12 px-2 py-2 text-center font-semibold">E</th>
-            <th className="w-12 px-2 py-2 text-center font-semibold">P</th>
-            <th className="w-14 px-2 py-2 text-center font-semibold">+/-</th>
+            <th className="w-7 px-1 py-1.5 text-left font-semibold sm:w-10">#</th>
+            <th className="px-1 py-1.5 text-left font-semibold">Equipo</th>
+            <th className="w-9 px-1 py-1.5 text-center text-[0.6rem] font-semibold sm:w-16 sm:text-sm">
+              Puntos
+            </th>
+            <th className="w-10 px-1 py-1.5 text-center font-semibold sm:w-14">VS</th>
+            <th className="w-7 px-1 py-1.5 text-center font-semibold sm:w-12">PJ</th>
+            <th className="w-7 px-1 py-1.5 text-center font-semibold sm:w-10">G</th>
+            <th className="w-7 px-1 py-1.5 text-center font-semibold sm:w-10">E</th>
+            <th className="w-7 px-1 py-1.5 text-center font-semibold sm:w-10">P</th>
+            <th className="w-8 px-1 py-1.5 text-center font-semibold sm:w-12">+/-</th>
           </tr>
         </thead>
         <tbody>
@@ -397,27 +399,29 @@ function UnifiedStandingsTable({
                   row.isClub && "font-semibold",
                 )}
               >
-                <td className="px-2 py-2">
+                <td className="px-1 py-1.5">
                   <span
                     className={cn(
-                      "inline-grid size-7 place-items-center rounded-md text-xs font-bold",
+                      "inline-grid size-5 place-items-center rounded-sm text-[0.65rem] font-bold sm:size-7 sm:rounded-md sm:text-xs",
                       getPositionBadgeClassName(row.position),
                     )}
                   >
                     {row.position}
                   </span>
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap" title={row.teamName}>
-                  {row.teamName}
+                <td className="px-1 py-1.5" title={row.teamName}>
+                  <span className="line-clamp-2 break-words sm:line-clamp-1">
+                    {row.teamName}
+                  </span>
                 </td>
-                <td className="px-2 py-2 text-center font-bold">{row.points}</td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-1 py-1.5 text-center font-bold">{row.points}</td>
+                <td className="px-1 py-1.5 text-center">
                   {row.isClub ? (
                     <span className="text-muted-foreground">-</span>
                   ) : (
                     <span
                       className={cn(
-                        "inline-flex min-w-9 justify-center rounded-md px-1 py-0.5 text-[0.68rem] font-bold",
+                        "inline-flex min-w-8 justify-center rounded-sm px-1 py-0.5 text-[0.58rem] font-bold sm:min-w-9 sm:rounded-md sm:text-[0.68rem]",
                         getOutcomeClassName(versus.kind),
                       )}
                     >
@@ -425,11 +429,11 @@ function UnifiedStandingsTable({
                     </span>
                   )}
                 </td>
-                <td className="px-2 py-2 text-center">{row.played}</td>
-                <td className="px-2 py-2 text-center">{row.won}</td>
-                <td className="px-2 py-2 text-center">{row.drawn}</td>
-                <td className="px-2 py-2 text-center">{row.lost}</td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-1 py-1.5 text-center">{row.played}</td>
+                <td className="px-1 py-1.5 text-center">{row.won}</td>
+                <td className="px-1 py-1.5 text-center">{row.drawn}</td>
+                <td className="px-1 py-1.5 text-center">{row.lost}</td>
+                <td className="px-1 py-1.5 text-center">
                   {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
                 </td>
               </tr>
@@ -443,7 +447,7 @@ function UnifiedStandingsTable({
 
 function StandingsLegend() {
   return (
-    <div className="text-muted-foreground flex flex-wrap gap-2 text-xs">
+    <div className="text-muted-foreground flex flex-wrap gap-1.5 px-3 pb-3 text-[0.65rem] sm:text-xs">
       <LegendPill className="bg-amber-100 text-amber-900" label="1° Campeón" />
       <LegendPill className="bg-sky-100 text-sky-900" label="2° Ascenso" />
       <LegendPill className="bg-violet-100 text-violet-900" label="3°/4° Promoción" />
