@@ -3012,34 +3012,53 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
-    return {
-      costsRows: await this.readOptionalValuesFromSpreadsheet(
+    return unstable_cache(
+      async () => ({
+        costsRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
+          this.config.feeCalculatorCostsRange,
+        ),
+        actualsRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
+          this.config.feeCalculatorActualsRange,
+        ),
+        playerStatusRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
+          this.config.feeCalculatorPlayerStatusesRange,
+        ),
+        refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
+          feeCalculatorSpreadsheetId,
+          this.config.refundPolicyRange,
+        ),
+        matchRows: matchesSpreadsheetId
+          ? await this.readOptionalValuesFromSpreadsheet(
+              matchesSpreadsheetId,
+              this.config.matchesRange,
+            )
+          : [],
+        expenseRows: await this.readOptionalValuesFromSpreadsheet(
+          clubSpreadsheetId,
+          this.config.expensesRange,
+        ),
+      }),
+      [
+        "google-sheets-fee-calculator-rows",
+        spreadsheetId,
         feeCalculatorSpreadsheetId,
-        this.config.feeCalculatorCostsRange,
-      ),
-      actualsRows: await this.readOptionalValuesFromSpreadsheet(
-        feeCalculatorSpreadsheetId,
-        this.config.feeCalculatorActualsRange,
-      ),
-      playerStatusRows: await this.readOptionalValuesFromSpreadsheet(
-        feeCalculatorSpreadsheetId,
-        this.config.feeCalculatorPlayerStatusesRange,
-      ),
-      refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
-        feeCalculatorSpreadsheetId,
-        this.config.refundPolicyRange,
-      ),
-      matchRows: matchesSpreadsheetId
-        ? await this.readOptionalValuesFromSpreadsheet(
-            matchesSpreadsheetId,
-            this.config.matchesRange,
-          )
-        : [],
-      expenseRows: await this.readOptionalValuesFromSpreadsheet(
         clubSpreadsheetId,
+        matchesSpreadsheetId ?? "",
+        this.config.feeCalculatorCostsRange,
+        this.config.feeCalculatorActualsRange,
+        this.config.feeCalculatorPlayerStatusesRange,
+        this.config.refundPolicyRange,
+        this.config.matchesRange,
         this.config.expensesRange,
-      ),
-    };
+      ],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:fee-calculator"],
+      },
+    )();
   }
 
   private async readValues(range: string) {
