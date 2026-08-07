@@ -19,10 +19,9 @@ import {
 import { usePathname } from "next/navigation";
 
 import { NavigationLink } from "@/components/ui/navigation-link";
-import { hasPermission } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/types/auth";
-import { navigationItems } from "@/utils/navigation";
+import { getVisibleNavigationItems } from "@/utils/navigation";
 
 interface MobileBottomNavProps {
   user: AuthUser;
@@ -48,9 +47,7 @@ const iconMap = {
 
 export function MobileBottomNav({ user }: MobileBottomNavProps) {
   const pathname = usePathname();
-  const visibleItems = navigationItems.filter((item) =>
-    hasPermission(user, item.permission),
-  );
+  const visibleItems = getVisibleNavigationItems(user);
   const orderedItems = centerHomeItem(visibleItems);
 
   return (

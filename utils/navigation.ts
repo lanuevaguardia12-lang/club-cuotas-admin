@@ -1,3 +1,5 @@
+import { hasPermission } from "@/lib/auth/roles";
+import type { AuthUser } from "@/types/auth";
 import type { NavigationItem } from "@/types/navigation";
 
 export const navigationItems: NavigationItem[] = [
@@ -92,3 +94,31 @@ export const navigationItems: NavigationItem[] = [
     permission: "settings:write",
   },
 ];
+
+const adminNavigationHrefs = new Set([
+  "/",
+  "/account",
+  "/player-of-match",
+  "/fixture",
+  "/players",
+  "/cash-flow",
+  "/fee-calculator",
+  "/payments",
+  "/audit",
+  "/api-docs",
+  "/users",
+  "/reports",
+  "/settings",
+]);
+
+export function getVisibleNavigationItems(user: AuthUser) {
+  const permittedItems = navigationItems.filter((item) =>
+    hasPermission(user, item.permission),
+  );
+
+  if (user.role !== "admin") {
+    return permittedItems;
+  }
+
+  return permittedItems.filter((item) => adminNavigationHrefs.has(item.href));
+}

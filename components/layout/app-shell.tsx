@@ -27,7 +27,7 @@ export function AppShell({ children, settings, user }: AppShellProps) {
               {children}
             </div>
           </div>
-          <MobileBottomNav user={user} />
+          {user.role === "admin" ? null : <MobileBottomNav user={user} />}
         </div>
       </NavigationLoadingProvider>
     </AppSettingsProvider>

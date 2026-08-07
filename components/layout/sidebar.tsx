@@ -21,13 +21,13 @@ import {
 import { LogoutButton } from "@/components/auth/logout-button";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { NavigationLink } from "@/components/ui/navigation-link";
-import { hasPermission } from "@/lib/auth/roles";
-import { navigationItems } from "@/utils/navigation";
+import { getVisibleNavigationItems } from "@/utils/navigation";
 import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/types/auth";
 
 interface SidebarProps {
   className?: string;
+  onNavigate?: () => void;
   user: AuthUser;
 }
 
@@ -49,11 +49,9 @@ const iconMap = {
   settings: Settings,
 };
 
-export function Sidebar({ className, user }: SidebarProps) {
+export function Sidebar({ className, onNavigate, user }: SidebarProps) {
   const { settings } = useAppSettings();
-  const visibleItems = navigationItems.filter((item) =>
-    hasPermission(user, item.permission),
-  );
+  const visibleItems = getVisibleNavigationItems(user);
 
   return (
     <aside className={cn("bg-card flex h-full flex-col", className)}>
@@ -87,6 +85,7 @@ export function Sidebar({ className, user }: SidebarProps) {
               key={item.href}
               href={item.href}
               loadingMessage={`Cargando ${item.label}...`}
+              onClick={onNavigate}
               className="text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors"
             >
               <Icon className="size-4" aria-hidden="true" />
