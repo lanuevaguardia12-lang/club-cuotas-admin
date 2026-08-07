@@ -724,7 +724,7 @@ function RefundPolicyEditor({
           {rows.map((row) => (
             <div
               key={row.id}
-              className="border-border bg-background grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-md border p-3 text-sm"
+              className="border-border bg-background grid gap-2 rounded-md border p-3 text-sm sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
             >
               <label className="grid gap-1">
                 <span className="text-muted-foreground text-xs">Desde %</span>
