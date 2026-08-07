@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import type { LeagueTournamentOption } from "@/types/fixture";
 
 interface FixtureFiltersProps {
+  activeTab?: string;
   availableYears: number[];
   selectedCompetitionKey: string;
   selectedYear: number;
@@ -14,6 +15,7 @@ interface FixtureFiltersProps {
 }
 
 export function FixtureFilters({
+  activeTab,
   availableYears,
   selectedCompetitionKey,
   selectedYear,
@@ -46,9 +48,10 @@ export function FixtureFilters({
   );
 
   return (
-    <form className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)_auto]" method="GET">
-      <label className="grid gap-2 text-sm font-medium">
-        <span className="text-muted-foreground text-xs font-semibold uppercase">Año</span>
+    <form className="flex flex-col gap-2 sm:flex-row sm:items-center" method="GET">
+      {activeTab ? <input name="tab" type="hidden" value={activeTab} /> : null}
+      <label className="text-sm font-medium">
+        <span className="sr-only">Año</span>
         <select
           name="year"
           value={year}
@@ -59,7 +62,7 @@ export function FixtureFilters({
             setYear(nextYear);
             setCompetitionKey(getFirstCompetitionKey(nextCompetitions) ?? "");
           }}
-          className="border-input bg-background focus:ring-ring h-10 min-w-0 rounded-md border px-3 text-sm outline-none focus:ring-2"
+          className="border-input bg-background focus:ring-ring h-9 w-full rounded-md border px-3 text-sm outline-none focus:ring-2 sm:w-28"
         >
           {availableYears.map((availableYear) => (
             <option key={availableYear} value={availableYear}>
@@ -69,15 +72,13 @@ export function FixtureFilters({
         </select>
       </label>
 
-      <label className="grid gap-2 text-sm font-medium">
-        <span className="text-muted-foreground text-xs font-semibold uppercase">
-          Competencia
-        </span>
+      <label className="text-sm font-medium">
+        <span className="sr-only">Competencia</span>
         <select
           name="competition"
           value={competitionKey}
           onChange={(event) => setCompetitionKey(event.target.value)}
-          className="border-input bg-background focus:ring-ring h-10 min-w-0 rounded-md border px-3 text-sm outline-none focus:ring-2"
+          className="border-input bg-background focus:ring-ring h-9 w-full min-w-0 rounded-md border px-3 text-sm outline-none focus:ring-2 sm:w-72"
         >
           {currentCompetitions.map((tournament) => (
             <optgroup key={tournament.id} label={tournament.name}>
@@ -94,8 +95,8 @@ export function FixtureFilters({
         </select>
       </label>
 
-      <div className="flex items-end">
-        <Button className="w-full sm:w-auto">
+      <div>
+        <Button className="h-9 w-full sm:w-auto" size="sm">
           <ListChecks />
           Ver
         </Button>

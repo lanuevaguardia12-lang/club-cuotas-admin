@@ -7,16 +7,16 @@ import {
   Table2,
   Trophy,
 } from "lucide-react";
-import Link from "next/link";
 
 import {
   CompetitionBadge,
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
-import { FixtureFilters } from "@/components/fixture/fixture-filters";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NavigationLink } from "@/components/ui/navigation-link";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import { cn } from "@/lib/utils";
 import type {
@@ -45,7 +45,6 @@ export function FixtureContent({
 
   return (
     <div className="grid gap-6">
-      <CompetitionSelector data={data} />
       <FixtureTabNav data={data} activeTab={tab} />
 
       {data.source.status === "error" ? (
@@ -78,40 +77,6 @@ export function FixtureContent({
   );
 }
 
-function CompetitionSelector({ data }: FixtureContentProps) {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="text-primary size-5" />
-            Torneo
-          </CardTitle>
-          <Badge variant={data.source.status === "ready" ? "success" : "secondary"}>
-            {data.source.status}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <FixtureFilters
-          availableYears={data.availableYears}
-          selectedCompetitionKey={data.selectedCompetitionKey}
-          selectedYear={data.selectedYear}
-          tournaments={data.tournaments}
-        />
-
-        <div className="border-border mt-4 grid gap-2 border-t pt-4 text-sm sm:grid-cols-2">
-          <InfoPill label="Torneo" value={data.selectedTournamentName} />
-          <InfoPill label="Categoria" value={data.selectedCategoryName} />
-        </div>
-        <div className="mt-3">
-          <CompetitionBadge kind={data.selectedCompetitionKind} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function FixtureTabNav({
   activeTab,
   data,
@@ -128,9 +93,10 @@ function FixtureTabNav({
   return (
     <nav className="border-border bg-card flex gap-2 overflow-x-auto rounded-lg border p-2">
       {tabs.map((tab) => (
-        <Link
+        <NavigationLink
           key={tab.value}
           href={buildFixtureHref(data, tab.value)}
+          loadingMessage={`Cargando ${tab.label}...`}
           className={cn(
             "rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
             activeTab === tab.value
@@ -139,7 +105,7 @@ function FixtureTabNav({
           )}
         >
           {tab.label}
-        </Link>
+        </NavigationLink>
       ))}
     </nav>
   );
@@ -161,7 +127,7 @@ function SummaryTab({ data }: FixtureContentProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 p-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             <MetricBox
               label="Posición"
               value={data.clubStanding ? `#${data.clubStanding.position}` : "-"}
@@ -177,6 +143,14 @@ function SummaryTab({ data }: FixtureContentProps) {
             <MetricBox
               label="Perdidos"
               value={data.clubStanding ? String(data.clubStanding.lost) : "-"}
+            />
+            <MetricBox
+              label="Goles a favor"
+              value={data.clubStanding ? String(data.clubStanding.goalsFor) : "-"}
+            />
+            <MetricBox
+              label="Goles en contra"
+              value={data.clubStanding ? String(data.clubStanding.goalsAgainst) : "-"}
             />
           </div>
 
@@ -230,8 +204,13 @@ function NextMatchCard({
   matches: LeagueFixtureMatch[];
   rows: LeagueStandingRow[];
 }) {
-  const localPosition = getTeamPositionLabel(rows, match.localTeam);
-  const visitorPosition = getTeamPositionLabel(rows, match.visitorTeam);
+  const showPositions = match.competitionKind === "league";
+  const localPosition = showPositions
+    ? getTeamPositionLabel(rows, match.localTeam)
+    : undefined;
+  const visitorPosition = showPositions
+    ? getTeamPositionLabel(rows, match.visitorTeam)
+    : undefined;
 
   return (
     <div
@@ -261,9 +240,9 @@ function NextMatchCard({
           position={localPosition}
           teamName={match.localTeam}
         />
-        <span className="bg-muted text-muted-foreground inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-bold">
-          vs
-        </span>
+        <div className="flex justify-center">
+          <MatchScore match={match} />
+        </div>
         <PositionTeamLine position={visitorPosition} teamName={match.visitorTeam} />
       </div>
 
@@ -289,7 +268,7 @@ function PositionTeamLine({
   teamName,
 }: {
   align?: "left" | "right";
-  position: string;
+  position?: string;
   teamName: string;
 }) {
   const isClub = teamName === APP_TEAM_NAME;
@@ -302,8 +281,15 @@ function PositionTeamLine({
         isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
       )}
     >
-      <p className="truncate text-sm font-semibold">{teamName}</p>
-      <p className="mt-1 text-xs opacity-75">{position}</p>
+      <div
+        className={cn("flex items-center gap-2", align === "right" && "flex-row-reverse")}
+      >
+        <TeamAvatar teamName={teamName} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{teamName}</p>
+          {position ? <p className="mt-1 text-xs opacity-75">{position}</p> : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -364,16 +350,7 @@ function StandingsTable({ data }: FixtureContentProps) {
       <CardContent>
         {data.standings.length > 0 ? (
           <div className="grid gap-4">
-            <CompactStandingsTable matches={data.matches} rows={data.standings} />
-            <details className="border-border bg-card rounded-md border">
-              <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-4 py-3 text-sm font-semibold transition-colors">
-                Versión ampliada
-                <Badge variant="outline">{data.standings.length} equipos</Badge>
-              </summary>
-              <div className="border-border border-t">
-                <ExpandedStandingsTable rows={data.standings} />
-              </div>
-            </details>
+            <UnifiedStandingsTable matches={data.matches} rows={data.standings} />
             <StandingsLegend />
           </div>
         ) : (
@@ -384,7 +361,7 @@ function StandingsTable({ data }: FixtureContentProps) {
   );
 }
 
-function CompactStandingsTable({
+function UnifiedStandingsTable({
   matches,
   rows,
 }: {
@@ -392,18 +369,19 @@ function CompactStandingsTable({
   rows: LeagueStandingRow[];
 }) {
   return (
-    <div className="border-border overflow-hidden rounded-md border">
-      <table className="w-full table-fixed text-[0.72rem] sm:text-sm">
-        <thead className="bg-muted/60 text-muted-foreground">
+    <div className="border-border max-h-[70dvh] overflow-auto rounded-md border">
+      <table className="min-w-[48rem] text-sm">
+        <thead className="bg-muted text-muted-foreground sticky top-0 z-10">
           <tr>
-            <th className="w-9 px-1 py-2 text-left font-semibold">#</th>
-            <th className="px-1 py-2 text-left font-semibold">Equipo</th>
-            <th className="w-11 px-1 py-2 text-center font-semibold">Pts</th>
-            <th className="w-9 px-1 py-2 text-center font-semibold">PJ</th>
-            <th className="w-8 px-1 py-2 text-center font-semibold">G</th>
-            <th className="w-8 px-1 py-2 text-center font-semibold">P</th>
-            <th className="w-8 px-1 py-2 text-center font-semibold">E</th>
-            <th className="w-12 px-1 py-2 text-center font-semibold">VS</th>
+            <th className="w-12 px-2 py-2 text-left font-semibold">#</th>
+            <th className="px-2 py-2 text-left font-semibold">Equipo</th>
+            <th className="w-20 px-2 py-2 text-center font-semibold">Puntos</th>
+            <th className="w-16 px-2 py-2 text-center font-semibold">VS</th>
+            <th className="w-14 px-2 py-2 text-center font-semibold">PJ</th>
+            <th className="w-12 px-2 py-2 text-center font-semibold">G</th>
+            <th className="w-12 px-2 py-2 text-center font-semibold">E</th>
+            <th className="w-12 px-2 py-2 text-center font-semibold">P</th>
+            <th className="w-14 px-2 py-2 text-center font-semibold">+/-</th>
           </tr>
         </thead>
         <tbody>
@@ -419,25 +397,21 @@ function CompactStandingsTable({
                   row.isClub && "font-semibold",
                 )}
               >
-                <td className="px-1 py-2">
+                <td className="px-2 py-2">
                   <span
                     className={cn(
-                      "inline-grid size-6 place-items-center rounded-md text-[0.7rem] font-bold",
+                      "inline-grid size-7 place-items-center rounded-md text-xs font-bold",
                       getPositionBadgeClassName(row.position),
                     )}
                   >
                     {row.position}
                   </span>
                 </td>
-                <td className="truncate px-1 py-2" title={row.teamName}>
+                <td className="px-2 py-2 whitespace-nowrap" title={row.teamName}>
                   {row.teamName}
                 </td>
-                <td className="px-1 py-2 text-center font-bold">{row.points}</td>
-                <td className="px-1 py-2 text-center">{row.played}</td>
-                <td className="px-1 py-2 text-center">{row.won}</td>
-                <td className="px-1 py-2 text-center">{row.lost}</td>
-                <td className="px-1 py-2 text-center">{row.drawn}</td>
-                <td className="px-1 py-2 text-center">
+                <td className="px-2 py-2 text-center font-bold">{row.points}</td>
+                <td className="px-2 py-2 text-center">
                   {row.isClub ? (
                     <span className="text-muted-foreground">-</span>
                   ) : (
@@ -451,66 +425,16 @@ function CompactStandingsTable({
                     </span>
                   )}
                 </td>
+                <td className="px-2 py-2 text-center">{row.played}</td>
+                <td className="px-2 py-2 text-center">{row.won}</td>
+                <td className="px-2 py-2 text-center">{row.drawn}</td>
+                <td className="px-2 py-2 text-center">{row.lost}</td>
+                <td className="px-2 py-2 text-center">
+                  {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
+                </td>
               </tr>
             );
           })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ExpandedStandingsTable({ rows }: { rows: LeagueStandingRow[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[42rem] text-sm">
-        <thead className="bg-muted/60 text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left font-semibold">#</th>
-            <th className="px-3 py-2 text-left font-semibold">Equipo</th>
-            <th className="px-3 py-2 text-center font-semibold">J</th>
-            <th className="px-3 py-2 text-center font-semibold">G</th>
-            <th className="px-3 py-2 text-center font-semibold">E</th>
-            <th className="px-3 py-2 text-center font-semibold">P</th>
-            <th className="px-3 py-2 text-center font-semibold">GF</th>
-            <th className="px-3 py-2 text-center font-semibold">GC</th>
-            <th className="px-3 py-2 text-center font-semibold">Dif</th>
-            <th className="px-3 py-2 text-center font-semibold">Pts</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={`${row.position}-${row.teamName}`}
-              className={cn(
-                "border-border border-t",
-                getPositionRowClassName(row.position),
-                row.isClub && "font-semibold",
-              )}
-            >
-              <td className="px-3 py-2">
-                <span
-                  className={cn(
-                    "inline-grid size-7 place-items-center rounded-md text-xs font-bold",
-                    getPositionBadgeClassName(row.position),
-                  )}
-                >
-                  {row.position}
-                </span>
-              </td>
-              <td className="px-3 py-2">{row.teamName}</td>
-              <td className="px-3 py-2 text-center">{row.played}</td>
-              <td className="px-3 py-2 text-center">{row.won}</td>
-              <td className="px-3 py-2 text-center">{row.drawn}</td>
-              <td className="px-3 py-2 text-center">{row.lost}</td>
-              <td className="px-3 py-2 text-center">{row.goalsFor}</td>
-              <td className="px-3 py-2 text-center">{row.goalsAgainst}</td>
-              <td className="px-3 py-2 text-center">
-                {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
-              </td>
-              <td className="px-3 py-2 text-center font-bold">{row.points}</td>
-            </tr>
-          ))}
         </tbody>
       </table>
     </div>
@@ -552,14 +476,20 @@ function FixtureRounds({
       {rounds.length > 0 ? (
         <div className="grid gap-3">
           <form
-            className="border-border bg-card grid gap-3 rounded-lg border p-4"
+            className="border-border bg-card flex flex-col gap-2 rounded-md border p-2"
             method="GET"
           >
             <input name="competition" type="hidden" value={data.selectedCompetitionKey} />
             <input name="year" type="hidden" value={data.selectedYear} />
             <input name="tab" type="hidden" value="fixture" />
-            <p className="text-sm font-semibold">Filtrar jornadas</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Jornadas</p>
+              <Button className="h-8" size="sm">
+                <Table2 />
+                Aplicar
+              </Button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
               {rounds.map((round) => {
                 const roundKey = getRoundKey(round);
                 const checked =
@@ -569,7 +499,7 @@ function FixtureRounds({
                   <label
                     key={roundKey}
                     className={cn(
-                      "border-border bg-background flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm",
+                      "border-border bg-background flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs",
                       checked && "border-primary/40 bg-primary/5 text-primary",
                     )}
                   >
@@ -584,10 +514,6 @@ function FixtureRounds({
                 );
               })}
             </div>
-            <Button className="w-full sm:w-fit">
-              <Table2 />
-              Aplicar filtro
-            </Button>
           </form>
 
           {filteredRounds.map((round, index) => (
@@ -757,9 +683,12 @@ function MatchTeamLine({
         isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
       )}
     >
-      <div className="min-w-0">
-        <p className="truncate font-semibold">{teamName}</p>
-        <p className="text-xs opacity-75">{label}</p>
+      <div className="flex min-w-0 items-center gap-2">
+        <TeamAvatar teamName={teamName} />
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{teamName}</p>
+          <p className="text-xs opacity-75">{label}</p>
+        </div>
       </div>
       {showScore ? (
         <span className="text-xl font-bold tracking-normal">{score ?? 0}</span>
@@ -1001,15 +930,38 @@ function TeamName({ align = "left", name }: { align?: "left" | "right"; name: st
   return (
     <span
       className={cn(
-        "min-w-0 truncate",
-        align === "right" ? "text-right" : "text-left",
+        "flex min-w-0 items-center gap-2",
+        align === "right" ? "justify-end text-right" : "text-left",
         isClub && "text-primary font-semibold",
       )}
       title={name}
     >
-      {name}
+      {align === "right" ? null : <TeamAvatar teamName={name} />}
+      <span className="min-w-0 truncate">{name}</span>
+      {align === "right" ? <TeamAvatar teamName={name} /> : null}
     </span>
   );
+}
+
+function TeamAvatar({ teamName }: { teamName: string }) {
+  if (teamName === APP_TEAM_NAME) {
+    return <BrandMark className="size-8 rounded-full bg-white" />;
+  }
+
+  return (
+    <span className="bg-muted text-muted-foreground inline-grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold">
+      {getTeamInitials(teamName)}
+    </span>
+  );
+}
+
+function getTeamInitials(teamName: string) {
+  return teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function MetricBox({ label, value }: { label: string; value: string }) {
@@ -1017,17 +969,6 @@ function MetricBox({ label, value }: { label: string; value: string }) {
     <div className="bg-muted/50 rounded-md p-3">
       <p className="text-muted-foreground text-xs font-semibold uppercase">{label}</p>
       <p className="mt-1 text-2xl font-bold tracking-normal">{value}</p>
-    </div>
-  );
-}
-
-function InfoPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-muted/50 rounded-md px-3 py-2">
-      <p className="text-muted-foreground text-xs font-semibold uppercase">{label}</p>
-      <p className="mt-1 truncate text-sm font-medium" title={value}>
-        {value}
-      </p>
     </div>
   );
 }
