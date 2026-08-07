@@ -1,8 +1,19 @@
 "use server";
 
-import { revalidatePath, unstable_expireTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { getCurrentUser } from "@/lib/auth/session";
+
+type RevalidateTagWithProfile = (
+  tag: string,
+  profile: "max" | { expire?: number },
+) => void;
+
+const revalidateTagWithProfile = revalidateTag as unknown as RevalidateTagWithProfile;
+
+function revalidateGoogleSheetsTag(tag: string) {
+  revalidateTagWithProfile(tag, "max");
+}
 
 export interface RefreshMyFeeFromFormsActionResult {
   ok: boolean;
@@ -27,7 +38,9 @@ export async function refreshMyFeeFromFormsAction(): Promise<RefreshMyFeeFromFor
   }
 
   try {
-    unstable_expireTag("google-sheets", "google-sheets:dashboard");
+    revalidateGoogleSheetsTag("google-sheets");
+    revalidateGoogleSheetsTag("google-sheets:dashboard");
+    revalidateGoogleSheetsTag("google-sheets:player-profile");
     revalidatePath("/mi-cuota");
 
     return {

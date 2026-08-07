@@ -1806,65 +1806,101 @@ export class GoogleSheetsService implements IDataService {
   async getPlayerProfile(playerId: string, year = new Date().getFullYear()) {
     try {
       this.assertConfigured();
-      const { players, fees } = await this.readDashboardRecords();
-      const lookupKeys = buildPlayerLookupKeys(playerId);
-      const player =
-        players.find((candidate) => playerMatchesLookup(candidate, lookupKeys)) ??
-        buildPlayerFromFees(playerId, fees, lookupKeys);
+      const spreadsheetId = this.getAppSpreadsheetId();
+      const clubSpreadsheetId = this.getClubSpreadsheetId();
 
-      if (!player) {
-        return null;
-      }
-
-      const feeCalculatorData = await this.readPlayerProfileFeeCalculatorData(year);
-      const playerProfileLookupKeys = buildPlayerLookupKeys(player.id, player.name);
-      const playerCalculations: FeePlayerCalculation[] = [];
-      const matchSummaries = new Map<string, PlayerMonthMatchSummary>();
-      const quotaDefinitions = new Map<
-        string,
-        { status: "defined" | "undefined"; reason: string }
-      >();
-
-      for (const periodData of feeCalculatorData) {
-        quotaDefinitions.set(periodData.period, {
-          status: periodData.summary.quotaStatus,
-          reason: periodData.summary.quotaStatusReasons.join(" "),
-        });
-
-        const calculation = periodData.playerCalculations.find((candidate) =>
-          feePlayerCalculationMatchesLookup(candidate, playerProfileLookupKeys),
-        );
-
-        if (!calculation) {
-          continue;
-        }
-
-        const matchSummary = periodData.matchSummaries.find((candidate) =>
-          feePlayerMatchSummaryMatchesLookup(candidate, playerProfileLookupKeys),
-        );
-
-        playerCalculations.push(calculation);
-        matchSummaries.set(
-          periodData.period,
-          buildPlayerMonthMatchSummary(
-            periodData.previousPeriod,
-            calculation,
-            matchSummary,
-          ),
-        );
-      }
-
-      return buildPlayerProfile(
-        player,
-        fees,
-        year,
-        playerCalculations,
-        matchSummaries,
-        quotaDefinitions,
-      );
+      return await unstable_cache(
+        async () => this.buildCachedPlayerProfile(playerId, year),
+        [
+          "google-sheets-player-profile",
+          spreadsheetId,
+          clubSpreadsheetId,
+          this.config.matchesSpreadsheetId ?? "",
+          this.config.playersRange,
+          this.config.feesRange,
+          this.config.formResponsesRange,
+          this.config.feeCalculatorCostsRange,
+          this.config.feeCalculatorActualsRange,
+          this.config.feeCalculatorPlayerStatusesRange,
+          this.config.matchesRange,
+          this.config.expensesRange,
+          this.config.refundPolicyRange,
+          playerId,
+          String(year),
+        ],
+        {
+          revalidate: this.config.cacheTtlSeconds,
+          tags: [
+            "google-sheets",
+            "google-sheets:player-profile",
+            "google-sheets:dashboard",
+            "google-sheets:players",
+            "google-sheets:fee-calculator",
+          ],
+        },
+      )();
     } catch {
       return null;
     }
+  }
+
+  private async buildCachedPlayerProfile(playerId: string, year: number) {
+    const { players, fees } = await this.readDashboardRecords();
+    const lookupKeys = buildPlayerLookupKeys(playerId);
+    const player =
+      players.find((candidate) => playerMatchesLookup(candidate, lookupKeys)) ??
+      buildPlayerFromFees(playerId, fees, lookupKeys);
+
+    if (!player) {
+      return null;
+    }
+
+    const feeCalculatorData = await this.readPlayerProfileFeeCalculatorData(year);
+    const playerProfileLookupKeys = buildPlayerLookupKeys(player.id, player.name);
+    const playerCalculations: FeePlayerCalculation[] = [];
+    const matchSummaries = new Map<string, PlayerMonthMatchSummary>();
+    const quotaDefinitions = new Map<
+      string,
+      { status: "defined" | "undefined"; reason: string }
+    >();
+
+    for (const periodData of feeCalculatorData) {
+      quotaDefinitions.set(periodData.period, {
+        status: periodData.summary.quotaStatus,
+        reason: periodData.summary.quotaStatusReasons.join(" "),
+      });
+
+      const calculation = periodData.playerCalculations.find((candidate) =>
+        feePlayerCalculationMatchesLookup(candidate, playerProfileLookupKeys),
+      );
+
+      if (!calculation) {
+        continue;
+      }
+
+      const matchSummary = periodData.matchSummaries.find((candidate) =>
+        feePlayerMatchSummaryMatchesLookup(candidate, playerProfileLookupKeys),
+      );
+
+      playerCalculations.push(calculation);
+      matchSummaries.set(
+        periodData.period,
+        buildPlayerMonthMatchSummary(
+          periodData.previousPeriod,
+          calculation,
+          matchSummary,
+        ),
+      );
+    }
+
+    return buildPlayerProfile(
+      player,
+      fees,
+      year,
+      playerCalculations,
+      matchSummaries,
+      quotaDefinitions,
+    );
   }
 
   private async readPlayerProfileFeeCalculatorData(year: number) {
@@ -9183,6 +9219,7 @@ function createId(prefix: string) {
 function invalidateDashboardCache() {
   revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:dashboard");
+  revalidateGoogleSheetsTag("google-sheets:player-profile");
 }
 
 function invalidateSettingsCache() {
@@ -9205,12 +9242,14 @@ function invalidatePlayersCache() {
   revalidateGoogleSheetsTag("google-sheets:players");
   revalidateGoogleSheetsTag("google-sheets:dashboard");
   revalidateGoogleSheetsTag("google-sheets:fee-calculator");
+  revalidateGoogleSheetsTag("google-sheets:player-profile");
   revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
 
 function invalidateFeeCalculatorCache() {
   revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:fee-calculator");
+  revalidateGoogleSheetsTag("google-sheets:player-profile");
   revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
 
