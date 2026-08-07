@@ -44,7 +44,7 @@ export function FixtureContent({
   const hasPublishedResults = data.matches.some((match) => match.status === "played");
 
   return (
-    <div className={cn("grid", tab === "posiciones" ? "gap-3" : "gap-6")}>
+    <div className={cn("grid min-w-0", tab === "posiciones" ? "gap-3" : "gap-6")}>
       <FixtureTabNav data={data} activeTab={tab} />
 
       {data.source.status === "error" ? (
@@ -54,9 +54,9 @@ export function FixtureContent({
       ) : null}
 
       {!hasPublishedResults && data.matches.length > 0 ? (
-        <section className="border-border bg-card flex gap-3 rounded-lg border p-4 text-sm">
+        <section className="border-border bg-card flex min-w-0 gap-3 rounded-lg border p-4 text-sm">
           <AlertTriangle className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground min-w-0 break-words">
             La liga no esta publicando resultados por partido para esta categoria. La
             tabla puede estar actualizada aunque las tarjetas del fixture figuren sin
             resultado.
@@ -91,7 +91,7 @@ function FixtureTabNav({
   ];
 
   return (
-    <nav className="border-border bg-card flex gap-1 overflow-x-auto rounded-lg border p-1">
+    <nav className="border-border bg-card flex max-w-full min-w-0 gap-1 overflow-x-auto rounded-lg border p-1">
       {tabs.map((tab) => (
         <NavigationLink
           key={tab.value}
@@ -471,16 +471,16 @@ function FixtureRounds({
       : rounds;
 
   return (
-    <section className="grid gap-4">
+    <section className="grid min-w-0 gap-4">
       <div>
         <p className="text-muted-foreground text-sm font-medium">Fixture completo</p>
         <h2 className="mt-1 text-xl font-semibold tracking-normal">Fechas del torneo</h2>
       </div>
 
       {rounds.length > 0 ? (
-        <div className="grid gap-3">
+        <div className="grid min-w-0 gap-3">
           <form
-            className="border-border bg-card flex flex-col gap-2 rounded-md border p-2"
+            className="border-border bg-card min-w-0 rounded-md border p-2"
             method="GET"
           >
             <input name="competition" type="hidden" value={data.selectedCompetitionKey} />
@@ -493,7 +493,7 @@ function FixtureRounds({
                 Aplicar
               </Button>
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="-mx-2 mt-2 flex max-w-full min-w-0 [scrollbar-width:none] gap-2 overflow-x-auto overscroll-x-contain px-2 pb-1 [&::-webkit-scrollbar]:hidden">
               {rounds.map((round) => {
                 const roundKey = getRoundKey(round);
                 const checked =
@@ -524,10 +524,10 @@ function FixtureRounds({
             <details
               key={`${round.name}-${round.date}`}
               open={index === 0}
-              className="border-border bg-card group rounded-lg border"
+              className="border-border bg-card group min-w-0 overflow-hidden rounded-lg border"
             >
-              <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-3 transition-colors">
-                <span>
+              <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
+                <span className="min-w-0">
                   <span className="font-semibold">{round.name}</span>
                   {round.date ? (
                     <span className="text-muted-foreground ml-2 text-sm">
@@ -535,9 +535,11 @@ function FixtureRounds({
                     </span>
                   ) : null}
                 </span>
-                <Badge variant="outline">{round.matches.length} partidos</Badge>
+                <Badge className="shrink-0" variant="outline">
+                  {round.matches.length} partidos
+                </Badge>
               </summary>
-              <div className="border-border grid gap-0 border-t">
+              <div className="border-border grid min-w-0 gap-0 border-t">
                 {round.matches.map((match) => (
                   <FullMatchRow key={match.id} match={match} />
                 ))}
@@ -570,13 +572,13 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
   return (
     <div
       className={cn(
-        "grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[5rem_minmax(0,1fr)_auto] md:items-center",
+        "grid min-w-0 gap-3 overflow-hidden border-b px-3 py-3 last:border-b-0 sm:px-4 md:grid-cols-[5rem_minmax(0,1fr)_auto] md:items-center",
         match.isClubMatch
           ? getCompetitionCardClass(match.competitionKind)
           : "border-border bg-card",
       )}
     >
-      <div className="text-muted-foreground flex items-center gap-2 text-sm">
+      <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
         <Clock3 className="size-4" />
         {match.time || "-"}
       </div>
@@ -589,7 +591,7 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
         <TeamName name={match.visitorTeam} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
         <CompetitionBadge kind={match.competitionKind} />
         <StatusBadge status={match.status} />
         {match.detailUrl ? (
@@ -647,7 +649,7 @@ function MatchTeamsCard({
   match: LeagueFixtureMatch;
 }) {
   return (
-    <div className={cn("grid gap-2 md:hidden", className)}>
+    <div className={cn("grid min-w-0 gap-2 md:hidden", className)}>
       <MatchTeamLine
         label="Local"
         score={match.localScore}
@@ -683,7 +685,7 @@ function MatchTeamLine({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm",
+        "flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-md px-3 py-2 text-sm",
         isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
       )}
     >
