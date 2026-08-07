@@ -15,6 +15,8 @@ interface FixturePageProps {
     competition?: string;
     torneo?: string;
     campeonato?: string;
+    round?: string | string[];
+    tab?: string;
     year?: string;
   }>;
 }
@@ -76,7 +78,19 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
         </div>
       </header>
 
-      <FixtureContent data={data} />
+      <FixtureContent
+        activeTab={params.tab}
+        data={data}
+        selectedRoundKeys={toArray(params.round)}
+      />
     </main>
   );
+}
+
+function toArray(value?: string | string[]) {
+  if (!value) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
 }

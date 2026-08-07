@@ -83,7 +83,7 @@ export async function getLeagueFixtureData(
 ): Promise<LeagueFixtureData> {
   const fetchedAt = new Date().toISOString();
   const metadata = await loadLeagueMetadata();
-  const selected = selectCompetition(metadata.tournaments, input);
+  const selected = await selectCompetition(metadata.tournaments, input);
   const selectedYear = getTournamentYear(selected.tournament.name) ?? DEFAULT_YEAR;
   const sourceUrl = buildFixtureUrl(selected.category.id, selected.tournament.id);
   const selectedCompetitionKind = getLeagueCompetitionKind(
@@ -238,7 +238,7 @@ function buildFixtureUrl(categoryId: string, tournamentId: string) {
   return `${LEAGUE_BASE_URL}/liga/tabla-resultados-alt/${categoryId}/${tournamentId}`;
 }
 
-function selectCompetition(
+async function selectCompetition(
   tournaments: LeagueTournamentOption[],
   input: GetLeagueFixtureDataInput,
 ) {
@@ -257,6 +257,17 @@ function selectCompetition(
     (!requestedYear || getTournamentYear(requested.tournament.name) === requestedYear)
   ) {
     return requested;
+  }
+
+  if (!requestedTournamentId && !requestedCategoryId) {
+    const latestClubCompetition = await findLatestClubCompetition(
+      tournaments,
+      requestedYear,
+    );
+
+    if (latestClubCompetition) {
+      return latestClubCompetition;
+    }
   }
 
   const yearTournaments = filterTournamentsByYear(
@@ -285,6 +296,81 @@ function selectCompetition(
     firstAvailableCompetition(fallbackYearTournaments) ??
     firstAvailableCompetition(FALLBACK_TOURNAMENTS)!
   );
+}
+
+async function findLatestClubCompetition(
+  tournaments: LeagueTournamentOption[],
+  requestedYear?: number,
+) {
+  const years = requestedYear ? [requestedYear] : getAvailableYears(tournaments);
+
+  for (const year of years) {
+    const matches = await getLeagueClubMatchesForYear(year, tournaments).catch(() => []);
+    const target = selectPreferredClubCompetition(matches, tournaments);
+
+    if (target) {
+      return target;
+    }
+  }
+
+  return undefined;
+}
+
+function selectPreferredClubCompetition(
+  matches: LeagueFixtureMatch[],
+  tournaments: LeagueTournamentOption[],
+) {
+  const grouped = new Map<
+    string,
+    {
+      categoryId: string;
+      competitionKind: LeagueCompetitionKind;
+      latestSortValue: number;
+      tournamentId: string;
+    }
+  >();
+
+  for (const match of matches) {
+    const [tournamentId, categoryId] = match.id.split(":");
+
+    if (!tournamentId || !categoryId) {
+      continue;
+    }
+
+    const key = `${tournamentId}:${categoryId}`;
+    const existing = grouped.get(key);
+    const latestSortValue = Math.max(
+      existing?.latestSortValue ?? 0,
+      getMatchSortValue(match),
+    );
+
+    grouped.set(key, {
+      categoryId,
+      competitionKind: match.competitionKind,
+      latestSortValue,
+      tournamentId,
+    });
+  }
+
+  const selected = [...grouped.values()].sort((left, right) => {
+    const kindDiff =
+      getDefaultCompetitionKindPriority(right.competitionKind) -
+      getDefaultCompetitionKindPriority(left.competitionKind);
+
+    if (kindDiff !== 0) {
+      return kindDiff;
+    }
+
+    return right.latestSortValue - left.latestSortValue;
+  })[0];
+
+  return selected
+    ? findCompetition(tournaments, selected.tournamentId, selected.categoryId)
+    : undefined;
+}
+
+function getDefaultCompetitionKindPriority(kind: LeagueCompetitionKind) {
+  return kind === "league" ? 2 : kind === "cup" ? 1 : 0;
 }
 
 function parseRequestedYear(value?: string) {
