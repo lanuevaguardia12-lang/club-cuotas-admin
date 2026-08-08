@@ -4741,12 +4741,13 @@ function buildPlayerOfMatchPhotoMap(
 }
 
 function getPlayerOfMatchVotingWindow(match: MatchRecord) {
-  const startsAtDate = new Date(`${match.date}T20:00:00-03:00`);
+  const startsAtDate = parseVotingStartDate(match.loadedAt) ?? new Date();
   const safeStartDate = !Number.isNaN(startsAtDate.getTime()) ? startsAtDate : new Date();
   const endsAtDate = new Date(safeStartDate.getTime() + 7 * 24 * 60 * 60 * 1000);
   const now = Date.now();
+  const hasEnoughPlayers = match.players.length >= 2;
   const status: PlayerOfMatchMatch["votingStatus"] =
-    now < safeStartDate.getTime()
+    !hasEnoughPlayers || now < safeStartDate.getTime()
       ? "scheduled"
       : now <= endsAtDate.getTime()
         ? "open"
@@ -4758,6 +4759,18 @@ function getPlayerOfMatchVotingWindow(match: MatchRecord) {
     startsAt: safeStartDate.toISOString(),
     status,
   };
+}
+
+function parseVotingStartDate(value: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  const date = value.includes("T")
+    ? new Date(value)
+    : new Date(`${value}T00:00:00-03:00`);
+
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function isPlayerOfMatchVotingOpen(match: MatchRecord) {

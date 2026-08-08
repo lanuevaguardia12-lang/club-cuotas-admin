@@ -85,8 +85,8 @@ function MatchVoteCard({
   const alreadyVoted = Boolean(match.userVote);
   const votingClosed = match.votingStatus === "closed";
   const votingScheduled = match.votingStatus === "scheduled";
-  const canVote =
-    match.players.length >= 2 && !alreadyVoted && match.votingStatus === "open";
+  const hasEnoughPlayers = match.players.length >= 2;
+  const canVote = hasEnoughPlayers && !alreadyVoted && match.votingStatus === "open";
   const statusConfig = {
     closed: {
       icon: Lock,
@@ -100,7 +100,7 @@ function MatchVoteCard({
     },
     scheduled: {
       icon: CalendarDays,
-      label: "Próxima",
+      label: hasEnoughPlayers ? "Próxima" : "Sin jugadores",
       variant: "warning" as const,
     },
   }[match.votingStatus];
@@ -172,9 +172,11 @@ function MatchVoteCard({
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
             <Timer className="size-3.5" />
             <span>
-              {votingScheduled
-                ? `Abre ${formatDateTime(match.votingStartsAt)}`
-                : `Hasta ${formatDateTime(match.votingEndsAt)}`}{" "}
+              {!hasEnoughPlayers
+                ? "Esperando jugadores"
+                : votingScheduled
+                  ? `Abre ${formatDateTime(match.votingStartsAt)}`
+                  : `Hasta ${formatDateTime(match.votingEndsAt)}`}{" "}
               · {match.totalVoters} votantes
             </span>
           </div>
@@ -192,7 +194,8 @@ function MatchVoteCard({
           <PlayerVoteForm match={match} />
         ) : votingScheduled ? (
           <p className="text-muted-foreground text-sm">
-            La votación abre el día del partido a las 20:00.
+            La votación se habilita automáticamente cuando el partido tiene jugadores
+            cargados.
           </p>
         ) : votingClosed ? (
           <p className="text-muted-foreground text-sm">
@@ -343,36 +346,36 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
   const podium = match.results.slice(0, 3);
 
   return (
-    <div className="club-animate-fade-up overflow-hidden rounded-md border bg-[#012f77] text-white shadow-sm">
-      <div className="relative grid gap-4 p-4 sm:p-5">
-        <div className="absolute inset-x-0 top-0 h-24 bg-[#0094dc]" />
+    <div className="club-animate-fade-up border-border bg-card overflow-hidden rounded-lg border shadow-sm">
+      <div className="bg-primary text-primary-foreground relative grid gap-3 p-3 sm:gap-4 sm:p-5">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(0,148,220,0.95),rgba(1,47,119,0.9)_55%,rgba(244,206,15,0.18))]" />
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold tracking-wide text-[#f4ce0f] uppercase">
+            <p className="text-[0.65rem] font-semibold tracking-wide text-[#f4ce0f] uppercase sm:text-xs">
               Podio actual
             </p>
-            <h3 className="mt-1 flex items-center gap-2 text-lg font-bold">
+            <h3 className="mt-1 flex items-center gap-2 text-base font-bold sm:text-lg">
               <Trophy className="size-5 text-[#f4ce0f]" />
               MVP vs {match.rival}
             </h3>
           </div>
-          <Badge className="border-white/20 bg-white/10 text-white">
-            {match.totalVotes} votos
+          <Badge className="shrink-0 border-white/20 bg-white/10 text-white">
+            {match.totalVotes} {match.totalVotes === 1 ? "voto" : "votos"}
           </Badge>
         </div>
 
-        <div className="relative z-10 grid items-end gap-3 sm:grid-cols-3">
-          <PodiumSpot result={podium[1]} place={2} heightClass="min-h-40" />
-          <PodiumSpot result={podium[0]} place={1} heightClass="min-h-52" featured />
-          <PodiumSpot result={podium[2]} place={3} heightClass="min-h-36" />
+        <div className="relative z-10 grid grid-cols-3 items-end gap-2 sm:gap-3">
+          <PodiumSpot result={podium[1]} place={2} heightClass="h-36 sm:h-44" />
+          <PodiumSpot result={podium[0]} place={1} heightClass="h-44 sm:h-56" featured />
+          <PodiumSpot result={podium[2]} place={3} heightClass="h-36 sm:h-44" />
         </div>
 
         {match.results.length === 0 || match.totalVotes === 0 ? (
-          <p className="relative z-10 rounded-md border border-white/15 bg-white/10 p-3 text-sm text-white/80">
+          <p className="relative z-10 rounded-md border border-white/15 bg-white/10 p-2 text-xs text-white/80 sm:p-3 sm:text-sm">
             Todavía no hay votos cargados para este partido.
           </p>
         ) : (
-          <div className="relative z-10 grid gap-2 rounded-md border border-white/15 bg-white/10 p-3">
+          <div className="relative z-10 hidden gap-2 rounded-md border border-white/15 bg-white/10 p-3 sm:grid">
             {match.results.slice(0, 6).map((result, index) => (
               <div
                 key={result.playerName}
@@ -410,9 +413,9 @@ function PodiumSpot({
   result?: PlayerOfMatchResult;
 }) {
   const colors = {
-    1: "from-[#f4ce0f] to-[#d5a700] text-[#012f77]",
-    2: "from-slate-100 to-slate-300 text-[#012f77]",
-    3: "from-[#c10202] to-[#8f0101] text-white",
+    1: "border-[#f4ce0f]/60 bg-[#f4ce0f] text-[#012f77] shadow-[0_14px_30px_rgba(244,206,15,0.24)]",
+    2: "border-white/70 bg-white/90 text-[#012f77]",
+    3: "border-[#c10202]/50 bg-[#c10202] text-white",
   };
   const delays = {
     1: "90ms",
@@ -423,27 +426,38 @@ function PodiumSpot({
   return (
     <div
       style={{ "--club-rise-delay": delays[place] } as CSSProperties}
-      className={`club-animate-podium-rise flex ${heightClass} flex-col items-center justify-end rounded-md bg-gradient-to-b ${colors[place]} p-3 text-center shadow-lg`}
+      className={cn(
+        "club-animate-podium-rise flex min-w-0 flex-col items-center justify-between rounded-md border p-2 text-center shadow-lg sm:p-3",
+        heightClass,
+        colors[place],
+        featured && "ring-2 ring-white/80",
+      )}
     >
-      <div className="mb-3">
+      <div>
         {place === 1 ? (
-          <Crown className="club-animate-pop-in mx-auto mb-1 size-6" />
+          <Crown className="club-animate-pop-in mx-auto mb-0.5 size-5 sm:mb-1 sm:size-6" />
         ) : (
-          <Medal className="club-animate-pop-in mx-auto mb-1 size-5" />
+          <Medal className="club-animate-pop-in mx-auto mb-0.5 size-4 sm:mb-1 sm:size-5" />
         )}
-        <p className="text-xs font-bold uppercase">Puesto {place}</p>
+        <p className="text-[0.65rem] font-bold uppercase sm:text-xs">Puesto {place}</p>
       </div>
       <PlayerAvatar
-        className={featured ? "size-20 border-4" : "size-16 border-2"}
+        className={
+          featured
+            ? "size-14 border-[3px] sm:size-20 sm:border-4"
+            : "size-12 border-2 sm:size-16"
+        }
         name={result?.playerName ?? "-"}
         photoDataUrl={result?.photoDataUrl}
       />
-      <p className="mt-3 line-clamp-2 min-h-10 text-sm font-bold">
-        {result?.playerName ?? "Sin votos"}
-      </p>
-      <p className="mt-1 text-xs font-semibold opacity-80">
-        {result ? `${result.votes} ${result.votes === 1 ? "voto" : "votos"}` : "-"}
-      </p>
+      <div className="min-w-0">
+        <p className="line-clamp-2 min-h-8 text-xs leading-tight font-bold sm:min-h-10 sm:text-sm">
+          {result?.playerName ?? "Sin votos"}
+        </p>
+        <p className="mt-1 text-[0.65rem] font-semibold opacity-80 sm:text-xs">
+          {result ? `${result.votes} ${result.votes === 1 ? "voto" : "votos"}` : "-"}
+        </p>
+      </div>
     </div>
   );
 }

@@ -15,7 +15,7 @@
     },
     {
       "path": "/api/cron/player-of-match-reminders",
-      "schedule": "0 13 * * *"
+      "schedule": "0 2 * * *"
     }
   ]
 }
