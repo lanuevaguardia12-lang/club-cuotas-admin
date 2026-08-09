@@ -2290,6 +2290,17 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
+  async getNotifications() {
+    this.assertConfigured();
+
+    const rows = await this.readValuesFromSpreadsheet(
+      this.getAppSpreadsheetId(),
+      this.config.notificationsRange,
+    ).catch(() => []);
+
+    return mapRowsToNotifications(rows);
+  }
+
   async recordAuditEvent(input: CreateAuditEventInput): Promise<void> {
     this.assertConfigured();
 

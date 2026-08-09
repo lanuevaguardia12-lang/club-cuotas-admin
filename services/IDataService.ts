@@ -23,6 +23,7 @@ import type {
 import type {
   CreateAuditEventInput,
   CreateNotificationInput,
+  AppNotification,
   CreateReminderJobInput,
   PremiumData,
   PushSubscriptionInput,
@@ -71,6 +72,7 @@ export interface IDataService {
   submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void>;
   updatePlayerOfMatchMatch(input: UpdatePlayerOfMatchMatchInput): Promise<void>;
   getPremiumData(): Promise<PremiumData>;
+  getNotifications(): Promise<AppNotification[]>;
   recordAuditEvent(input: CreateAuditEventInput): Promise<void>;
   createNotification(input: CreateNotificationInput): Promise<void>;
   markNotificationRead(notificationId: string): Promise<void>;

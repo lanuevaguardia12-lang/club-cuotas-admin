@@ -21,8 +21,7 @@ export async function GET() {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  const premium = await getDataService().getPremiumData();
-  const notifications = premium.notifications
+  const notifications = (await getDataService().getNotifications())
     .filter((notification) => canUserSeeNotification(notification, user))
     .slice(0, 50);
 
@@ -47,8 +46,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   const dataService = getDataService();
-  const premium = await dataService.getPremiumData();
-  const notification = premium.notifications.find(
+  const notifications = await dataService.getNotifications();
+  const notification = notifications.find(
     (candidate) => candidate.id === parsed.data.notificationId,
   );
 

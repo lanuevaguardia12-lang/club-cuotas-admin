@@ -475,6 +475,10 @@ export class DatabaseService implements IDataService {
     };
   }
 
+  async getNotifications() {
+    return [];
+  }
+
   async recordAuditEvent(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
