@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
+import { userToAuditActor } from "@/lib/audit";
+import { sendOpenPlayerOfMatchNotifications } from "@/lib/player-of-match-notifications";
 import {
   parsePlayerOfMatchPlayersText,
   playerOfMatchEditSchema,
@@ -96,6 +98,10 @@ export async function updatePlayerOfMatchMatch(
       updatedByName: user.name,
       updatedByUserId: user.id,
     });
+    await sendOpenPlayerOfMatchNotifications({
+      actor: userToAuditActor(user),
+      trigger: "match-update",
+    }).catch(() => undefined);
     revalidatePath("/player-of-match");
 
     return {

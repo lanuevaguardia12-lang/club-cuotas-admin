@@ -865,7 +865,7 @@ Los cron jobs se configuran en `vercel.json`:
   },
   {
     "path": "/api/cron/player-fee-reminders",
-    "schedule": "0 12 */4 * *"
+    "schedule": "0 18 */4 * *"
   },
   {
     "path": "/api/cron/player-of-match-reminders",
@@ -882,17 +882,20 @@ El cron no envia WhatsApp directamente. Genera recordatorios auditables en cola,
 preparados para conectar luego WhatsApp Business API, Twilio, Zenvia, QStash,
 Inngest u otro worker.
 
-El cron `/api/cron/player-fee-reminders` envia push solo a jugadores impagos y
-usa `Recordatorios` como memoria para no repetir el aviso automatico antes de 4
-dias por jugador y periodo. El envio manual desde el dashboard sigue disponible
-para pruebas administrativas.
+El cron `/api/cron/player-fee-reminders` corre cada cuatro dias a las 18:00 UTC
+(15:00 de Argentina), envia push solo a jugadores impagos y usa `Recordatorios`
+como memoria para no repetir el aviso automatico antes de 4 dias por jugador y
+periodo. El envio manual desde el dashboard sigue disponible para pruebas
+administrativas.
 
 El cron `/api/cron/player-of-match-reminders` corre una vez por dia a las 02:00
 UTC (23:00 de Argentina), avisa a usuarios suscriptos cuando hay partidos listos
 para votar MVP y evita repetir el mismo aviso por usuario/partido mediante
 `reference_id` en `Notificaciones`. La votacion MVP se abre automaticamente
 cuando el partido tiene al menos dos jugadores cargados, sin depender de que la
-liga publique el resultado.
+liga publique el resultado. Si los jugadores se cargan desde la app, el envio se
+intenta inmediatamente; si entran por Google Sheets/Form, el cron lo detecta en
+la siguiente corrida.
 
 ### Push notifications
 
