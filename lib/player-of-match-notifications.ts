@@ -16,7 +16,7 @@ export async function sendOpenPlayerOfMatchNotifications({
   trigger,
 }: {
   actor: AuditActor;
-  trigger: "cron" | "match-update" | "manual";
+  trigger: "cron" | "match-update" | "manual" | "webhook";
 }): Promise<SendOpenPlayerOfMatchNotificationsResult> {
   const dataService = getDataService();
   const [subscriptions, premium] = await Promise.all([

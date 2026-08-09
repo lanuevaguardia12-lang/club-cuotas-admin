@@ -829,7 +829,7 @@ al layout protegido, y el mensaje de WhatsApp alimenta el boton
 - Pagos: `services/payments/*`.
 - Webhooks: `app/api/webhooks/*` y `lib/webhooks/signatures.ts`.
 - API REST: `app/api/v1/*`.
-- Automatizaciones: `app/api/cron/reminders/route.ts`.
+- Automatizaciones: `app/api/cron/*` y `app/api/webhooks/player-of-match`.
 
 Los componentes no consumen Google Sheets, Stripe ni Mercado Pago directamente.
 Todo pasa por servicios, contratos y route handlers.
@@ -859,10 +859,6 @@ Los cron jobs se configuran en `vercel.json`:
 
 ```json
 [
-  {
-    "path": "/api/cron/reminders",
-    "schedule": "0 12 * * *"
-  },
   {
     "path": "/api/cron/player-fee-reminders",
     "schedule": "0 18 */4 * *"
@@ -929,6 +925,8 @@ Rutas principales:
 - `PATCH /api/notifications`: marca una notificacion visible como leida.
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
 - `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
+- `POST /api/webhooks/player-of-match`: webhook para Google Apps Script. Expira
+  el cache de MVP y envia push cuando el formulario de partidos carga jugadores.
 
 Limitaciones:
 
@@ -936,6 +934,37 @@ Limitaciones:
 - En Android y escritorio funciona desde navegadores compatibles.
 - El usuario debe aceptar permisos del navegador.
 - Requiere HTTPS; Vercel lo provee en produccion.
+
+### Webhook MVP Desde Google Forms
+
+Para que el aviso MVP sea inmediato cuando entra una respuesta del formulario de
+partidos, el Google Sheet debe llamar a la app con Apps Script.
+
+En el Sheet de partidos:
+
+1. Ir a `Extensiones` -> `Apps Script`.
+2. Pegar este script, reemplazando `TU_URL_DE_VERCEL` y `TU_CRON_SECRET`.
+3. Crear un trigger de tipo `Al enviar formulario` para `onFormSubmit`.
+
+```javascript
+const MVP_WEBHOOK_URL = "https://TU_URL_DE_VERCEL/api/webhooks/player-of-match";
+const MVP_WEBHOOK_SECRET = "TU_CRON_SECRET";
+
+function onFormSubmit() {
+  UrlFetchApp.fetch(MVP_WEBHOOK_URL, {
+    method: "post",
+    headers: {
+      Authorization: `Bearer ${MVP_WEBHOOK_SECRET}`,
+    },
+    muteHttpExceptions: true,
+  });
+}
+```
+
+La respuesta del formulario escribe en Google Sheets. El webhook expira el cache
+de MVP y busca partidos con al menos dos jugadores cargados para enviar:
+
+`Ya podes votar al MVP del partido vs Rival.`
 
 ### Pagos
 
@@ -1164,11 +1193,14 @@ Build: npm run build
 Dev: npm run dev
 ```
 
-Cron configurado:
+Crons configurados:
 
 ```text
-Path: /api/cron/reminders
-Schedule: 0 12 * * *
+Path: /api/cron/player-fee-reminders
+Schedule: 0 18 */4 * *
+
+Path: /api/cron/player-of-match-reminders
+Schedule: 0 2 * * *
 ```
 
 ## Calidad

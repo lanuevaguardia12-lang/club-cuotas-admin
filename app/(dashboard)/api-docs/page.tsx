@@ -20,7 +20,9 @@ const restEndpoints = [
 const webhookEndpoints = [
   ["POST", "/api/webhooks/stripe", "Stripe Checkout y Payment Intents"],
   ["POST", "/api/webhooks/mercado-pago", "Mercado Pago Checkout Pro"],
-  ["GET", "/api/cron/reminders", "Cron diario de recordatorios"],
+  ["POST", "/api/webhooks/player-of-match", "Google Forms dispara push MVP"],
+  ["GET", "/api/cron/player-fee-reminders", "Cron de cuotas impagas"],
+  ["GET", "/api/cron/player-of-match-reminders", "Cron de respaldo MVP"],
 ];
 
 export default async function ApiDocsPage() {

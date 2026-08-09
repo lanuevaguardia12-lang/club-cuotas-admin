@@ -168,7 +168,8 @@ export default async function NotificationsPage() {
             ))}
             {premium.reminders.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                No hay recordatorios en cola. El cron diario los generara automaticamente.
+                No hay recordatorios enviados todavía. Los crons de cuotas y MVP los
+                registrarán automaticamente cuando correspondan.
               </p>
             ) : null}
           </CardContent>
