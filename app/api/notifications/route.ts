@@ -71,13 +71,41 @@ export async function PATCH(request: NextRequest) {
 }
 
 function canUserSeeNotification(notification: AppNotification, user: AuthUser) {
-  if (notification.targetUserId) {
-    return notification.targetUserId === user.id;
-  }
+  const userKeys = buildNotificationUserKeys(user);
 
-  if (notification.targetPlayerId) {
-    return notification.targetPlayerId === user.playerId;
+  if (notification.targetUserId || notification.targetPlayerId) {
+    return (
+      matchesNotificationUserKey(notification.targetUserId, userKeys) ||
+      matchesNotificationUserKey(notification.targetPlayerId, userKeys)
+    );
   }
 
   return notification.targetRole === "all" || notification.targetRole === user.role;
+}
+
+function buildNotificationUserKeys(user: AuthUser) {
+  return new Set(
+    [user.id, user.username, user.playerId, user.name]
+      .flatMap((value) => buildNotificationKeyVariants(value))
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function matchesNotificationUserKey(value: string | undefined, userKeys: Set<string>) {
+  return buildNotificationKeyVariants(value).some((key) => userKeys.has(key));
+}
+
+function buildNotificationKeyVariants(value: string | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  const normalized = value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase();
+  const slug = normalized.replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+  return Array.from(new Set([normalized, slug].filter(Boolean)));
 }
