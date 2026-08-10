@@ -1690,7 +1690,10 @@ export class GoogleSheetsService implements IDataService {
       "name",
     ]);
     const periodIndex = findHeaderIndex(headers, ["periodo", "period", "mes"]);
-    const normalizedPlayerName = normalizeClubPlayerName(playerStatus.playerName);
+    const targetPlayerKeys = buildPlayerLookupKeys(
+      playerStatus.playerId,
+      playerStatus.playerName,
+    );
     const targetRowIndex =
       periodIndex >= 0
         ? dataRows.findIndex((row) => {
@@ -1701,11 +1704,11 @@ export class GoogleSheetsService implements IDataService {
               playerNameIndex >= 0
                 ? normalizeClubPlayerName(String(row[playerNameIndex] ?? ""))
                 : "";
+            const rowPlayerKeys = buildPlayerLookupKeys(rowPlayerId, rowPlayerName);
 
             return (
               rowPeriod === playerStatus.period &&
-              (rowPlayerId === playerStatus.playerId ||
-                (!!rowPlayerName && rowPlayerName === normalizedPlayerName))
+              lookupSetsIntersect(rowPlayerKeys, targetPlayerKeys)
             );
           })
         : -1;
@@ -5342,10 +5345,7 @@ function mapPlayerToFeeCalculatorPlayer(
   player: PlayerRecord,
   statusMap: Map<string, PlayerDirectoryStatus>,
 ): FeeCalculatorPlayer {
-  const status =
-    statusMap.get(player.id) ??
-    statusMap.get(normalizeClubPlayerName(player.name)) ??
-    "active";
+  const status = getFeeCalculatorPlayerStatus(player, statusMap);
 
   return {
     id: player.id,
@@ -5353,6 +5353,28 @@ function mapPlayerToFeeCalculatorPlayer(
     category: player.category,
     status,
   };
+}
+
+function getFeeCalculatorPlayerStatus(
+  player: PlayerRecord,
+  statusMap: Map<string, PlayerDirectoryStatus>,
+) {
+  const lookupKeys = buildPlayerLookupKeys(
+    player.id,
+    player.name,
+    player.email,
+    player.phone,
+  );
+
+  for (const key of lookupKeys) {
+    const status = statusMap.get(key);
+
+    if (status) {
+      return status;
+    }
+  }
+
+  return "active";
 }
 
 function buildFeeCalculatorPlayerStatusMap(
@@ -5364,10 +5386,8 @@ function buildFeeCalculatorPlayerStatusMap(
     .reduce<Map<string, PlayerDirectoryStatus>>((map, status) => {
       map.set(status.playerId, status.status);
 
-      const normalizedName = normalizeClubPlayerName(status.playerName);
-
-      if (normalizedName) {
-        map.set(normalizedName, status.status);
+      for (const key of buildPlayerLookupKeys(status.playerId, status.playerName)) {
+        map.set(key, status.status);
       }
 
       return map;
