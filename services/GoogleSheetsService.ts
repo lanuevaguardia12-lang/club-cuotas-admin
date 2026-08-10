@@ -73,6 +73,7 @@ import type {
   FixtureMatchScheduleOverride,
   LeagueCompetitionKind,
   LeagueFixtureMatch,
+  LeagueMatchStatus,
   UpdateFixtureMatchScheduleInput,
 } from "@/types/fixture";
 import type {
@@ -4711,11 +4712,14 @@ function applyFixtureMatchScheduleOverrides(
     }
 
     const { dateIso, time } = splitFixtureOverrideDateTime(override.dateTime);
+    const nextDateIso = dateIso ?? match.dateIso;
 
     return {
       ...match,
-      dateIso: dateIso ?? match.dateIso,
+      dateIso: nextDateIso,
+      roundDate: dateIso ? formatFixtureRoundDate(dateIso) : match.roundDate,
       scheduleOverrideUpdatedAt: override.updatedAt,
+      status: getScheduleAdjustedStatus(match, nextDateIso),
       time: time ?? match.time,
     };
   });
@@ -5063,6 +5067,36 @@ function splitFixtureOverrideDateTime(value: string) {
     dateIso,
     time,
   };
+}
+
+function getScheduleAdjustedStatus(
+  match: LeagueFixtureMatch,
+  dateIso?: string,
+): LeagueMatchStatus {
+  if (match.status === "played" || !dateIso) {
+    return match.status;
+  }
+
+  return new Date(`${dateIso}T23:59:59-03:00`) < new Date()
+    ? "without-result"
+    : "pending";
+}
+
+function formatFixtureRoundDate(dateIso: string) {
+  const date = new Date(`${dateIso}T12:00:00-03:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return dateIso;
+  }
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "numeric",
+    month: "long",
+    timeZone: "America/Argentina/Buenos_Aires",
+    weekday: "long",
+  })
+    .format(date)
+    .replace(",", "");
 }
 
 function findMatchPlayerName(players: string[], value: string) {
