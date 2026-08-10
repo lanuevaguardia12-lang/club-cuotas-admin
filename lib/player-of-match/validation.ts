@@ -25,7 +25,7 @@ export const playerOfMatchEditSchema = z
     date: z
       .string()
       .trim()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Usá una fecha válida."),
+      .regex(/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?$/, "Usá una fecha y hora válida."),
     matchId: z.string().trim().min(1, "No se encontró el partido."),
     playersText: z.string().trim().min(1, "Cargá los jugadores que participaron."),
     rival: z.string().trim().min(2, "Cargá el rival."),

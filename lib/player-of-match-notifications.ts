@@ -38,7 +38,10 @@ export async function sendOpenPlayerOfMatchNotifications({
     const data = await dataService.getPlayerOfMatchData(userId);
     const pendingMatches = data.matches.filter(
       (match) =>
-        !match.userVote && match.players.length >= 2 && match.votingStatus === "open",
+        !match.userVote &&
+        match.players.length >= 2 &&
+        match.votingStatus === "open" &&
+        isMatchDateReached(match.date),
     );
 
     if (pendingMatches.length === 0) {
@@ -113,6 +116,21 @@ export async function sendOpenPlayerOfMatchNotifications({
     skipped,
     users: subscriptionsByUser.size,
   };
+}
+
+function isMatchDateReached(value: string) {
+  if (!value) {
+    return true;
+  }
+
+  const normalized = value.includes("T")
+    ? value
+    : value.includes(" ")
+      ? value.replace(" ", "T")
+      : `${value}T00:00:00-03:00`;
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime()) || date.getTime() <= Date.now();
 }
 
 function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {

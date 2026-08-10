@@ -50,7 +50,13 @@ interface PlayerOfMatchContentProps {
 }
 
 export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentProps) {
-  if (data.matches.length === 0) {
+  const currentMatches = data.matches.filter(isCurrentPlayerOfMatch);
+  const currentMatchIds = new Set(currentMatches.map((match) => match.id));
+  const historyMatches = data.matches.filter(
+    (match) => isHistoryPlayerOfMatch(match) && !currentMatchIds.has(match.id),
+  );
+
+  if (currentMatches.length === 0 && historyMatches.length === 0) {
     return (
       <Card className="border-dashed">
         <CardContent className="p-6 text-center">
@@ -65,10 +71,45 @@ export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentPr
   }
 
   return (
-    <section className="grid gap-4 xl:grid-cols-2">
-      {data.matches.map((match) => (
-        <MatchVoteCard canManage={canManage} key={match.id} match={match} />
-      ))}
+    <section className="grid gap-8">
+      <div className="grid gap-4">
+        <div>
+          <p className="text-muted-foreground text-sm font-medium">Votación actual</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-normal">
+            Partidos finalizados para votar
+          </h2>
+        </div>
+        {currentMatches.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {currentMatches.map((match) => (
+              <MatchVoteCard canManage={canManage} key={match.id} match={match} />
+            ))}
+          </div>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="text-muted-foreground p-5 text-sm">
+              No hay votaciones disponibles ahora. Cuando se carguen jugadores de un
+              partido ya disputado, va a aparecer acá.
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {historyMatches.length > 0 ? (
+        <div className="grid gap-4">
+          <div>
+            <p className="text-muted-foreground text-sm font-medium">Historial</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-normal">
+              Tus votaciones y resultados
+            </h2>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            {historyMatches.map((match) => (
+              <MatchVoteCard canManage={canManage} key={match.id} match={match} />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -242,7 +283,7 @@ function FriendlyMatchEditForm({
     register,
   } = useForm<PlayerOfMatchEditFormValues>({
     defaultValues: {
-      date: match.date,
+      date: toDateTimeLocalValue(match.date),
       matchId: match.id,
       playersText: match.players.join("\n"),
       rival: match.rival,
@@ -281,9 +322,9 @@ function FriendlyMatchEditForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-2 text-sm">
-          <span className="font-medium">Fecha</span>
+          <span className="font-medium">Fecha y hora</span>
           <input
-            type="date"
+            type="datetime-local"
             className="border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
             {...register("date")}
           />
@@ -632,17 +673,69 @@ function VoteResult({ label, value }: { label: string; value: string }) {
 }
 
 function formatDate(value: string) {
-  const date = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
+  const hasTime = value.includes("T") || value.includes(" ");
+  const date = parseMatchDate(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date) {
     return value;
   }
 
   return new Intl.DateTimeFormat("es-AR", {
     day: "2-digit",
+    hour: hasTime ? "2-digit" : undefined,
+    minute: hasTime ? "2-digit" : undefined,
     month: "long",
+    timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
   }).format(date);
+}
+
+function isCurrentPlayerOfMatch(match: PlayerOfMatchMatch) {
+  return (
+    match.players.length >= 2 &&
+    match.votingStatus === "open" &&
+    isMatchDateReached(match.date)
+  );
+}
+
+function isHistoryPlayerOfMatch(match: PlayerOfMatchMatch) {
+  return (
+    isMatchDateReached(match.date) &&
+    (match.votingStatus === "closed" || Boolean(match.userVote) || match.totalVotes > 0)
+  );
+}
+
+function isMatchDateReached(value: string) {
+  const date = parseMatchDate(value);
+
+  return !date || date.getTime() <= Date.now();
+}
+
+function parseMatchDate(value: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.includes("T")
+    ? value
+    : value.includes(" ")
+      ? value.replace(" ", "T")
+      : `${value}T00:00:00-03:00`;
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function toDateTimeLocalValue(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
+    return value.slice(0, 16);
+  }
+
+  return `${value.slice(0, 10)}T00:00`;
 }
 
 function formatDateTime(value: string) {

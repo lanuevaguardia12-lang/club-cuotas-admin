@@ -8593,15 +8593,28 @@ function parseClubDateTime(value: string) {
     return undefined;
   }
 
-  const match = value
+  const trimmed = value.trim();
+  const isoDateTime = trimmed.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2})(?::\d{2})?)?/,
+  );
+
+  if (isoDateTime) {
+    const [, year, month, day, hour, minute] = isoDateTime;
+    const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+
+    return hour && minute ? `${date}T${hour.padStart(2, "0")}:${minute}` : date;
+  }
+
+  const match = trimmed
     .trim()
-    .match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/);
+    .match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::\d{2})?)?/);
 
   if (match) {
-    const [, day, month, rawYear] = match;
+    const [, day, month, rawYear, hour, minute] = match;
     const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+    const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    return hour && minute ? `${date}T${hour.padStart(2, "0")}:${minute}` : date;
   }
 
   return parseDate(value);
@@ -8829,7 +8842,13 @@ function getPeriodFromDate(value?: string) {
     return undefined;
   }
 
-  const date = new Date(`${value}T00:00:00`);
+  const normalized = parseClubDateTime(value);
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const date = new Date(normalized.includes("T") ? normalized : `${normalized}T00:00:00`);
 
   return Number.isNaN(date.getTime()) ? undefined : getCurrentPeriod(date);
 }
