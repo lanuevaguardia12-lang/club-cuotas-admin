@@ -21,6 +21,10 @@ import type {
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
 import type {
+  FixtureMatchScheduleOverride,
+  UpdateFixtureMatchScheduleInput,
+} from "@/types/fixture";
+import type {
   CreateAuditEventInput,
   CreateNotificationInput,
   AppNotification,
@@ -68,6 +72,8 @@ export interface IDataService {
   getExportData(dataset: ExportDataset): Promise<ExportData>;
   getPlayerProfile(playerId: string, year?: number): Promise<PlayerProfile | null>;
   updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput): Promise<void>;
+  getFixtureMatchScheduleOverrides(): Promise<FixtureMatchScheduleOverride[]>;
+  updateFixtureMatchSchedule(input: UpdateFixtureMatchScheduleInput): Promise<void>;
   getPlayerOfMatchData(voterUserId: string): Promise<PlayerOfMatchData>;
   submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void>;
   updatePlayerOfMatchMatch(input: UpdatePlayerOfMatchMatchInput): Promise<void>;

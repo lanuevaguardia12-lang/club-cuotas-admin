@@ -48,6 +48,7 @@ export interface LeagueFixtureMatch {
   cards: string[];
   isClubMatch: boolean;
   involvesBye: boolean;
+  scheduleOverrideUpdatedAt?: string;
 }
 
 export interface LeagueFixtureRound {
@@ -76,4 +77,19 @@ export interface LeagueFixtureData {
     fetchedAt: string;
     sourceUrl: string;
   };
+}
+
+export interface FixtureMatchScheduleOverride {
+  matchId: string;
+  dateTime: string;
+  updatedAt: string;
+  updatedByName: string;
+  updatedByUserId: string;
+}
+
+export interface UpdateFixtureMatchScheduleInput {
+  matchId: string;
+  dateTime: string;
+  updatedByName: string;
+  updatedByUserId: string;
 }

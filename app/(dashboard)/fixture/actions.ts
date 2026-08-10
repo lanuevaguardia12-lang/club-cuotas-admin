@@ -1,0 +1,73 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+
+import { getCurrentUser } from "@/lib/auth/session";
+import { getDataService } from "@/services/data-service";
+
+export interface FixtureScheduleActionResult {
+  ok: boolean;
+  message: string;
+}
+
+const fixtureScheduleSchema = z.object({
+  dateTime: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Usá una fecha y hora válida."),
+  matchId: z.string().trim().min(1, "No se encontró el partido."),
+});
+
+export async function updateFixtureMatchSchedule(
+  input: unknown,
+): Promise<FixtureScheduleActionResult> {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return {
+      ok: false,
+      message: "Iniciá sesión para editar el fixture.",
+    };
+  }
+
+  if (user.role !== "admin") {
+    return {
+      ok: false,
+      message: "Solo el administrador puede editar fecha y hora del partido.",
+    };
+  }
+
+  const parsed = fixtureScheduleSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Revisá la fecha del partido.",
+    };
+  }
+
+  try {
+    await getDataService().updateFixtureMatchSchedule({
+      dateTime: parsed.data.dateTime,
+      matchId: parsed.data.matchId,
+      updatedByName: user.name,
+      updatedByUserId: user.id,
+    });
+    revalidatePath("/fixture");
+    revalidatePath("/player-of-match");
+
+    return {
+      ok: true,
+      message: "Fecha y hora actualizadas.",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar la fecha del partido.",
+    };
+  }
+}

@@ -8,7 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { hasPermission } from "@/lib/auth/roles";
 import { LOGIN_PATH } from "@/lib/auth/constants";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getLeagueFixtureData } from "@/lib/league-fixture";
+import {
+  applyLeagueFixtureScheduleOverrides,
+  getLeagueFixtureData,
+} from "@/lib/league-fixture";
+import { getDataService } from "@/services/data-service";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +45,17 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
   }
 
   const params = await searchParams;
-  const data = await getLeagueFixtureData({
+  const rawData = await getLeagueFixtureData({
     competition: params.competition,
     tournamentId: params.torneo,
     categoryId: params.campeonato,
     year: params.year,
   });
+  const fixtureScheduleOverrides = await getDataService()
+    .getFixtureMatchScheduleOverrides()
+    .catch(() => []);
+  const data = applyLeagueFixtureScheduleOverrides(rawData, fixtureScheduleOverrides);
+  const canManageFixture = user.role === "admin";
 
   return (
     <main className="grid gap-6">
@@ -77,6 +86,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
 
       <FixtureContent
         activeTab={params.tab}
+        canManage={canManageFixture}
         data={data}
         selectedRoundKeys={toArray(params.round)}
       />

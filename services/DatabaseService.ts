@@ -406,6 +406,17 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async getFixtureMatchScheduleOverrides() {
+    return [];
+  }
+
+  async updateFixtureMatchSchedule(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async getPlayerOfMatchData(): Promise<PlayerOfMatchData> {
     return {
       matches: [],

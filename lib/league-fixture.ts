@@ -1,6 +1,7 @@
 import "server-only";
 
 import type {
+  FixtureMatchScheduleOverride,
   LeagueCategoryOption,
   LeagueCompetitionKind,
   LeagueFixtureData,
@@ -196,6 +197,49 @@ export async function getLeagueClubMatchesForYear(
       ),
     ),
   );
+}
+
+export function applyLeagueFixtureScheduleOverrides(
+  data: LeagueFixtureData,
+  overrides: FixtureMatchScheduleOverride[],
+): LeagueFixtureData {
+  if (overrides.length === 0) {
+    return data;
+  }
+
+  const overridesByMatchId = new Map(
+    overrides.map((override) => [override.matchId, override]),
+  );
+  const applyOverride = (match: LeagueFixtureMatch): LeagueFixtureMatch => {
+    const override = overridesByMatchId.get(match.id);
+
+    if (!override) {
+      return match;
+    }
+
+    const { dateIso, time } = splitFixtureOverrideDateTime(override.dateTime);
+
+    return {
+      ...match,
+      dateIso: dateIso ?? match.dateIso,
+      scheduleOverrideUpdatedAt: override.updatedAt,
+      time: time ?? match.time,
+    };
+  };
+  const rounds = data.rounds.map((round) => ({
+    ...round,
+    matches: round.matches.map(applyOverride),
+  }));
+  const matches = rounds.flatMap((round) => round.matches);
+  const clubMatches = matches.filter((match) => match.isClubMatch);
+
+  return {
+    ...data,
+    clubMatches,
+    matches,
+    nextMatches: buildNextMatches(clubMatches),
+    rounds,
+  };
 }
 
 async function loadLeagueMetadata() {
@@ -853,6 +897,22 @@ function getMatchSortValue(match: LeagueFixtureMatch) {
   ).getTime();
 
   return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+}
+
+function splitFixtureOverrideDateTime(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+
+  if (!match) {
+    return {
+      dateIso: undefined,
+      time: undefined,
+    };
+  }
+
+  return {
+    dateIso: `${match[1]}-${match[2]}-${match[3]}`,
+    time: `${match[4]}:${match[5]}`,
+  };
 }
 
 function parseMatchStatus(

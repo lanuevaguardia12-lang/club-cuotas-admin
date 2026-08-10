@@ -69,7 +69,12 @@ import type {
   UpdateFeeRefundPolicyInput,
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
-import type { LeagueCompetitionKind, LeagueFixtureMatch } from "@/types/fixture";
+import type {
+  FixtureMatchScheduleOverride,
+  LeagueCompetitionKind,
+  LeagueFixtureMatch,
+  UpdateFixtureMatchScheduleInput,
+} from "@/types/fixture";
 import type {
   AppLogEntry,
   AppLogLevel,
@@ -141,6 +146,7 @@ interface GoogleSheetsConfig {
   pushSubscriptionsRange: string;
   playerOfMatchVotesRange: string;
   playerOfMatchOverridesRange: string;
+  fixtureOverridesRange: string;
   feeCalculatorCostsRange: string;
   feeCalculatorActualsRange: string;
   feeCalculatorPlayerStatusesRange: string;
@@ -252,6 +258,7 @@ const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
 const DEFAULT_PUSH_SUBSCRIPTIONS_RANGE = "PushSubscriptions!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE = "JugadorPartidoVotos!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_OVERRIDES_RANGE = "JugadorPartidoAjustes!A:Z";
+const DEFAULT_FIXTURE_OVERRIDES_RANGE = "FixtureAjustes!A:Z";
 const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
 const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
@@ -446,6 +453,14 @@ const accountProfileHeaders = [
   "actualizado_en",
 ];
 
+const fixtureOverrideHeaders = [
+  "match_id",
+  "fecha_hora",
+  "actualizado_por_user_id",
+  "actualizado_por",
+  "actualizado_en",
+];
+
 export class GoogleSheetsService implements IDataService {
   private readonly config: GoogleSheetsConfig;
 
@@ -513,6 +528,10 @@ export class GoogleSheetsService implements IDataService {
         config.playerOfMatchOverridesRange ??
         process.env.GOOGLE_SHEETS_PLAYER_OF_MATCH_OVERRIDES_RANGE ??
         DEFAULT_PLAYER_OF_MATCH_OVERRIDES_RANGE,
+      fixtureOverridesRange:
+        config.fixtureOverridesRange ??
+        process.env.GOOGLE_SHEETS_FIXTURE_OVERRIDES_RANGE ??
+        DEFAULT_FIXTURE_OVERRIDES_RANGE,
       feeCalculatorCostsRange:
         config.feeCalculatorCostsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE ??
@@ -1997,22 +2016,106 @@ export class GoogleSheetsService implements IDataService {
     invalidateDashboardCache();
   }
 
+  async getFixtureMatchScheduleOverrides(): Promise<FixtureMatchScheduleOverride[]> {
+    this.assertConfigured();
+
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      this.getAppSpreadsheetId(),
+      this.config.fixtureOverridesRange,
+    );
+
+    return mapRowsToFixtureMatchScheduleOverrides(rows);
+  }
+
+  async updateFixtureMatchSchedule(input: UpdateFixtureMatchScheduleInput) {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const sheetPrefix = getSheetPrefix(this.config.fixtureOverridesRange);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.fixtureOverridesRange,
+    );
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, fixtureOverrideHeaders);
+
+    await this.ensureSheetForRange(this.config.fixtureOverridesRange, spreadsheetId);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      fixtureOverrideHeaders,
+    );
+
+    const override: FixtureMatchScheduleOverride = {
+      matchId: input.matchId,
+      dateTime: input.dateTime,
+      updatedAt: new Date().toISOString(),
+      updatedByName: input.updatedByName,
+      updatedByUserId: input.updatedByUserId,
+    };
+    const row = buildFixtureOverrideWritableRow(headers, override);
+    const matchIdIndex = findHeaderIndex(headers, ["match_id", "partido_id", "id"]);
+    const targetRowIndex =
+      matchIdIndex >= 0
+        ? dataRows.findIndex(
+            (candidate) => String(candidate[matchIdIndex] ?? "").trim() === input.matchId,
+          )
+        : -1;
+    const sheets = this.createSheetsClient();
+
+    if (targetRowIndex >= 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${targetRowIndex + 2}:${toColumnName(headers.length - 1)}${targetRowIndex + 2}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [row],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: this.config.fixtureOverridesRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [row],
+        },
+      });
+    }
+
+    invalidateFixtureCache();
+    invalidatePlayerOfMatchCache();
+  }
+
   async getPlayerOfMatchData(voterUserId: string): Promise<PlayerOfMatchData> {
     const cachedAt = new Date().toISOString();
 
     try {
       this.assertConfigured();
 
-      const [sheetMatches, fixtureMatches, votes, accountProfiles, overrides] =
-        await Promise.all([
-          this.readPlayerOfMatchMatches(),
-          getLeagueClubMatchesForYear().catch(() => []),
-          this.readPlayerOfMatchVotes(),
-          this.readAccountProfiles().catch(() => []),
-          this.readPlayerOfMatchOverrides(),
-        ]);
+      const [
+        sheetMatches,
+        fixtureMatches,
+        votes,
+        accountProfiles,
+        overrides,
+        fixtureOverrides,
+      ] = await Promise.all([
+        this.readPlayerOfMatchMatches(),
+        getLeagueClubMatchesForYear().catch(() => []),
+        this.readPlayerOfMatchVotes(),
+        this.readAccountProfiles().catch(() => []),
+        this.readPlayerOfMatchOverrides(),
+        this.getFixtureMatchScheduleOverrides(),
+      ]);
+      const adjustedFixtureMatches = applyFixtureMatchScheduleOverrides(
+        fixtureMatches,
+        fixtureOverrides,
+      );
       const matches = applyPlayerOfMatchOverrides(
-        mergePlayerOfMatchMatches(sheetMatches, fixtureMatches),
+        mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
         overrides,
       );
       const voterVotes = votes.filter((vote) => vote.voterUserId === voterUserId);
@@ -2045,14 +2148,20 @@ export class GoogleSheetsService implements IDataService {
   async submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void> {
     this.assertConfigured();
 
-    const [sheetMatches, fixtureMatches, votes, overrides] = await Promise.all([
-      this.readPlayerOfMatchMatches(),
-      getLeagueClubMatchesForYear().catch(() => []),
-      this.readPlayerOfMatchVotes(),
-      this.readPlayerOfMatchOverrides(),
-    ]);
+    const [sheetMatches, fixtureMatches, votes, overrides, fixtureOverrides] =
+      await Promise.all([
+        this.readPlayerOfMatchMatches(),
+        getLeagueClubMatchesForYear().catch(() => []),
+        this.readPlayerOfMatchVotes(),
+        this.readPlayerOfMatchOverrides(),
+        this.getFixtureMatchScheduleOverrides(),
+      ]);
+    const adjustedFixtureMatches = applyFixtureMatchScheduleOverrides(
+      fixtureMatches,
+      fixtureOverrides,
+    );
     const matches = applyPlayerOfMatchOverrides(
-      mergePlayerOfMatchMatches(sheetMatches, fixtureMatches),
+      mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
       overrides,
     );
     const match = matches.find((candidate) => candidate.id === input.matchId);
@@ -4555,6 +4664,63 @@ function mapRowsToPlayerOfMatchOverrides(
     .filter((override): override is PlayerOfMatchOverrideRecord => Boolean(override));
 }
 
+function mapRowsToFixtureMatchScheduleOverrides(
+  rows: unknown[][],
+): FixtureMatchScheduleOverride[] {
+  return rowsToRecords(rows)
+    .map<FixtureMatchScheduleOverride | null>((record) => {
+      const matchId = pick(record, ["match_id", "partido_id", "id"]);
+      const dateTime = normalizeFixtureOverrideDateTime(
+        pick(record, ["fecha_hora", "datetime", "date_time", "fecha"]),
+      );
+
+      if (!matchId || !dateTime) {
+        return null;
+      }
+
+      return {
+        matchId,
+        dateTime,
+        updatedAt:
+          parseDateTime(pick(record, ["actualizado_en", "updated_at", "timestamp"])) ??
+          "",
+        updatedByName: pick(record, ["actualizado_por", "updated_by", "usuario"]),
+        updatedByUserId: pick(record, [
+          "actualizado_por_user_id",
+          "updated_by_user_id",
+          "user_id",
+        ]),
+      };
+    })
+    .filter((override): override is FixtureMatchScheduleOverride => Boolean(override));
+}
+
+function applyFixtureMatchScheduleOverrides(
+  matches: LeagueFixtureMatch[],
+  overrides: FixtureMatchScheduleOverride[],
+) {
+  const overridesByMatchId = new Map(
+    overrides.map((override) => [override.matchId, override]),
+  );
+
+  return matches.map((match) => {
+    const override = overridesByMatchId.get(match.id);
+
+    if (!override) {
+      return match;
+    }
+
+    const { dateIso, time } = splitFixtureOverrideDateTime(override.dateTime);
+
+    return {
+      ...match,
+      dateIso: dateIso ?? match.dateIso,
+      scheduleOverrideUpdatedAt: override.updatedAt,
+      time: time ?? match.time,
+    };
+  });
+}
+
 function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
   return rowsToRecords(rows)
     .map<PlayerOfMatchVote | null>((record, index) => {
@@ -4843,6 +5009,60 @@ function buildPlayerOfMatchOverrideWritableRow(
   };
 
   return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function buildFixtureOverrideWritableRow(
+  headers: string[],
+  override: FixtureMatchScheduleOverride,
+) {
+  const values: Record<string, string> = {
+    actualizado_en: override.updatedAt,
+    actualizado_por: override.updatedByName,
+    actualizado_por_user_id: override.updatedByUserId,
+    date_time: override.dateTime,
+    datetime: override.dateTime,
+    fecha: override.dateTime,
+    fecha_hora: override.dateTime,
+    id: override.matchId,
+    match_id: override.matchId,
+    partido_id: override.matchId,
+    timestamp: override.updatedAt,
+    updated_at: override.updatedAt,
+    updated_by: override.updatedByName,
+    updated_by_user_id: override.updatedByUserId,
+    user_id: override.updatedByUserId,
+    usuario: override.updatedByName,
+  };
+
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function normalizeFixtureOverrideDateTime(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = parseClubDateTime(value);
+
+  return parsed ? parsed.slice(0, 16) : "";
+}
+
+function splitFixtureOverrideDateTime(value: string) {
+  const normalized = normalizeFixtureOverrideDateTime(value);
+
+  if (!normalized) {
+    return {
+      dateIso: undefined,
+      time: undefined,
+    };
+  }
+
+  const [dateIso, time] = normalized.split("T");
+
+  return {
+    dateIso,
+    time,
+  };
 }
 
 function findMatchPlayerName(players: string[], value: string) {
@@ -9384,4 +9604,9 @@ function invalidatePushSubscriptionCache() {
 function invalidatePlayerOfMatchCache() {
   revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:player-of-match");
+}
+
+function invalidateFixtureCache() {
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:fixture");
 }

@@ -12,6 +12,7 @@ import {
   CompetitionBadge,
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
+import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-schedule-editor";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import type {
 
 interface FixtureContentProps {
   activeTab?: string;
+  canManage?: boolean;
   data: LeagueFixtureData;
   selectedRoundKeys?: string[];
 }
@@ -37,6 +39,7 @@ type FixtureTab = "resumen" | "posiciones" | "fixture";
 
 export function FixtureContent({
   activeTab,
+  canManage = false,
   data,
   selectedRoundKeys = [],
 }: FixtureContentProps) {
@@ -68,6 +71,7 @@ export function FixtureContent({
       {tab === "posiciones" ? <StandingsTable data={data} /> : null}
       {tab === "fixture" ? (
         <FixtureRounds
+          canManage={canManage}
           data={data}
           rounds={data.rounds}
           selectedRoundKeys={selectedRoundKeys}
@@ -456,10 +460,12 @@ function StandingsLegend() {
 }
 
 function FixtureRounds({
+  canManage,
   data,
   rounds,
   selectedRoundKeys,
 }: {
+  canManage: boolean;
   data: LeagueFixtureData;
   rounds: LeagueFixtureRound[];
   selectedRoundKeys: string[];
@@ -541,7 +547,7 @@ function FixtureRounds({
               </summary>
               <div className="border-border grid min-w-0 gap-0 border-t">
                 {round.matches.map((match) => (
-                  <FullMatchRow key={match.id} match={match} />
+                  <FullMatchRow key={match.id} canManage={canManage} match={match} />
                 ))}
               </div>
             </details>
@@ -568,7 +574,15 @@ function FixtureRounds({
   );
 }
 
-function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
+function FullMatchRow({
+  canManage,
+  match,
+}: {
+  canManage: boolean;
+  match: LeagueFixtureMatch;
+}) {
+  const canEditSchedule = canManage && match.isClubMatch;
+
   return (
     <div
       className={cn(
@@ -594,6 +608,9 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
       <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
         <CompetitionBadge kind={match.competitionKind} />
         <StatusBadge status={match.status} />
+        {match.scheduleOverrideUpdatedAt ? (
+          <Badge variant="outline">Editado</Badge>
+        ) : null}
         {match.detailUrl ? (
           <Button asChild size="sm" variant="outline">
             <a href={match.detailUrl} rel="noreferrer" target="_blank">
@@ -603,6 +620,12 @@ function FullMatchRow({ match }: { match: LeagueFixtureMatch }) {
           </Button>
         ) : null}
       </div>
+
+      {canEditSchedule ? (
+        <div className="md:col-span-3">
+          <FixtureMatchScheduleEditor match={match} />
+        </div>
+      ) : null}
 
       {match.goals.length > 0 || match.cards.length > 0 ? (
         <div className="text-muted-foreground grid gap-1 text-xs md:col-span-3">
