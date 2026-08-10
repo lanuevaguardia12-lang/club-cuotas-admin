@@ -116,7 +116,8 @@ function FixtureTabNav({
 }
 
 function SummaryTab({ data }: FixtureContentProps) {
-  const nextMatch = data.clubMatches.find((match) => match.status === "pending");
+  const nextMatch =
+    data.nextMatches[0] ?? data.clubMatches.find((match) => match.status === "pending");
   const lastMatch = [...data.clubMatches]
     .reverse()
     .find((match) => match.status === "played");

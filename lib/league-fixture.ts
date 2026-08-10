@@ -232,12 +232,14 @@ export function applyLeagueFixtureScheduleOverrides(
   }));
   const matches = rounds.flatMap((round) => round.matches);
   const clubMatches = matches.filter((match) => match.isClubMatch);
+  const nextMatchesSource =
+    data.nextMatches.length > 0 ? data.nextMatches.map(applyOverride) : clubMatches;
 
   return {
     ...data,
     clubMatches,
     matches,
-    nextMatches: buildNextMatches(clubMatches),
+    nextMatches: buildNextMatches(nextMatchesSource),
     rounds,
   };
 }
