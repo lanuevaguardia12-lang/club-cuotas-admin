@@ -760,7 +760,8 @@ function parseFixtureRounds(
         matches,
       };
     })
-    .filter((round) => round.matches.length > 0);
+    .filter((round) => round.matches.length > 0)
+    .sort(compareFixtureRoundsBySchedule);
 }
 
 function parseRoundMatches(
@@ -857,6 +858,29 @@ function buildNextMatches(matches: LeagueFixtureMatch[]) {
   return sortMatchesBySchedule(
     matches.filter((match) => match.status === "pending" && !match.involvesBye),
   ).slice(0, 3);
+}
+
+function compareFixtureRoundsBySchedule(
+  left: LeagueFixtureRound,
+  right: LeagueFixtureRound,
+) {
+  const dateDiff = getRoundSortValue(left) - getRoundSortValue(right);
+
+  if (dateDiff !== 0) {
+    return dateDiff;
+  }
+
+  return getRoundNumber(left.name) - getRoundNumber(right.name);
+}
+
+function getRoundSortValue(round: LeagueFixtureRound) {
+  return Math.min(...round.matches.map(getMatchSortValue));
+}
+
+function getRoundNumber(name: string) {
+  const value = Number(/\d+/.exec(name)?.[0]);
+
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
 }
 
 function dedupeLeagueMatches(matches: LeagueFixtureMatch[]) {
