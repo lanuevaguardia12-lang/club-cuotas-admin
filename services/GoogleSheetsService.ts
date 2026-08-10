@@ -5010,6 +5010,11 @@ function buildFeeCalculatorData({
   );
   const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
   const calculations = activePlayers.map((player) => {
+    const wasInactivePreviousPeriod = wasPlayerInactiveForPeriod(
+      player,
+      playerStatuses,
+      previousPeriod,
+    );
     const plannedCurrentQuota = calculatePlayerBaseQuotaForPeriod(
       activeCosts,
       effectiveActuals,
@@ -5017,12 +5022,14 @@ function buildFeeCalculatorData({
       "forecast",
       player,
     );
-    const previousCostVariance = calculatePlayerCostVarianceForPeriod(
-      activeCosts,
-      effectiveActuals,
-      previousPeriod,
-      player,
-    );
+    const previousCostVariance = wasInactivePreviousPeriod
+      ? 0
+      : calculatePlayerCostVarianceForPeriod(
+          activeCosts,
+          effectiveActuals,
+          previousPeriod,
+          player,
+        );
     const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
     const previousBaseQuota = calculatePlayerAppBaseQuotaForPeriod(
       activeCosts,
@@ -5046,6 +5053,7 @@ function buildFeeCalculatorData({
       refundPolicy,
       expenseCredits,
       totalMatchesPreviousPeriod,
+      skipPreviousPeriodEffects: wasInactivePreviousPeriod,
     });
   });
 
@@ -5106,6 +5114,7 @@ function buildPlayerFeeCalculation({
   refundPolicy,
   expenseCredits,
   totalMatchesPreviousPeriod,
+  skipPreviousPeriodEffects,
 }: {
   player: PlayerRecord;
   period: string;
@@ -5119,25 +5128,32 @@ function buildPlayerFeeCalculation({
   refundPolicy: FeeRefundPolicyRule[];
   expenseCredits: Array<PlayerExpenseCredit & { period: string }>;
   totalMatchesPreviousPeriod: number;
+  skipPreviousPeriodEffects?: boolean;
 }): FeePlayerCalculation {
   const normalizedPlayerName = normalizeClubPlayerName(player.name);
   const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
   const playedMatches = playerMatches.length;
   const attendanceRate =
     totalMatchesPreviousPeriod > 0 ? playedMatches / totalMatchesPreviousPeriod : 0;
+  const effectiveBaseQuota = skipPreviousPeriodEffects ? plannedCurrentQuota : baseQuota;
+  const effectivePreviousQuota = skipPreviousPeriodEffects
+    ? 0
+    : previousQuotaWithAdjustmentsAndRefunds;
   const refundPercent =
-    previousQuotaWithAdjustmentsAndRefunds > 0
+    effectivePreviousQuota > 0
       ? findRefundPercent(refundPolicy, attendanceRate * 100)
       : 0;
-  const refundAmount = previousQuotaWithAdjustmentsAndRefunds * (refundPercent / 100);
-  const expenseCredit = expenseCredits
-    .filter(
-      (credit) =>
-        credit.period === previousPeriod &&
-        normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
-    )
-    .reduce((total, credit) => total + credit.amount, 0);
-  const quotaWithAdjustmentsAndRefunds = Math.max(baseQuota - refundAmount, 0);
+  const refundAmount = effectivePreviousQuota * (refundPercent / 100);
+  const expenseCredit = skipPreviousPeriodEffects
+    ? 0
+    : expenseCredits
+        .filter(
+          (credit) =>
+            credit.period === previousPeriod &&
+            normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
+        )
+        .reduce((total, credit) => total + credit.amount, 0);
+  const quotaWithAdjustmentsAndRefunds = Math.max(effectiveBaseQuota - refundAmount, 0);
   const finalQuota = Math.max(quotaWithAdjustmentsAndRefunds - expenseCredit, 0);
 
   return {
@@ -5145,11 +5161,11 @@ function buildPlayerFeeCalculation({
     playerName: player.name,
     currentPeriod: period,
     previousPeriod,
-    baseQuota,
+    baseQuota: effectiveBaseQuota,
     plannedCurrentQuota,
-    previousBaseQuota,
-    previousQuotaWithAdjustmentsAndRefunds,
-    previousCostVariance,
+    previousBaseQuota: skipPreviousPeriodEffects ? 0 : previousBaseQuota,
+    previousQuotaWithAdjustmentsAndRefunds: effectivePreviousQuota,
+    previousCostVariance: skipPreviousPeriodEffects ? 0 : previousCostVariance,
     refundPercent,
     refundAmount,
     quotaWithAdjustmentsAndRefunds,
@@ -5195,20 +5211,30 @@ function buildQuotaWithAdjustmentsAndRefundsByPlayerForPeriod({
     const quotasByPlayer = new Map<string, number>();
 
     for (const player of activePlayers) {
-      const baseQuota = calculatePlayerAppBaseQuotaForPeriod(
-        costs,
-        actuals,
-        calculationPeriod,
+      const wasInactivePreviousPeriod = wasPlayerInactiveForPeriod(
         player,
+        playerStatuses,
+        previousPeriod,
       );
+      const baseQuota = wasInactivePreviousPeriod
+        ? calculatePlayerBaseQuotaForPeriod(
+            costs,
+            actuals,
+            calculationPeriod,
+            "forecast",
+            player,
+          )
+        : calculatePlayerAppBaseQuotaForPeriod(costs, actuals, calculationPeriod, player);
       const fallbackPreviousBaseQuota = calculatePlayerAppBaseQuotaForPeriod(
         costs,
         actuals,
         previousPeriod,
         player,
       );
-      const previousQuotaWithAdjustmentsAndRefunds =
-        getPlayerQuotaValue(previousQuotaByPlayer, player) ?? fallbackPreviousBaseQuota;
+      const previousQuotaWithAdjustmentsAndRefunds = wasInactivePreviousPeriod
+        ? 0
+        : (getPlayerQuotaValue(previousQuotaByPlayer, player) ??
+          fallbackPreviousBaseQuota);
       const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
       const attendanceRate = totalMatches > 0 ? playerMatches.length / totalMatches : 0;
       const refundPercent =
@@ -8247,6 +8273,16 @@ function getActivePlayersForPeriod(
     (player) =>
       mapPlayerToFeeCalculatorPlayer(player, playerStatusMap).status === "active",
   );
+}
+
+function wasPlayerInactiveForPeriod(
+  player: PlayerRecord,
+  playerStatuses: FeeCalculatorPlayerStatusRecord[],
+  period: string,
+) {
+  const playerStatusMap = buildFeeCalculatorPlayerStatusMap(playerStatuses, period);
+
+  return mapPlayerToFeeCalculatorPlayer(player, playerStatusMap).status === "inactive";
 }
 
 function mergeInferredFeeCalculatorActuals(
