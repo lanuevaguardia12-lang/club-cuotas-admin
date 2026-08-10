@@ -17,7 +17,10 @@ import { HomeSummary } from "@/components/dashboard/home-summary";
 import { SendPendingNotificationsButton } from "@/components/dashboard/send-pending-notifications-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getLeagueFixtureData } from "@/lib/league-fixture";
+import {
+  applyLeagueFixtureScheduleOverrides,
+  getLeagueFixtureData,
+} from "@/lib/league-fixture";
 import { findPlayerProfileForUser } from "@/lib/player-profile";
 import { getDataService } from "@/services/data-service";
 
@@ -55,7 +58,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
-  const fixturePromise = getLeagueFixtureData();
+  const dataService = getDataService();
+  const fixturePromise = getFixtureDataWithOverrides();
 
   if (user.role === "player") {
     const [fixture, playerProfile] = await Promise.all([
@@ -81,7 +85,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const [dashboard, fixture] = await Promise.all([
-    getDataService().getDashboardData(period),
+    dataService.getDashboardData(period),
     fixturePromise,
   ]);
 
@@ -173,4 +177,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </section>
     </main>
   );
+}
+
+async function getFixtureDataWithOverrides() {
+  const [fixture, overrides] = await Promise.all([
+    getLeagueFixtureData(),
+    getDataService()
+      .getFixtureMatchScheduleOverrides()
+      .catch(() => []),
+  ]);
+
+  return applyLeagueFixtureScheduleOverrides(fixture, overrides);
 }
