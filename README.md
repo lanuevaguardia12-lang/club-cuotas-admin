@@ -205,6 +205,8 @@ GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-app-spreadsheet-id"
 GOOGLE_SHEETS_CLUB_SPREADSHEET_ID="replace-with-club-spreadsheet-id"
 GOOGLE_SHEETS_CLIENT_EMAIL="replace-with-service-account-email"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-private-key\n-----END PRIVATE KEY-----\n"
+GOOGLE_SHEETS_ACCOUNT_PROFILES_RANGE="CuentasUsuario!A:Z"
+GOOGLE_SHEETS_PLAYER_ATTENDANCE_SNAPSHOTS_RANGE="AsistenciasJugadores!A:Z"
 GOOGLE_SHEETS_PLAYERS_RANGE="Jugadores!A:Z"
 GOOGLE_SHEETS_FEES_RANGE="Cuotas!A:Z"
 GOOGLE_SHEETS_CASH_FLOW_RANGE="CashFlow!A:Z"
@@ -364,6 +366,8 @@ Rangos por defecto:
 - `Jugadores!A:Z` como persistencia del ABM de jugadores
 - `CuentasUsuario!A:Z` para datos de cuenta, foto de perfil y contraseña
   actualizada
+- `AsistenciasJugadores!A:Z` para snapshots historicos de asistencia anual,
+  racha y ultima asistencia por jugador
 - `Cuotas!A:Z` para estados de pago heredados, opcional para el calculador
 - `CashFlow!A:Z`
 - `Configuracion!A:B`
@@ -541,12 +545,24 @@ Hoja `CuentasUsuario`:
 - Si `password_hash` está vacío, el login usa la contraseña definida en Vercel por
   `AUTH_USERS_JSON` o `ADMIN_PASSWORD`.
 
+Hoja `AsistenciasJugadores`:
+
+| id                         | jugador_id | jugador    | temporada | fecha_inicio | partidos_totales | partidos_asistidos | porcentaje_asistencia | racha_actual | ultima_asistencia_fecha | ultima_asistencia_rival | calculado_en         | actualizado_en       |
+| -------------------------- | ---------- | ---------- | --------- | ------------ | ---------------- | ------------------ | --------------------- | ------------ | ----------------------- | ----------------------- | -------------------- | -------------------- |
+| attendance-2026-ivo-unzaga | ivo-unzaga | Ivo Unzaga | 2026      | 2026-08-11   | 10               | 8                  | 0.8                   | 5            | 2026-09-12              | Haras del Sur           | 2026-09-12T12:00:00Z | 2026-09-12T12:00:00Z |
+
+La asistencia del perfil se calcula desde `Partidos jugados formulario` tomando
+todos los partidos desde `2026-08-11`. La app actualiza el snapshot cuando cambia
+la cantidad de partidos, asistencias, racha o ultima asistencia.
+
 Encabezados equivalentes soportados:
 
 - Jugadores: `id`, `jugador_id`, `id_jugador`, `player_id`, `nombre`, `name`,
   `jugador`, `categoria`, `category`, `division`, `equipo`, `telefono`, `phone`,
   `whatsapp`, `celular`, `email`, `correo`, `mail`, `correo_electronico`,
-  `cuota`, `monto_mensual`, `monthly_fee`,
+  `dni`, `documento`, `fecha_nacimiento`, `nacimiento`, `birth_date`,
+  `cuota`, `monto_mensual`, `monthly_fee`, `posicion`, `position`,
+  `segunda_posicion`, `posicion_secundaria`, `second_position`,
   `observaciones`, `observacion`, `notas`, `notes`, `estado`, `status`,
   `fecha_alta`, `alta`, `fecha_ingreso`, `ingreso`, `joined_at`, `created_at`,
   `fecha_registro`, `fecha_baja`, `baja`, `fecha_egreso`, `egreso`, `left_at`,

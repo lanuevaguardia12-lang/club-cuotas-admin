@@ -15,6 +15,8 @@ const playerSchema = z.object({
   phone: z.string().trim().max(40).optional(),
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
+  dni: z.string().trim().max(20).optional(),
+  birthDate: z.string().trim().max(20).optional(),
   position: z.string().trim().max(80).optional(),
   secondPosition: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),

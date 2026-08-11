@@ -5,12 +5,39 @@ export interface AccountProfile {
   userId: string;
   username: string;
   role: AuthRole;
+  playerId?: string;
   name: string;
   email: string;
   phone: string;
   profilePhotoDataUrl: string;
+  player?: AccountPlayerProfile;
   updatedAt: string;
   passwordUpdatedAt: string;
+}
+
+export interface AccountPlayerProfile {
+  id: string;
+  name: string;
+  category: string;
+  dni: string;
+  birthDate: string;
+  position: string;
+  secondPosition: string;
+  status: string;
+  mvpWins: number;
+  attendance: PlayerAttendanceSummary;
+}
+
+export interface PlayerAttendanceSummary {
+  attendedMatches: number;
+  attendanceRate: number;
+  calculatedAt: string;
+  currentStreak: number;
+  lastAttendanceDate: string;
+  lastAttendanceRival: string;
+  seasonStartDate: string;
+  seasonYear: number;
+  totalMatches: number;
 }
 
 export interface AccountProfileData {
@@ -29,10 +56,15 @@ export interface UpdateAccountProfileInput {
   userId: string;
   username: string;
   role: AuthRole;
+  playerId?: string;
   name: string;
+  birthDate?: string;
+  dni?: string;
   email?: string;
   phone?: string;
+  position?: string;
   profilePhotoDataUrl?: string;
+  secondPosition?: string;
 }
 
 export interface UpdateAccountPasswordInput {

@@ -8,6 +8,8 @@ export interface PlayerDirectoryItem {
   phone: string;
   email: string;
   category: string;
+  dni: string;
+  birthDate: string;
   position: string;
   secondPosition: string;
   notes: string;
@@ -33,6 +35,8 @@ export interface UpsertPlayerInput {
   phone?: string;
   email?: string;
   category?: string;
+  dni?: string;
+  birthDate?: string;
   position?: string;
   secondPosition?: string;
   notes?: string;

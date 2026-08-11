@@ -12,9 +12,12 @@ import { getDataService } from "@/services/data-service";
 const MAX_PROFILE_PHOTO_LENGTH = 45000;
 
 const accountProfileSchema = z.object({
+  birthDate: z.string().trim().max(20).optional(),
+  dni: z.string().trim().max(20).optional(),
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   name: z.string().trim().min(2, "Ingresá tu nombre.").max(120),
   phone: z.string().trim().max(40).optional(),
+  position: z.string().trim().max(80).optional(),
   profilePhotoDataUrl: z
     .string()
     .trim()
@@ -24,6 +27,7 @@ const accountProfileSchema = z.object({
       "La foto debe ser una imagen válida.",
     )
     .optional(),
+  secondPosition: z.string().trim().max(80).optional(),
 });
 
 const passwordSchema = z
@@ -64,6 +68,7 @@ export async function saveAccountProfile(input: unknown) {
     phone: parsed.data.phone || undefined,
     profilePhotoDataUrl: parsed.data.profilePhotoDataUrl || undefined,
     role: user.role,
+    playerId: user.playerId,
     userId: user.id,
     username: user.username,
   });

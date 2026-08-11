@@ -41,6 +41,8 @@ const playerSchema = z.object({
   phone: z.string().trim().max(40).optional(),
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
+  dni: z.string().trim().max(20).optional(),
+  birthDate: z.string().trim().max(20).optional(),
   position: z.string().trim().max(80).optional(),
   secondPosition: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),
@@ -81,6 +83,8 @@ export function PlayerDirectoryContent({
           player.phone,
           player.email,
           player.category,
+          player.dni,
+          player.birthDate,
           player.position,
           player.secondPosition,
           player.notes,
@@ -121,6 +125,8 @@ export function PlayerDirectoryContent({
       phone: player.phone,
       email: player.email,
       category: player.category,
+      dni: player.dni,
+      birthDate: player.birthDate,
       position: player.position,
       secondPosition: player.secondPosition,
       notes: player.notes,
@@ -277,6 +283,24 @@ export function PlayerDirectoryContent({
                 />
               </Field>
 
+              <Field label="DNI" error={errors.dni?.message}>
+                <input
+                  {...register("dni")}
+                  disabled={!canWrite}
+                  inputMode="numeric"
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
+              <Field label="Fecha de nacimiento" error={errors.birthDate?.message}>
+                <input
+                  {...register("birthDate")}
+                  disabled={!canWrite}
+                  type="date"
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
               <Field label="Posición" error={errors.position?.message}>
                 <input
                   {...register("position")}
@@ -391,6 +415,8 @@ function PlayersDesktopTable({
               <TableHead>Teléfono</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Categoría</TableHead>
+              <TableHead>DNI</TableHead>
+              <TableHead>Nacimiento</TableHead>
               <TableHead>Posición</TableHead>
               <TableHead>Segunda posición</TableHead>
               <TableHead>Observaciones</TableHead>
@@ -405,6 +431,8 @@ function PlayersDesktopTable({
                   <td className="px-4 py-3">{player.phone || "-"}</td>
                   <td className="px-4 py-3">{player.email || "-"}</td>
                   <td className="px-4 py-3">{player.category}</td>
+                  <td className="px-4 py-3">{player.dni || "-"}</td>
+                  <td className="px-4 py-3">{player.birthDate || "-"}</td>
                   <td className="px-4 py-3">{player.position || "-"}</td>
                   <td className="px-4 py-3">{player.secondPosition || "-"}</td>
                   <td className="px-4 py-3">
@@ -423,7 +451,7 @@ function PlayersDesktopTable({
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="text-muted-foreground h-24 px-4 text-center">
+                <td colSpan={10} className="text-muted-foreground h-24 px-4 text-center">
                   No hay jugadores para mostrar.
                 </td>
               </tr>
@@ -604,6 +632,8 @@ function getDefaultValues(): PlayerFormValues {
     phone: "",
     email: "",
     category: "Plantel",
+    dni: "",
+    birthDate: "",
     position: "",
     secondPosition: "",
     notes: "",

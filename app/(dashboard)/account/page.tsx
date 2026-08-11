@@ -25,10 +25,10 @@ export default async function AccountPage() {
           <p className="text-muted-foreground text-sm font-medium">Perfil</p>
           <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-normal sm:text-3xl">
             <UserRound className="text-primary size-7" />
-            Mi cuenta
+            Mi perfil
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-            Editá tu información personal, foto de perfil y contraseña de acceso.
+            Tu ficha futbolera, datos de contacto y opciones de acceso.
           </p>
         </div>
         <Badge variant={data.source.status === "ready" ? "success" : "secondary"}>

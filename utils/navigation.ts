@@ -10,7 +10,7 @@ export const navigationItems: NavigationItem[] = [
     permission: "dashboard:read",
   },
   {
-    label: "Mi cuenta",
+    label: "Mi perfil",
     href: "/account",
     icon: "account",
     permission: "account:manage",

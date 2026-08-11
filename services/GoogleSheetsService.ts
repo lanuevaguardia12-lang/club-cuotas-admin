@@ -16,6 +16,7 @@ import type { IDataService } from "@/services/IDataService";
 import type {
   AccountAuthOverride,
   AccountProfile,
+  PlayerAttendanceSummary,
   UpdateAccountPasswordInput,
   UpdateAccountProfileInput,
 } from "@/types/account";
@@ -135,6 +136,7 @@ interface GoogleSheetsConfig {
   clientEmail?: string;
   privateKey?: string;
   accountProfilesRange: string;
+  playerAttendanceSnapshotsRange: string;
   playersRange: string;
   feesRange: string;
   cashFlowRange: string;
@@ -167,6 +169,10 @@ interface PlayerRecord {
   id: string;
   name: string;
   category: string;
+  dni: string;
+  birthDate: string;
+  position: string;
+  secondPosition: string;
   phone: string;
   email: string;
   monthlyFee: number;
@@ -225,6 +231,13 @@ interface AccountProfileRecord extends AccountProfile {
   passwordHash: string;
 }
 
+interface PlayerAttendanceSnapshotRecord extends PlayerAttendanceSummary {
+  id: string;
+  playerId: string;
+  playerName: string;
+  updatedAt: string;
+}
+
 interface PlayerExpenseCredit {
   playerName: string;
   period: string;
@@ -269,6 +282,8 @@ const DEFAULT_EXPENSES_RANGE = "Gastos nueva guardia!A:Z";
 const DEFAULT_REFUND_POLICY_RANGE = "Politica devoluciones!A:C";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 const DEFAULT_ACCOUNT_PROFILES_RANGE = "CuentasUsuario!A:Z";
+const DEFAULT_PLAYER_ATTENDANCE_SNAPSHOTS_RANGE = "AsistenciasJugadores!A:Z";
+const PLAYER_PROFILE_SEASON_START_DATE = "2026-08-11";
 
 const CLUB_FORM_RESPONSES_RANGE = DEFAULT_FORM_RESPONSES_RANGE;
 const CLUB_FORM_RESPONSE_RANGE = "Respuesta de formulario!A:Z";
@@ -392,6 +407,8 @@ const playerDirectoryHeaders = [
   "telefono",
   "email",
   "categoria",
+  "dni",
+  "fecha_nacimiento",
   "posicion",
   "segunda_posicion",
   "observaciones",
@@ -454,6 +471,22 @@ const accountProfileHeaders = [
   "actualizado_en",
 ];
 
+const playerAttendanceSnapshotHeaders = [
+  "id",
+  "jugador_id",
+  "jugador",
+  "temporada",
+  "fecha_inicio",
+  "partidos_totales",
+  "partidos_asistidos",
+  "porcentaje_asistencia",
+  "racha_actual",
+  "ultima_asistencia_fecha",
+  "ultima_asistencia_rival",
+  "calculado_en",
+  "actualizado_en",
+];
+
 const fixtureOverrideHeaders = [
   "match_id",
   "fecha_hora",
@@ -487,6 +520,10 @@ export class GoogleSheetsService implements IDataService {
         config.accountProfilesRange ??
         process.env.GOOGLE_SHEETS_ACCOUNT_PROFILES_RANGE ??
         DEFAULT_ACCOUNT_PROFILES_RANGE,
+      playerAttendanceSnapshotsRange:
+        config.playerAttendanceSnapshotsRange ??
+        process.env.GOOGLE_SHEETS_PLAYER_ATTENDANCE_SNAPSHOTS_RANGE ??
+        DEFAULT_PLAYER_ATTENDANCE_SNAPSHOTS_RANGE,
       playersRange:
         config.playersRange ??
         process.env.GOOGLE_SHEETS_PLAYERS_RANGE ??
@@ -652,9 +689,30 @@ export class GoogleSheetsService implements IDataService {
         user.role === "player"
           ? await this.findPlayerRecordForUser(user).catch(() => null)
           : null;
+      const attendance = player
+        ? buildPlayerAttendanceSummary(
+            player,
+            await this.readPlayerOfMatchMatches().catch(() => []),
+          )
+        : undefined;
+      const mvpWins = player
+        ? await this.getPlayerOfMatchData(user.id)
+            .then((data) => countPlayerOfMatchWins(player, data.matches))
+            .catch(() => 0)
+        : 0;
+
+      if (player && attendance) {
+        await this.upsertPlayerAttendanceSnapshot({
+          ...attendance,
+          id: `attendance-${attendance.seasonYear}-${player.id}`,
+          playerId: player.id,
+          playerName: player.name,
+          updatedAt: new Date().toISOString(),
+        }).catch(() => undefined);
+      }
 
       return {
-        profile: buildAccountProfile(user, account, player),
+        profile: buildAccountProfile(user, account, player, attendance, mvpWins),
         source: {
           provider: "google-sheets" as const,
           status: "ready" as const,
@@ -689,6 +747,32 @@ export class GoogleSheetsService implements IDataService {
       passwordHash: existing?.passwordHash ?? "",
       passwordUpdatedAt: existing?.passwordUpdatedAt ?? "",
     });
+
+    if (input.role === "player") {
+      const existingPlayer = await this.findPlayerDirectoryItemForUser({
+        id: input.userId,
+        name: input.name,
+        playerId: input.playerId ?? input.userId,
+        role: input.role,
+        username: input.username,
+      }).catch(() => null);
+
+      if (existingPlayer) {
+        await this.upsertPlayer({
+          id: existingPlayer.id,
+          birthDate: input.birthDate,
+          category: existingPlayer.category,
+          dni: input.dni,
+          email: input.email,
+          name: input.name,
+          notes: existingPlayer.notes,
+          phone: input.phone,
+          position: input.position,
+          secondPosition: input.secondPosition,
+          status: existingPlayer.status,
+        });
+      }
+    }
     invalidateAccountCache();
   }
 
@@ -2919,6 +3003,22 @@ export class GoogleSheetsService implements IDataService {
     return players.find((player) => playerMatchesLookup(player, lookupKeys)) ?? null;
   }
 
+  private async findPlayerDirectoryItemForUser(user: AuthUser) {
+    const lookupKeys = buildPlayerLookupKeys(user.playerId, user.id, user.name);
+    const players = mapRowsToPlayerDirectoryItems(
+      await this.readCachedPlayerDirectoryRows(),
+    );
+
+    return (
+      players.find((player) =>
+        lookupSetsIntersect(
+          buildPlayerLookupKeys(player.id, player.name, player.email, player.phone),
+          lookupKeys,
+        ),
+      ) ?? null
+    );
+  }
+
   private async upsertAccountProfile(profile: AccountProfileRecord) {
     const spreadsheetId = this.getAppSpreadsheetId();
     const range = this.config.accountProfilesRange;
@@ -2984,6 +3084,79 @@ export class GoogleSheetsService implements IDataService {
         values: [buildAccountProfileWritableRow(headers, profile)],
       },
     });
+  }
+
+  private async upsertPlayerAttendanceSnapshot(snapshot: PlayerAttendanceSnapshotRecord) {
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const range = this.config.playerAttendanceSnapshotsRange;
+    const sheetPrefix = getSheetPrefix(range);
+    const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
+    const sheets = this.createSheetsClient();
+
+    await this.ensureSheetForRange(range, spreadsheetId);
+
+    if (rows.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A:${toColumnName(playerAttendanceSnapshotHeaders.length - 1)}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            playerAttendanceSnapshotHeaders,
+            buildPlayerAttendanceSnapshotWritableRow(
+              playerAttendanceSnapshotHeaders,
+              snapshot,
+            ),
+          ],
+        },
+      });
+      invalidateAccountCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, playerAttendanceSnapshotHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      playerAttendanceSnapshotHeaders,
+    );
+    const snapshots = mapRowsToPlayerAttendanceSnapshots([headers, ...dataRows]);
+    const targetRowIndex = snapshots.findIndex(
+      (item) =>
+        item.playerId === snapshot.playerId && item.seasonYear === snapshot.seasonYear,
+    );
+    const existing = targetRowIndex >= 0 ? snapshots[targetRowIndex] : undefined;
+
+    if (existing && hasSamePlayerAttendanceSnapshot(existing, snapshot)) {
+      return;
+    }
+
+    if (targetRowIndex >= 0) {
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [buildPlayerAttendanceSnapshotWritableRow(headers, snapshot)],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [buildPlayerAttendanceSnapshotWritableRow(headers, snapshot)],
+        },
+      });
+    }
+
+    invalidateAccountCache();
   }
 
   private async readCachedPremiumRows() {
@@ -3590,6 +3763,25 @@ function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
       name: name || `Jugador ${index + 1}`,
       category:
         pick(record, ["categoria", "category", "division", "equipo"]) || "Sin categoria",
+      dni: pick(record, ["dni", "documento", "document_number", "numero_documento"]),
+      birthDate:
+        parseDate(
+          pick(record, [
+            "fecha_nacimiento",
+            "nacimiento",
+            "birth_date",
+            "date_of_birth",
+            "cumpleanos",
+          ]),
+        ) ?? "",
+      position: pick(record, ["posicion", "position", "puesto"]),
+      secondPosition: pick(record, [
+        "segunda_posicion",
+        "posicion_secundaria",
+        "second_position",
+        "secondary_position",
+        "segundo_puesto",
+      ]),
       phone:
         normalizeClubPhone(pick(record, ["telefono", "phone", "whatsapp", "celular"])) ||
         "-",
@@ -3666,6 +3858,17 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
         email: pick(record, ["email", "correo", "mail", "correo_electronico"]),
         category:
           pick(record, ["categoria", "category", "division", "equipo"]) || "Plantel",
+        dni: pick(record, ["dni", "documento", "document_number", "numero_documento"]),
+        birthDate:
+          parseDate(
+            pick(record, [
+              "fecha_nacimiento",
+              "nacimiento",
+              "birth_date",
+              "date_of_birth",
+              "cumpleanos",
+            ]),
+          ) ?? "",
         position: pick(record, ["posicion", "position", "puesto"]),
         secondPosition: pick(record, [
           "segunda_posicion",
@@ -3722,10 +3925,62 @@ function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
     .filter((profile): profile is AccountProfileRecord => Boolean(profile));
 }
 
+function mapRowsToPlayerAttendanceSnapshots(
+  rows: unknown[][],
+): PlayerAttendanceSnapshotRecord[] {
+  return rowsToRecords(rows)
+    .map((record) => {
+      const playerId = pick(record, ["jugador_id", "player_id", "id_jugador"]);
+      const seasonYear = Number(pick(record, ["temporada", "season_year", "year"]));
+
+      if (!playerId || !Number.isFinite(seasonYear)) {
+        return null;
+      }
+
+      return {
+        id: pick(record, ["id", "snapshot_id"]) || `attendance-${seasonYear}-${playerId}`,
+        playerId,
+        playerName: pick(record, ["jugador", "player", "nombre"]),
+        seasonYear,
+        seasonStartDate:
+          parseDate(pick(record, ["fecha_inicio", "season_start_date"])) ||
+          PLAYER_PROFILE_SEASON_START_DATE,
+        totalMatches: parseNumericValue(
+          pick(record, ["partidos_totales", "total_matches", "matches"]),
+        ),
+        attendedMatches: parseNumericValue(
+          pick(record, ["partidos_asistidos", "attended_matches", "presentes"]),
+        ),
+        attendanceRate:
+          Number(
+            String(
+              pick(record, ["porcentaje_asistencia", "attendance_rate", "attendance"]),
+            ).replace(",", "."),
+          ) || 0,
+        currentStreak: parseNumericValue(
+          pick(record, ["racha_actual", "current_streak", "streak"]),
+        ),
+        lastAttendanceDate:
+          parseDate(pick(record, ["ultima_asistencia_fecha", "last_attendance_date"])) ||
+          "",
+        lastAttendanceRival: pick(record, [
+          "ultima_asistencia_rival",
+          "last_attendance_rival",
+        ]),
+        calculatedAt:
+          parseDateTime(pick(record, ["calculado_en", "calculated_at"])) ?? "",
+        updatedAt: parseDateTime(pick(record, ["actualizado_en", "updated_at"])) ?? "",
+      } satisfies PlayerAttendanceSnapshotRecord;
+    })
+    .filter((snapshot): snapshot is PlayerAttendanceSnapshotRecord => Boolean(snapshot));
+}
+
 function buildAccountProfile(
   user: AuthUser,
   account?: AccountProfileRecord,
   player?: PlayerRecord | null,
+  attendance?: PlayerAttendanceSummary,
+  mvpWins = 0,
 ): AccountProfile {
   return {
     userId: user.id,
@@ -3735,6 +3990,20 @@ function buildAccountProfile(
     email: account?.email ?? "",
     phone: account?.phone || player?.phone || "",
     profilePhotoDataUrl: account?.profilePhotoDataUrl ?? "",
+    player: player
+      ? {
+          id: player.id,
+          name: player.name,
+          birthDate: player.birthDate,
+          category: player.category,
+          dni: player.dni,
+          position: player.position,
+          secondPosition: player.secondPosition,
+          status: player.status,
+          mvpWins,
+          attendance: attendance ?? createEmptyPlayerAttendanceSummary(),
+        }
+      : undefined,
     updatedAt: account?.updatedAt ?? "",
     passwordUpdatedAt: account?.passwordUpdatedAt ?? "",
   };
@@ -3756,6 +4025,142 @@ function buildAccountProfileFromInput(
     passwordUpdatedAt: existing?.passwordUpdatedAt ?? "",
     updatedAt: new Date().toISOString(),
   };
+}
+
+function buildPlayerAttendanceSummary(
+  player: PlayerRecord,
+  matches: MatchRecord[],
+): PlayerAttendanceSummary {
+  const seasonStartDate = PLAYER_PROFILE_SEASON_START_DATE;
+  const seasonYear = Number(seasonStartDate.slice(0, 4));
+  const today = getArgentinaTodayIsoDate();
+  const normalizedPlayerName = normalizeClubPlayerName(player.name);
+  const seasonMatches = matches.filter(
+    (match) => match.date >= seasonStartDate && match.date <= today,
+  );
+  const attendedMatches = seasonMatches.filter((match) =>
+    match.players.some((name) => normalizeClubPlayerName(name) === normalizedPlayerName),
+  );
+  const currentStreak = [...seasonMatches]
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .reduce(
+      (streak, match) => {
+        if (streak.done) {
+          return streak;
+        }
+
+        const attended = match.players.some(
+          (name) => normalizeClubPlayerName(name) === normalizedPlayerName,
+        );
+
+        return attended
+          ? { count: streak.count + 1, done: false }
+          : { ...streak, done: true };
+      },
+      { count: 0, done: false },
+    ).count;
+  const lastAttendance = [...attendedMatches].sort((left, right) =>
+    right.date.localeCompare(left.date),
+  )[0];
+
+  return {
+    attendedMatches: attendedMatches.length,
+    attendanceRate:
+      seasonMatches.length > 0 ? attendedMatches.length / seasonMatches.length : 0,
+    calculatedAt: new Date().toISOString(),
+    currentStreak,
+    lastAttendanceDate: lastAttendance?.date ?? "",
+    lastAttendanceRival: lastAttendance?.rival ?? "",
+    seasonStartDate,
+    seasonYear,
+    totalMatches: seasonMatches.length,
+  };
+}
+
+function createEmptyPlayerAttendanceSummary(): PlayerAttendanceSummary {
+  return {
+    attendedMatches: 0,
+    attendanceRate: 0,
+    calculatedAt: new Date().toISOString(),
+    currentStreak: 0,
+    lastAttendanceDate: "",
+    lastAttendanceRival: "",
+    seasonStartDate: PLAYER_PROFILE_SEASON_START_DATE,
+    seasonYear: Number(PLAYER_PROFILE_SEASON_START_DATE.slice(0, 4)),
+    totalMatches: 0,
+  };
+}
+
+function countPlayerOfMatchWins(player: PlayerRecord, matches: PlayerOfMatchMatch[]) {
+  const playerKey = normalizeClubPlayerName(player.name);
+
+  return matches.filter((match) => {
+    const winner = match.results.find((result) => result.rank === 1);
+
+    return (
+      match.votingStatus === "closed" &&
+      winner &&
+      normalizeClubPlayerName(winner.playerName) === playerKey
+    );
+  }).length;
+}
+
+function buildPlayerAttendanceSnapshotWritableRow(
+  headers: string[],
+  snapshot: PlayerAttendanceSnapshotRecord,
+) {
+  const values: Record<string, string> = {
+    id: snapshot.id,
+    jugador_id: snapshot.playerId,
+    player_id: snapshot.playerId,
+    id_jugador: snapshot.playerId,
+    jugador: snapshot.playerName,
+    player: snapshot.playerName,
+    nombre: snapshot.playerName,
+    temporada: String(snapshot.seasonYear),
+    season_year: String(snapshot.seasonYear),
+    year: String(snapshot.seasonYear),
+    fecha_inicio: snapshot.seasonStartDate,
+    season_start_date: snapshot.seasonStartDate,
+    partidos_totales: String(snapshot.totalMatches),
+    total_matches: String(snapshot.totalMatches),
+    matches: String(snapshot.totalMatches),
+    partidos_asistidos: String(snapshot.attendedMatches),
+    attended_matches: String(snapshot.attendedMatches),
+    presentes: String(snapshot.attendedMatches),
+    porcentaje_asistencia: String(snapshot.attendanceRate),
+    attendance_rate: String(snapshot.attendanceRate),
+    attendance: String(snapshot.attendanceRate),
+    racha_actual: String(snapshot.currentStreak),
+    current_streak: String(snapshot.currentStreak),
+    streak: String(snapshot.currentStreak),
+    ultima_asistencia_fecha: snapshot.lastAttendanceDate,
+    last_attendance_date: snapshot.lastAttendanceDate,
+    ultima_asistencia_rival: snapshot.lastAttendanceRival,
+    last_attendance_rival: snapshot.lastAttendanceRival,
+    calculado_en: snapshot.calculatedAt,
+    calculated_at: snapshot.calculatedAt,
+    actualizado_en: snapshot.updatedAt,
+    updated_at: snapshot.updatedAt,
+  };
+
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function hasSamePlayerAttendanceSnapshot(
+  left: PlayerAttendanceSnapshotRecord,
+  right: PlayerAttendanceSnapshotRecord,
+) {
+  return (
+    left.attendedMatches === right.attendedMatches &&
+    left.attendanceRate === right.attendanceRate &&
+    left.currentStreak === right.currentStreak &&
+    left.lastAttendanceDate === right.lastAttendanceDate &&
+    left.lastAttendanceRival === right.lastAttendanceRival &&
+    left.seasonStartDate === right.seasonStartDate &&
+    left.seasonYear === right.seasonYear &&
+    left.totalMatches === right.totalMatches
+  );
 }
 
 function buildAccountProfileWritableRow(
@@ -3875,6 +4280,10 @@ function normalizePlayerInput(
     phone: input.phone?.trim() ?? existing?.phone ?? "",
     email: input.email?.trim() ?? existing?.email ?? "",
     category: input.category?.trim() || existing?.category || "Plantel",
+    dni: input.dni?.trim() ?? existing?.dni ?? "",
+    birthDate: input.birthDate
+      ? (parseDate(input.birthDate) ?? existing?.birthDate ?? "")
+      : (existing?.birthDate ?? ""),
     position: input.position?.trim() ?? existing?.position ?? "",
     secondPosition: input.secondPosition?.trim() ?? existing?.secondPosition ?? "",
     notes: input.notes?.trim() ?? existing?.notes ?? "",
@@ -3910,6 +4319,15 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     category: player.category,
     division: player.category,
     equipo: player.category,
+    dni: player.dni,
+    documento: player.dni,
+    document_number: player.dni,
+    numero_documento: player.dni,
+    fecha_nacimiento: player.birthDate,
+    nacimiento: player.birthDate,
+    birth_date: player.birthDate,
+    date_of_birth: player.birthDate,
+    cumpleanos: player.birthDate,
     posicion: player.position,
     position: player.position,
     puesto: player.position,
@@ -3936,7 +4354,7 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     updated_at: player.updatedAt,
   };
 
-  return headers.map((header) => values[header] ?? "");
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
 }
 
 function mapRowsToFees(rows: unknown[][]): FeeRecord[] {
@@ -7279,6 +7697,10 @@ function buildPlayerTableRows(
           id: playerId,
           name: playerId,
           category: "Sin categoria",
+          dni: "",
+          birthDate: "",
+          position: "",
+          secondPosition: "",
           phone: "-",
           email: "",
           monthlyFee: 0,
@@ -7344,6 +7766,10 @@ function buildPlayerFromFees(
     id: fee.playerId,
     name: fee.playerId,
     category: "Sin categoria",
+    dni: "",
+    birthDate: "",
+    position: "",
+    secondPosition: "",
     phone: "-",
     email: "",
     monthlyFee: 0,
@@ -8981,6 +9407,12 @@ function parseMoney(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseNumericValue(value: string) {
+  const parsed = Number(String(value || "").replace(",", "."));
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function parseDate(value: string) {
   if (!value) {
     return undefined;
@@ -9582,6 +10014,18 @@ function toColumnName(index: number) {
 
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getArgentinaTodayIsoDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return `${values.get("year")}-${values.get("month")}-${values.get("day")}`;
 }
 
 function createId(prefix: string) {
