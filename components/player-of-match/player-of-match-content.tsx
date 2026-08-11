@@ -196,10 +196,10 @@ function RankingTab({ data }: { data: PlayerOfMatchData }) {
                 <tr className="border-border bg-muted/40 border-b">
                   <TableHead>#</TableHead>
                   <TableHead>Jugador</TableHead>
-                  <TableHead>1° puesto</TableHead>
-                  <TableHead>2° puesto</TableHead>
-                  <TableHead>3° puesto</TableHead>
-                  <TableHead>Total podios</TableHead>
+                  <TableHead>Primer puesto</TableHead>
+                  <TableHead>Segundo puesto</TableHead>
+                  <TableHead>Tercer puesto</TableHead>
+                  <TableHead>Total</TableHead>
                 </tr>
               </thead>
               <tbody>
@@ -246,6 +246,16 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
 
   return (
     <section className="grid gap-5">
+      <div>
+        <p className="text-muted-foreground text-sm font-medium">Rachas y asistencia</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-normal">
+          Ranking de jugadores con mayor cantidad de asistencia consecutiva
+        </h2>
+        <p className="text-muted-foreground mt-2 text-sm">
+          Incluye partidos amistosos, copa y liga desde el inicio del campeonato.
+        </p>
+      </div>
+
       {current ? (
         <Card className="overflow-hidden">
           <CardContent className="from-primary to-secondary text-primary-foreground grid gap-4 bg-linear-to-br p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
