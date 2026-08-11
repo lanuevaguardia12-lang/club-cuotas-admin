@@ -867,6 +867,10 @@ Los cron jobs se configuran en `vercel.json`:
   {
     "path": "/api/cron/player-of-match-reminders",
     "schedule": "0 2 * * *"
+  },
+  {
+    "path": "/api/cron/upcoming-match-reminders",
+    "schedule": "0 22 * * *"
   }
 ]
 ```
@@ -893,6 +897,12 @@ cuando el partido tiene al menos dos jugadores cargados, sin depender de que la
 liga publique el resultado. Si los jugadores se cargan desde la app, el envio se
 intenta inmediatamente; si entran por Google Sheets/Form, el cron lo detecta en
 la siguiente corrida.
+
+El cron `/api/cron/upcoming-match-reminders` corre todos los dias a las 22:00
+UTC (19:00 de Argentina). Si el proximo partido cae dentro de dos dias, envia a
+los jugadores suscriptos el push `Prepara los botines tu proximo partido es vs
+<rival>` y usa `reference_id` en `Notificaciones` para no repetir el aviso por
+usuario/partido.
 
 ### Push notifications
 
@@ -926,6 +936,7 @@ Rutas principales:
 - `PATCH /api/notifications`: marca una notificacion visible como leida.
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
 - `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
+- `GET /api/cron/upcoming-match-reminders`: envia push dos dias antes del partido.
 - `POST /api/webhooks/player-of-match`: webhook para Google Apps Script. Expira
   el cache de MVP y envia push cuando el formulario de partidos carga jugadores.
 
