@@ -93,7 +93,7 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         </CardHeader>
         <CardContent>
           {nextMatch ? (
-            <HomeMatchCard match={nextMatch} />
+            <HomeMatchCard match={nextMatch} matches={fixture.matches} />
           ) : (
             <p className="text-muted-foreground text-sm">
               No hay proximo partido publicado para {APP_TEAM_NAME}.
@@ -149,7 +149,13 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
   );
 }
 
-function HomeMatchCard({ match }: { match: LeagueFixtureMatch }) {
+function HomeMatchCard({
+  match,
+  matches,
+}: {
+  match: LeagueFixtureMatch;
+  matches: LeagueFixtureMatch[];
+}) {
   return (
     <div
       className={cn(
@@ -170,12 +176,70 @@ function HomeMatchCard({ match }: { match: LeagueFixtureMatch }) {
         <div className="text-muted-foreground px-3 text-xs font-bold">vs</div>
         <TeamLine name={match.visitorTeam} />
       </div>
+      <div className="border-border grid gap-3 border-t pt-3">
+        <RecentTeamMatches
+          beforeMatch={match}
+          matches={matches}
+          teamName={match.localTeam}
+        />
+        <RecentTeamMatches
+          beforeMatch={match}
+          matches={matches}
+          teamName={match.visitorTeam}
+        />
+      </div>
       <Button asChild size="sm" variant="outline">
         <Link href="/fixture">
           <CalendarDays />
           Ver fixture
         </Link>
       </Button>
+    </div>
+  );
+}
+
+function RecentTeamMatches({
+  beforeMatch,
+  matches,
+  teamName,
+}: {
+  beforeMatch: LeagueFixtureMatch;
+  matches: LeagueFixtureMatch[];
+  teamName: string;
+}) {
+  const recentMatches = getLastPlayedMatchesForTeam(matches, teamName, beforeMatch).slice(
+    0,
+    3,
+  );
+
+  return (
+    <div className="grid gap-2">
+      <p className="text-muted-foreground text-xs font-semibold uppercase">
+        Últimos de {teamName}
+      </p>
+      {recentMatches.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {recentMatches.map((recentMatch) => {
+            const outcome = getTeamMatchOutcome(recentMatch, teamName);
+
+            return (
+              <span
+                key={recentMatch.id}
+                className={cn(
+                  "inline-flex max-w-full rounded-md px-2 py-1 text-xs font-semibold",
+                  getOutcomeClassName(outcome.kind),
+                )}
+              >
+                <span className="truncate">
+                  {outcome.label} vs {outcome.rival}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-xs">Sin partidos anteriores.</p>
+      )}
     </div>
   );
 }
@@ -238,4 +302,78 @@ function buildHomeStandingsRows(fixture: LeagueFixtureData) {
   }
 
   return [...topRows, clubStanding];
+}
+
+type OutcomeKind = "draw" | "loss" | "none" | "win";
+
+interface MatchOutcome {
+  kind: OutcomeKind;
+  label: string;
+  rival?: string;
+}
+
+function getLastPlayedMatchesForTeam(
+  matches: LeagueFixtureMatch[],
+  teamName: string,
+  beforeMatch: LeagueFixtureMatch,
+) {
+  const beforeValue = getHomeMatchSortValue(beforeMatch);
+
+  return [...matches]
+    .filter(
+      (match) =>
+        match.status === "played" &&
+        isTeamInMatch(match, teamName) &&
+        getHomeMatchSortValue(match) < beforeValue,
+    )
+    .sort((left, right) => getHomeMatchSortValue(right) - getHomeMatchSortValue(left));
+}
+
+function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): MatchOutcome {
+  const isLocal = match.localTeam === teamName;
+  const teamScore = isLocal ? match.localScore : match.visitorScore;
+  const rivalScore = isLocal ? match.visitorScore : match.localScore;
+  const rival = isLocal ? match.visitorTeam : match.localTeam;
+
+  if (
+    match.status !== "played" ||
+    typeof teamScore !== "number" ||
+    typeof rivalScore !== "number"
+  ) {
+    return {
+      kind: "none",
+      label: "S/R",
+      rival,
+    };
+  }
+
+  return {
+    kind: teamScore > rivalScore ? "win" : teamScore === rivalScore ? "draw" : "loss",
+    label: `${teamScore}-${rivalScore}`,
+    rival,
+  };
+}
+
+function isTeamInMatch(match: LeagueFixtureMatch, teamName: string) {
+  return match.localTeam === teamName || match.visitorTeam === teamName;
+}
+
+function getHomeMatchSortValue(match: LeagueFixtureMatch) {
+  const time = /^(\d{1,2}):(\d{2})/.exec(match.time);
+  const hour = time ? Number(time[1]) : 23;
+  const minute = time ? Number(time[2]) : 59;
+  const value = new Date(
+    `${match.dateIso ?? ""}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00-03:00`,
+  ).getTime();
+
+  return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+}
+
+function getOutcomeClassName(kind: OutcomeKind) {
+  return {
+    draw: "bg-yellow-100 text-yellow-900 dark:bg-yellow-950 dark:text-yellow-200",
+    loss: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
+    none: "bg-muted text-muted-foreground",
+    win: "bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200",
+  }[kind];
 }
