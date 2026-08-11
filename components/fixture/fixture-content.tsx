@@ -25,6 +25,7 @@ import type {
   LeagueFixtureMatch,
   LeagueFixtureRound,
   LeagueMatchStatus,
+  LeagueScorerRow,
   LeagueStandingRow,
 } from "@/types/fixture";
 
@@ -35,7 +36,7 @@ interface FixtureContentProps {
   selectedRoundKeys?: string[];
 }
 
-type FixtureTab = "resumen" | "posiciones" | "fixture";
+type FixtureTab = "resumen" | "posiciones" | "goleadores" | "fixture";
 
 export function FixtureContent({
   activeTab,
@@ -69,6 +70,7 @@ export function FixtureContent({
 
       {tab === "resumen" ? <SummaryTab data={data} /> : null}
       {tab === "posiciones" ? <StandingsTable data={data} /> : null}
+      {tab === "goleadores" ? <ScorersTable rows={data.scorers} /> : null}
       {tab === "fixture" ? (
         <FixtureRounds
           canManage={canManage}
@@ -91,6 +93,7 @@ function FixtureTabNav({
   const tabs: Array<{ label: string; value: FixtureTab }> = [
     { label: "Resumen", value: "resumen" },
     { label: "Posiciones", value: "posiciones" },
+    { label: "Goleadores", value: "goleadores" },
     { label: "Fixture", value: "fixture" },
   ];
 
@@ -118,9 +121,9 @@ function FixtureTabNav({
 function SummaryTab({ data }: FixtureContentProps) {
   const nextMatch =
     data.nextMatches[0] ?? data.clubMatches.find((match) => match.status === "pending");
-  const lastMatch = [...data.clubMatches]
-    .reverse()
-    .find((match) => match.status === "played");
+  const lastMatch =
+    data.lastMatches[0] ??
+    [...data.clubMatches].reverse().find((match) => match.status === "played");
 
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -187,7 +190,7 @@ function SummaryTab({ data }: FixtureContentProps) {
         </CardHeader>
         <CardContent>
           {lastMatch ? (
-            <CompactMatch match={lastMatch} />
+            <PlayedMatchCard match={lastMatch} rows={data.standings} />
           ) : (
             <EmptyInline
               title="Sin partidos jugados"
@@ -263,6 +266,7 @@ function NextMatchCard({
           beforeMatch={match}
         />
       </div>
+      <MatchGoalsList match={match} />
     </div>
   );
 }
@@ -343,6 +347,54 @@ function TeamRecentForm({
   );
 }
 
+function PlayedMatchCard({
+  match,
+  rows,
+}: {
+  match: LeagueFixtureMatch;
+  rows: LeagueStandingRow[];
+}) {
+  const showPositions = match.competitionKind === "league";
+  const localPosition = showPositions
+    ? getTeamPositionLabel(rows, match.localTeam)
+    : undefined;
+  const visitorPosition = showPositions
+    ? getTeamPositionLabel(rows, match.visitorTeam)
+    : undefined;
+
+  return (
+    <div
+      className={cn(
+        "grid gap-3 rounded-md border p-3",
+        getCompetitionCardClass(match.competitionKind),
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <CalendarDays className="size-3.5" />
+          <span>
+            {match.round}
+            {match.roundDate ? ` · ${match.roundDate}` : ""}
+            {match.time ? ` · ${match.time}` : ""}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <CompetitionBadge kind={match.competitionKind} />
+          <StatusBadge status={match.status} />
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <PositionTeamLine position={localPosition} teamName={match.localTeam} />
+        <div className="flex justify-center">
+          <MatchScore match={match} />
+        </div>
+        <PositionTeamLine position={visitorPosition} teamName={match.visitorTeam} />
+      </div>
+      <MatchGoalsList match={match} />
+    </div>
+  );
+}
+
 function StandingsTable({ data }: FixtureContentProps) {
   return (
     <Card>
@@ -360,6 +412,61 @@ function StandingsTable({ data }: FixtureContentProps) {
           </div>
         ) : (
           <EmptyInline title="Sin tabla" detail="La liga no devolvio posiciones." />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScorersTable({ rows }: { rows: LeagueScorerRow[] }) {
+  return (
+    <Card>
+      <CardHeader className="p-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Trophy className="text-primary size-4" />
+          Tabla de goleadores
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length > 0 ? (
+          <div className="border-border max-h-[72dvh] overflow-y-auto border-t">
+            <table className="w-full table-fixed text-xs sm:text-sm">
+              <thead className="bg-muted text-muted-foreground sticky top-0 z-10">
+                <tr>
+                  <th className="w-10 px-2 py-2 text-left font-semibold">#</th>
+                  <th className="px-2 py-2 text-left font-semibold">Jugador</th>
+                  <th className="px-2 py-2 text-left font-semibold">Club</th>
+                  <th className="w-16 px-2 py-2 text-center font-semibold">Goles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr
+                    key={`${row.playerName}-${row.teamName}`}
+                    className="border-border border-t"
+                  >
+                    <td className="px-2 py-2 font-bold">{index + 1}</td>
+                    <td className="px-2 py-2">
+                      <span className="line-clamp-2 font-semibold">{row.playerName}</span>
+                    </td>
+                    <td className="px-2 py-2">
+                      <span className="line-clamp-2">{row.teamName}</span>
+                    </td>
+                    <td className="px-2 py-2 text-center text-base font-bold">
+                      {row.goals}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-6">
+            <EmptyInline
+              title="Sin goleadores"
+              detail="La liga todavia no publico detalle de goles para esta competencia."
+            />
+          </div>
         )}
       </CardContent>
     </Card>
@@ -638,33 +745,6 @@ function FullMatchRow({
   );
 }
 
-function CompactMatch({ match }: { match: LeagueFixtureMatch }) {
-  return (
-    <div
-      className={cn(
-        "grid gap-3 rounded-md border p-3",
-        getCompetitionCardClass(match.competitionKind),
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-muted-foreground flex items-center gap-2 text-xs">
-          <CalendarDays className="size-3.5" />
-          <span>
-            {match.round}
-            {match.roundDate ? ` · ${match.roundDate}` : ""}
-            {match.time ? ` · ${match.time}` : ""}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <CompetitionBadge kind={match.competitionKind} />
-          <StatusBadge status={match.status} />
-        </div>
-      </div>
-      <MatchTeamsCard className="md:grid" match={match} />
-    </div>
-  );
-}
-
 function MatchTeamsCard({
   className,
   match,
@@ -750,6 +830,19 @@ function MatchScore({ match }: { match: LeagueFixtureMatch }) {
   );
 }
 
+function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
+  if (match.goals.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="bg-muted/60 rounded-md px-3 py-2 text-xs">
+      <p className="font-semibold">Goles</p>
+      <p className="text-muted-foreground mt-1">{match.goals.join(" · ")}</p>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: LeagueMatchStatus }) {
   const config = {
     pending: {
@@ -786,7 +879,9 @@ interface MatchOutcome {
 }
 
 function normalizeFixtureTab(value?: string): FixtureTab {
-  return value === "posiciones" || value === "fixture" ? value : "resumen";
+  return value === "posiciones" || value === "goleadores" || value === "fixture"
+    ? value
+    : "resumen";
 }
 
 function buildFixtureHref(data: LeagueFixtureData, tab: FixtureTab) {

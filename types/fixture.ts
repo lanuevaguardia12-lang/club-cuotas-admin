@@ -29,6 +29,18 @@ export interface LeagueStandingRow {
   isClub: boolean;
 }
 
+export interface LeagueGoalEvent {
+  ownGoal?: boolean;
+  playerName: string;
+  teamName: string;
+}
+
+export interface LeagueScorerRow {
+  goals: number;
+  playerName: string;
+  teamName: string;
+}
+
 export interface LeagueFixtureMatch {
   id: string;
   competitionKind: LeagueCompetitionKind;
@@ -44,6 +56,7 @@ export interface LeagueFixtureMatch {
   localScore?: number;
   visitorScore?: number;
   detailUrl?: string;
+  goalEvents: LeagueGoalEvent[];
   goals: string[];
   cards: string[];
   isClubMatch: boolean;
@@ -73,6 +86,8 @@ export interface LeagueFixtureData {
   clubStanding?: LeagueStandingRow;
   clubMatches: LeagueFixtureMatch[];
   nextMatches: LeagueFixtureMatch[];
+  lastMatches: LeagueFixtureMatch[];
+  scorers: LeagueScorerRow[];
   source: DataSourceState & {
     fetchedAt: string;
     sourceUrl: string;

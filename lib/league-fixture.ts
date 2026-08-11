@@ -7,7 +7,9 @@ import type {
   LeagueFixtureData,
   LeagueFixtureMatch,
   LeagueFixtureRound,
+  LeagueGoalEvent,
   LeagueMatchStatus,
+  LeagueScorerRow,
   LeagueStandingRow,
   LeagueTournamentOption,
 } from "@/types/fixture";
@@ -79,6 +81,10 @@ interface LeagueCompetitionTarget {
   category: LeagueCategoryOption;
 }
 
+interface GetLeagueClubMatchesOptions {
+  includeDetails?: boolean;
+}
+
 export async function getLeagueFixtureData(
   input: GetLeagueFixtureDataInput = {},
 ): Promise<LeagueFixtureData> {
@@ -95,16 +101,23 @@ export async function getLeagueFixtureData(
   try {
     const html = await fetchLeagueHtml(sourceUrl, { ajax: true });
     const standings = parseStandings(html);
-    const rounds = parseFixtureRounds(html, selected);
+    const rounds = await enrichFixtureRoundsWithDetails(
+      parseFixtureRounds(html, selected),
+    );
     const matches = rounds.flatMap((round) => round.matches);
     const clubMatches = matches.filter((match) => match.isClubMatch);
     const allClubMatches = await getLeagueClubMatchesForYear(
       selectedYear,
       metadata.tournaments,
+      { includeDetails: true },
     ).catch(() => []);
     const nextMatches = buildNextMatches(
       allClubMatches.length > 0 ? allClubMatches : clubMatches,
     );
+    const lastMatches = buildLastMatches(
+      allClubMatches.length > 0 ? allClubMatches : clubMatches,
+    );
+    const scorers = buildScorerRows(matches);
 
     return {
       availableYears: metadata.availableYears,
@@ -122,6 +135,8 @@ export async function getLeagueFixtureData(
       clubStanding: standings.find((row) => row.isClub),
       clubMatches,
       nextMatches,
+      lastMatches,
+      scorers,
       source: {
         provider: "liga-country-sur",
         status: standings.length > 0 || matches.length > 0 ? "ready" : "empty",
@@ -151,6 +166,8 @@ export async function getLeagueFixtureData(
       rounds: [],
       clubMatches: [],
       nextMatches: [],
+      lastMatches: [],
+      scorers: [],
       source: {
         provider: "liga-country-sur",
         status: "error",
@@ -170,6 +187,7 @@ export async function getLeagueFixtureData(
 export async function getLeagueClubMatchesForYear(
   year = DEFAULT_YEAR,
   tournaments?: LeagueTournamentOption[],
+  options: GetLeagueClubMatchesOptions = {},
 ) {
   const metadata = tournaments ? { tournaments } : await loadLeagueMetadata();
   const targets = getClubCompetitionTargets(metadata.tournaments, year).slice(
@@ -182,7 +200,12 @@ export async function getLeagueClubMatchesForYear(
         buildFixtureUrl(target.category.id, target.tournament.id),
         { ajax: true },
       );
-      const rounds = parseFixtureRounds(html, target);
+      const rounds = options.includeDetails
+        ? await enrichFixtureRoundsWithDetails(
+            parseFixtureRounds(html, target),
+            (match) => match.isClubMatch && !match.involvesBye,
+          )
+        : parseFixtureRounds(html, target);
 
       return rounds
         .flatMap((round) => round.matches)
@@ -237,12 +260,15 @@ export function applyLeagueFixtureScheduleOverrides(
   const clubMatches = matches.filter((match) => match.isClubMatch);
   const nextMatchesSource =
     data.nextMatches.length > 0 ? data.nextMatches.map(applyOverride) : clubMatches;
+  const lastMatchesSource =
+    data.lastMatches.length > 0 ? data.lastMatches.map(applyOverride) : clubMatches;
 
   return {
     ...data,
     clubMatches,
     matches,
     nextMatches: buildNextMatches(nextMatchesSource),
+    lastMatches: buildLastMatches(lastMatchesSource),
     rounds,
   };
 }
@@ -823,6 +849,7 @@ function parseRoundMatches(
       const score = parseScore(scoreText);
       const status = parseMatchStatus(matchHtml, score, dateIso);
       const detailUrl = parseDetailUrl(matchHtml);
+      const goalEvents: LeagueGoalEvent[] = [];
       const goals = parseDetailList(matchHtml, ["gol", "goles"]);
       const cards = parseDetailList(matchHtml, ["tarjeta", "amonestacion"]);
       const isClubMatch = isSourceTeamName(localTeam) || isSourceTeamName(visitorTeam);
@@ -844,6 +871,7 @@ function parseRoundMatches(
         localScore: score?.local,
         visitorScore: score?.visitor,
         detailUrl,
+        goalEvents,
         goals,
         cards,
         isClubMatch,
@@ -861,6 +889,39 @@ function buildNextMatches(matches: LeagueFixtureMatch[]) {
   return sortMatchesBySchedule(
     matches.filter((match) => match.status === "pending" && !match.involvesBye),
   ).slice(0, 3);
+}
+
+function buildLastMatches(matches: LeagueFixtureMatch[]) {
+  return sortMatchesBySchedule(
+    matches.filter((match) => match.status === "played" && !match.involvesBye),
+  )
+    .reverse()
+    .slice(0, 3);
+}
+
+function buildScorerRows(matches: LeagueFixtureMatch[]): LeagueScorerRow[] {
+  const scorers = new Map<string, LeagueScorerRow>();
+
+  for (const goal of matches.flatMap((match) => match.goalEvents)) {
+    if (goal.ownGoal) {
+      continue;
+    }
+
+    const key = `${normalizeTextKey(goal.playerName)}|${normalizeTextKey(goal.teamName)}`;
+    const existing = scorers.get(key);
+
+    scorers.set(key, {
+      goals: (existing?.goals ?? 0) + 1,
+      playerName: existing?.playerName ?? goal.playerName,
+      teamName: existing?.teamName ?? goal.teamName,
+    });
+  }
+
+  return [...scorers.values()].sort(
+    (left, right) =>
+      right.goals - left.goals ||
+      left.playerName.localeCompare(right.playerName, "es-AR"),
+  );
 }
 
 function compareFixtureRoundsBySchedule(
@@ -1028,6 +1089,132 @@ function parseDetailList(matchHtml: string, labels: string[]) {
   );
 }
 
+async function enrichFixtureRoundsWithDetails(
+  rounds: LeagueFixtureRound[],
+  shouldEnrich: (match: LeagueFixtureMatch) => boolean = () => true,
+) {
+  const matches = rounds.flatMap((round) => round.matches);
+  const detailEntries = matches
+    .filter(
+      (match) => shouldEnrich(match) && match.status === "played" && match.detailUrl,
+    )
+    .map((match) => [match.id, match.detailUrl!] as const);
+
+  if (detailEntries.length === 0) {
+    return rounds;
+  }
+
+  const detailResults = await Promise.allSettled(
+    detailEntries.map(async ([id, detailUrl]) => {
+      const html = await fetchLeagueHtml(detailUrl, { ajax: true });
+
+      return [id, parseMatchResultDetail(html)] as const;
+    }),
+  );
+  const detailsByMatchId = new Map(
+    detailResults.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    ),
+  );
+
+  return rounds.map((round) => ({
+    ...round,
+    matches: round.matches.map((match) => {
+      const detail = detailsByMatchId.get(match.id);
+
+      if (!detail) {
+        return match;
+      }
+
+      return {
+        ...match,
+        goalEvents: detail.goalEvents,
+        goals:
+          detail.goalEvents.length > 0
+            ? detail.goalEvents.map(formatGoalEvent)
+            : match.goals,
+      };
+    }),
+  }));
+}
+
+function parseMatchResultDetail(html: string) {
+  return {
+    goalEvents: parseGoalEventsFromResultDetail(html),
+  };
+}
+
+function parseGoalEventsFromResultDetail(html: string): LeagueGoalEvent[] {
+  const goalsStart = html.search(/<div[^>]*class=["'][^"']*dr-goals\b/i);
+
+  if (goalsStart < 0) {
+    return [];
+  }
+
+  const nextSectionStart = html.indexOf('<div class="dr-section"', goalsStart + 1);
+  const goalsHtml =
+    nextSectionStart > goalsStart
+      ? html.slice(goalsStart, nextSectionStart)
+      : html.slice(goalsStart);
+  const columnStarts = [
+    ...goalsHtml.matchAll(/<div[^>]*class=["'][^"']*dr-goals-col\b[^"']*["'][^>]*>/gi),
+  ]
+    .map((match) => match.index)
+    .filter((index): index is number => typeof index === "number");
+
+  return columnStarts.flatMap((start, index): LeagueGoalEvent[] => {
+    const columnHtml = goalsHtml.slice(
+      start,
+      columnStarts[index + 1] ?? goalsHtml.length,
+    );
+    const teamName = normalizeTeamName(
+      extractText(
+        columnHtml,
+        /<div[^>]*class=["'][^"']*dr-goals-col-lbl[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+      ),
+    );
+
+    if (!teamName) {
+      return [];
+    }
+
+    const goalStarts = [
+      ...columnHtml.matchAll(/<div[^>]*class=["'][^"']*dr-goal-item[^"']*["'][^>]*>/gi),
+    ]
+      .map((match) => match.index)
+      .filter((goalIndex): goalIndex is number => typeof goalIndex === "number");
+
+    return goalStarts
+      .map((goalStart, goalIndex): LeagueGoalEvent | undefined => {
+        const goalHtml = columnHtml.slice(
+          goalStart,
+          goalStarts[goalIndex + 1] ?? columnHtml.length,
+        );
+        const playerName = formatPersonName(
+          extractText(
+            goalHtml,
+            /<span[^>]*class=["'][^"']*dr-goal-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+          ),
+        );
+
+        if (!playerName) {
+          return undefined;
+        }
+
+        return {
+          ownGoal: /dr-own-goal|en\s+contra/i.test(goalHtml),
+          playerName,
+          teamName,
+        };
+      })
+      .filter((goal): goal is LeagueGoalEvent => Boolean(goal));
+  });
+}
+
+function formatGoalEvent(goal: LeagueGoalEvent) {
+  return `${goal.playerName} (${goal.teamName}${goal.ownGoal ? ", e/c" : ""})`;
+}
+
 function parseSpanishFixtureDate(value: string, year: number) {
   if (!value || !Number.isFinite(year)) {
     return undefined;
@@ -1131,6 +1318,15 @@ function decodeHtml(value: string) {
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function formatPersonName(value: string) {
+  return normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(
+      /(^|[\s,.'-])([a-záéíóúñ])/g,
+      (match, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`,
+    );
 }
 
 function normalizeTextKey(value: string) {

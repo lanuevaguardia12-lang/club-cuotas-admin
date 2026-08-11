@@ -34,10 +34,11 @@ const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
 export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
   const nextMatch = fixture.nextMatches[0];
+  const lastMatch = fixture.lastMatches[0];
   const standingsRows = buildHomeStandingsRows(fixture);
 
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {playerProfile ? (
         <Card className="club-animate-fade-up">
           <CardHeader className="pb-3">
@@ -93,10 +94,37 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         </CardHeader>
         <CardContent>
           {nextMatch ? (
-            <HomeMatchCard match={nextMatch} matches={fixture.matches} />
+            <HomeMatchCard
+              match={nextMatch}
+              matches={fixture.matches}
+              rows={fixture.standings}
+            />
           ) : (
             <p className="text-muted-foreground text-sm">
               No hay proximo partido publicado para {APP_TEAM_NAME}.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="club-animate-fade-up">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CheckCircle2 className="text-primary size-5" />
+            Ultimo partido
+          </CardTitle>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {lastMatch
+              ? `${lastMatch.competitionName} · ${lastMatch.categoryName}`
+              : fixture.selectedCategoryName}
+          </p>
+        </CardHeader>
+        <CardContent>
+          {lastMatch ? (
+            <HomePlayedMatchCard match={lastMatch} rows={fixture.standings} />
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No hay partido anterior publicado para {APP_TEAM_NAME}.
             </p>
           )}
         </CardContent>
@@ -152,10 +180,21 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
 function HomeMatchCard({
   match,
   matches,
+  rows,
 }: {
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
+  rows: LeagueFixtureData["standings"];
 }) {
+  const localPosition =
+    match.competitionKind === "league"
+      ? getTeamPositionLabel(rows, match.localTeam)
+      : undefined;
+  const visitorPosition =
+    match.competitionKind === "league"
+      ? getTeamPositionLabel(rows, match.visitorTeam)
+      : undefined;
+
   return (
     <div
       className={cn(
@@ -172,9 +211,9 @@ function HomeMatchCard({
       </div>
       <CompetitionBadge kind={match.competitionKind} />
       <div className="grid gap-2 text-sm">
-        <TeamLine local name={match.localTeam} />
+        <TeamLine local name={match.localTeam} position={localPosition} />
         <div className="text-muted-foreground px-3 text-xs font-bold">vs</div>
-        <TeamLine name={match.visitorTeam} />
+        <TeamLine name={match.visitorTeam} position={visitorPosition} />
       </div>
       <div className="border-border grid gap-3 border-t pt-3">
         <RecentTeamMatches
@@ -188,6 +227,66 @@ function HomeMatchCard({
           teamName={match.visitorTeam}
         />
       </div>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/fixture">
+          <CalendarDays />
+          Ver fixture
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+function HomePlayedMatchCard({
+  match,
+  rows,
+}: {
+  match: LeagueFixtureMatch;
+  rows: LeagueFixtureData["standings"];
+}) {
+  const localPosition =
+    match.competitionKind === "league"
+      ? getTeamPositionLabel(rows, match.localTeam)
+      : undefined;
+  const visitorPosition =
+    match.competitionKind === "league"
+      ? getTeamPositionLabel(rows, match.visitorTeam)
+      : undefined;
+
+  return (
+    <div
+      className={cn(
+        "grid gap-3 rounded-md border p-3",
+        getCompetitionCardClass(match.competitionKind),
+      )}
+    >
+      <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
+        <span>
+          {match.round}
+          {match.roundDate ? ` · ${match.roundDate}` : ""}
+        </span>
+        <span>{match.time || "-"}</span>
+      </div>
+      <CompetitionBadge kind={match.competitionKind} />
+      <div className="grid gap-2 text-sm">
+        <TeamLine
+          local
+          name={match.localTeam}
+          position={localPosition}
+          score={match.localScore}
+          showScore
+        />
+        <div className="text-primary px-3 text-center text-sm font-bold">
+          {formatMatchScore(match)}
+        </div>
+        <TeamLine
+          name={match.visitorTeam}
+          position={visitorPosition}
+          score={match.visitorScore}
+          showScore
+        />
+      </div>
+      <MatchGoalsList match={match} />
       <Button asChild size="sm" variant="outline">
         <Link href="/fixture">
           <CalendarDays />
@@ -244,7 +343,36 @@ function RecentTeamMatches({
   );
 }
 
-function TeamLine({ local = false, name }: { local?: boolean; name: string }) {
+function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
+  if (match.goals.length === 0) {
+    return (
+      <p className="text-muted-foreground bg-muted/60 rounded-md px-3 py-2 text-xs">
+        Sin detalle de goles publicado.
+      </p>
+    );
+  }
+
+  return (
+    <div className="bg-muted/60 rounded-md px-3 py-2 text-xs">
+      <p className="font-semibold">Goles</p>
+      <p className="text-muted-foreground mt-1">{match.goals.join(" · ")}</p>
+    </div>
+  );
+}
+
+function TeamLine({
+  local = false,
+  name,
+  position,
+  score,
+  showScore = false,
+}: {
+  local?: boolean;
+  name: string;
+  position?: string;
+  score?: number;
+  showScore?: boolean;
+}) {
   const isClub = name === APP_TEAM_NAME;
 
   return (
@@ -254,8 +382,15 @@ function TeamLine({ local = false, name }: { local?: boolean; name: string }) {
         isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
       )}
     >
-      <span className="truncate font-semibold">{name}</span>
-      <span className="text-xs opacity-75">{local ? "Local" : "Visita"}</span>
+      <span className="min-w-0">
+        <span className="block truncate font-semibold">{name}</span>
+        <span className="text-xs opacity-75">
+          {[local ? "Local" : "Visita", position].filter(Boolean).join(" · ")}
+        </span>
+      </span>
+      {showScore ? (
+        <span className="shrink-0 text-xl font-bold tracking-normal">{score ?? 0}</span>
+      ) : null}
     </div>
   );
 }
@@ -302,6 +437,36 @@ function buildHomeStandingsRows(fixture: LeagueFixtureData) {
   }
 
   return [...topRows, clubStanding];
+}
+
+function getTeamPositionLabel(rows: LeagueFixtureData["standings"], teamName: string) {
+  const row = rows.find((item) => item.teamName === teamName);
+
+  return row ? `${formatOrdinal(row.position)} puesto` : "Sin posición";
+}
+
+function formatOrdinal(value: number) {
+  if (value === 1) {
+    return "1er";
+  }
+
+  if (value === 2) {
+    return "2do";
+  }
+
+  if (value === 3) {
+    return "3er";
+  }
+
+  return `${value}to`;
+}
+
+function formatMatchScore(match: LeagueFixtureMatch) {
+  if (typeof match.localScore === "number" && typeof match.visitorScore === "number") {
+    return `${match.localScore}-${match.visitorScore}`;
+  }
+
+  return "S/R";
 }
 
 type OutcomeKind = "draw" | "loss" | "none" | "win";
