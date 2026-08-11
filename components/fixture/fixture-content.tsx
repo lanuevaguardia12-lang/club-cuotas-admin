@@ -93,8 +93,8 @@ function FixtureTabNav({
   const tabs: Array<{ label: string; value: FixtureTab }> = [
     { label: "Resumen", value: "resumen" },
     { label: "Posiciones", value: "posiciones" },
-    { label: "Goleadores", value: "goleadores" },
     { label: "Fixture", value: "fixture" },
+    { label: "Goleadores", value: "goleadores" },
   ];
 
   return (
