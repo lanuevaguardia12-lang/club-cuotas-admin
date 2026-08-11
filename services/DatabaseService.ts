@@ -420,6 +420,11 @@ export class DatabaseService implements IDataService {
   async getPlayerOfMatchData(): Promise<PlayerOfMatchData> {
     return {
       matches: [],
+      rankings: {
+        attendance: [],
+        mvp: [],
+        streaks: [],
+      },
       emptyState: {
         title: "MVP pendiente",
         description:

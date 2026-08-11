@@ -103,6 +103,7 @@ import type {
 import type {
   PlayerOfMatchData,
   PlayerOfMatchMatch,
+  PlayerOfMatchRankings,
   PlayerOfMatchVote,
   SubmitPlayerOfMatchVoteInput,
   UpdatePlayerOfMatchMatchInput,
@@ -2174,7 +2175,10 @@ export class GoogleSheetsService implements IDataService {
     invalidatePlayerOfMatchCache();
   }
 
-  async getPlayerOfMatchData(voterUserId: string): Promise<PlayerOfMatchData> {
+  async getPlayerOfMatchData(
+    voterUserId: string,
+    voterPlayerId?: string,
+  ): Promise<PlayerOfMatchData> {
     const cachedAt = new Date().toISOString();
 
     try {
@@ -2185,6 +2189,7 @@ export class GoogleSheetsService implements IDataService {
         fixtureMatches,
         votes,
         accountProfiles,
+        playerRows,
         overrides,
         fixtureOverrides,
       ] = await Promise.all([
@@ -2192,6 +2197,7 @@ export class GoogleSheetsService implements IDataService {
         getLeagueClubMatchesForYear().catch(() => []),
         this.readPlayerOfMatchVotes(),
         this.readAccountProfiles().catch(() => []),
+        this.readCachedPlayerDirectoryRows().catch(() => []),
         this.readPlayerOfMatchOverrides(),
         this.getFixtureMatchScheduleOverrides(),
       ]);
@@ -2208,7 +2214,12 @@ export class GoogleSheetsService implements IDataService {
       return buildPlayerOfMatchData({
         accountProfiles,
         cachedAt,
+        currentPlayerId: voterPlayerId,
+        currentUserId: voterUserId,
         matches,
+        players: mapRowsToPlayers(playerRows).filter(
+          (player) => !isDroppedPlayer(player),
+        ),
         revalidateSeconds: this.config.cacheTtlSeconds,
         status: matches.length === 0 ? "empty" : "ready",
         votes,
@@ -2220,8 +2231,11 @@ export class GoogleSheetsService implements IDataService {
       return buildPlayerOfMatchData({
         accountProfiles: [],
         cachedAt,
+        currentPlayerId: voterPlayerId,
+        currentUserId: voterUserId,
         matches: [],
         message: serviceError.message,
+        players: [],
         revalidateSeconds: this.config.cacheTtlSeconds,
         status: "error",
         votes: [],
@@ -5187,8 +5201,11 @@ function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
 function buildPlayerOfMatchData({
   accountProfiles,
   cachedAt,
+  currentPlayerId,
+  currentUserId,
   matches,
   message,
+  players,
   revalidateSeconds,
   status,
   votes,
@@ -5196,8 +5213,11 @@ function buildPlayerOfMatchData({
 }: {
   accountProfiles: AccountProfileRecord[];
   cachedAt: string;
+  currentPlayerId?: string;
+  currentUserId: string;
   matches: MatchRecord[];
   message?: string;
+  players: PlayerRecord[];
   revalidateSeconds: number;
   status: PlayerOfMatchData["source"]["status"];
   votes: PlayerOfMatchVote[];
@@ -5232,9 +5252,18 @@ function buildPlayerOfMatchData({
         votingStatus: votingWindow.status,
       };
     });
+  const rankings = buildPlayerOfMatchRankings({
+    accountProfiles,
+    currentPlayerId,
+    currentUserId,
+    formattedMatches,
+    matches,
+    players,
+  });
 
   return {
     matches: formattedMatches,
+    rankings,
     emptyState: {
       title:
         status === "error"
@@ -5256,6 +5285,169 @@ function buildPlayerOfMatchData({
       cachedAt,
       revalidateSeconds,
     },
+  };
+}
+
+function buildPlayerOfMatchRankings({
+  accountProfiles,
+  currentPlayerId,
+  currentUserId,
+  formattedMatches,
+  matches,
+  players,
+}: {
+  accountProfiles: AccountProfileRecord[];
+  currentPlayerId?: string;
+  currentUserId: string;
+  formattedMatches: PlayerOfMatchMatch[];
+  matches: MatchRecord[];
+  players: PlayerRecord[];
+}): PlayerOfMatchRankings {
+  const playerNames = [
+    ...players.map((player) => player.name),
+    ...matches.flatMap((match) => match.players),
+  ];
+  const photoMap = buildPlayerPhotoMap(playerNames, accountProfiles);
+  const playersByNameKey = new Map(
+    players.map((player) => [normalizeClubPlayerName(player.name), player]),
+  );
+  const rankingNames = new Map<string, string>();
+
+  playerNames.forEach((name) => {
+    const key = normalizeClubPlayerName(name);
+
+    if (key && !rankingNames.has(key)) {
+      rankingNames.set(key, name);
+    }
+  });
+
+  const mvpRows = [...rankingNames.entries()].map(([key, playerName]) => ({
+    firstPlaces: 0,
+    photoDataUrl: photoMap.get(key),
+    playerId: playersByNameKey.get(key)?.id,
+    playerName,
+    rank: 0,
+    secondPlaces: 0,
+    thirdPlaces: 0,
+    totalPodiums: 0,
+  }));
+  const mvpRowsByKey = new Map(
+    mvpRows.map((row) => [normalizeClubPlayerName(row.playerName), row]),
+  );
+
+  formattedMatches
+    .filter((match) => match.votingStatus === "closed" && match.totalVotes > 0)
+    .forEach((match) => {
+      match.results
+        .filter((result) => result.rank <= 3 && result.votes > 0)
+        .forEach((result) => {
+          const key = normalizeClubPlayerName(result.playerName);
+          const row = mvpRowsByKey.get(key);
+
+          if (!row) {
+            return;
+          }
+
+          if (result.rank === 1) {
+            row.firstPlaces += 1;
+          } else if (result.rank === 2) {
+            row.secondPlaces += 1;
+          } else if (result.rank === 3) {
+            row.thirdPlaces += 1;
+          }
+
+          row.totalPodiums += 1;
+        });
+    });
+
+  const mvp = mvpRows
+    .sort(
+      (left, right) =>
+        right.firstPlaces - left.firstPlaces ||
+        right.secondPlaces - left.secondPlaces ||
+        right.thirdPlaces - left.thirdPlaces ||
+        right.totalPodiums - left.totalPodiums ||
+        left.playerName.localeCompare(right.playerName, "es"),
+    )
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+  const attendanceSummaries = players.map((player) => ({
+    player,
+    summary: buildPlayerAttendanceSummary(player, matches),
+  }));
+  const streaks = attendanceSummaries
+    .map(({ player, summary }) => ({
+      currentStreak: summary.currentStreak,
+      lastAttendanceDate: summary.lastAttendanceDate,
+      lastAttendanceRival: summary.lastAttendanceRival,
+      photoDataUrl: photoMap.get(normalizeClubPlayerName(player.name)),
+      playerId: player.id,
+      playerName: player.name,
+      rank: 0,
+    }))
+    .sort(
+      (left, right) =>
+        right.currentStreak - left.currentStreak ||
+        right.lastAttendanceDate.localeCompare(left.lastAttendanceDate) ||
+        left.playerName.localeCompare(right.playerName, "es"),
+    )
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+  const attendance = attendanceSummaries
+    .map(({ player, summary }) => ({
+      attendanceRate: summary.attendanceRate,
+      attendedMatches: summary.attendedMatches,
+      photoDataUrl: photoMap.get(normalizeClubPlayerName(player.name)),
+      playerId: player.id,
+      playerName: player.name,
+      rank: 0,
+      totalMatches: summary.totalMatches,
+    }))
+    .sort(
+      (left, right) =>
+        right.attendanceRate - left.attendanceRate ||
+        right.attendedMatches - left.attendedMatches ||
+        right.totalMatches - left.totalMatches ||
+        left.playerName.localeCompare(right.playerName, "es"),
+    )
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+  const currentProfile = accountProfiles.find(
+    (profile) => profile.userId === currentUserId,
+  );
+  const currentLookupKeys = buildPlayerLookupKeys(
+    currentPlayerId,
+    currentUserId,
+    currentProfile?.name,
+    currentProfile?.username,
+  );
+  const currentPlayer = players.find((player) =>
+    playerMatchesLookup(player, currentLookupKeys),
+  );
+  const currentStreak = currentPlayer
+    ? streaks.find((row) => row.playerId === currentPlayer.id)
+    : undefined;
+  const currentAttendance = currentPlayer
+    ? attendance.find((row) => row.playerId === currentPlayer.id)
+    : undefined;
+
+  return {
+    attendance,
+    currentPlayer:
+      currentPlayer && currentAttendance
+        ? {
+            attendanceRank: currentAttendance.rank,
+            attendanceRate: currentAttendance.attendanceRate,
+            attendedMatches: currentAttendance.attendedMatches,
+            currentStreak: currentStreak?.currentStreak ?? 0,
+            photoDataUrl:
+              currentStreak?.photoDataUrl ??
+              photoMap.get(normalizeClubPlayerName(currentPlayer.name)),
+            playerId: currentPlayer.id,
+            playerName: currentPlayer.name,
+            streakRank: currentStreak?.rank,
+            totalMatches: currentAttendance.totalMatches,
+          }
+        : undefined,
+    mvp,
+    streaks,
   };
 }
 
@@ -5310,9 +5502,17 @@ function buildPlayerOfMatchPhotoMap(
   matches: MatchRecord[],
   accountProfiles: AccountProfileRecord[],
 ) {
-  const playerKeys = new Set(
-    matches.flatMap((match) => match.players.map(normalizeClubPlayerName)),
+  return buildPlayerPhotoMap(
+    matches.flatMap((match) => match.players),
+    accountProfiles,
   );
+}
+
+function buildPlayerPhotoMap(
+  playerNames: string[],
+  accountProfiles: AccountProfileRecord[],
+) {
+  const playerKeys = new Set(playerNames.map(normalizeClubPlayerName).filter(Boolean));
   const photos = new Map<string, string>();
 
   accountProfiles.forEach((profile) => {

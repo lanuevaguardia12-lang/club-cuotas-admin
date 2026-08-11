@@ -41,8 +41,59 @@ export interface PlayerOfMatchResult {
   votes: number;
 }
 
+export interface PlayerOfMatchRankingRow {
+  firstPlaces: number;
+  photoDataUrl?: string;
+  playerId?: string;
+  playerName: string;
+  rank: number;
+  secondPlaces: number;
+  thirdPlaces: number;
+  totalPodiums: number;
+}
+
+export interface PlayerStreakRankingRow {
+  currentStreak: number;
+  lastAttendanceDate: string;
+  lastAttendanceRival: string;
+  photoDataUrl?: string;
+  playerId: string;
+  playerName: string;
+  rank: number;
+}
+
+export interface PlayerAttendanceRankingRow {
+  attendanceRate: number;
+  attendedMatches: number;
+  photoDataUrl?: string;
+  playerId: string;
+  playerName: string;
+  rank: number;
+  totalMatches: number;
+}
+
+export interface PlayerOfMatchCurrentRanking {
+  attendanceRank?: number;
+  attendanceRate: number;
+  attendedMatches: number;
+  currentStreak: number;
+  photoDataUrl?: string;
+  playerId: string;
+  playerName: string;
+  streakRank?: number;
+  totalMatches: number;
+}
+
+export interface PlayerOfMatchRankings {
+  attendance: PlayerAttendanceRankingRow[];
+  currentPlayer?: PlayerOfMatchCurrentRanking;
+  mvp: PlayerOfMatchRankingRow[];
+  streaks: PlayerStreakRankingRow[];
+}
+
 export interface PlayerOfMatchData {
   matches: PlayerOfMatchMatch[];
+  rankings: PlayerOfMatchRankings;
   emptyState: {
     title: string;
     description: string;

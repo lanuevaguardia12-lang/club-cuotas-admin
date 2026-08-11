@@ -528,6 +528,10 @@ Reglas de votación:
 - `Ver resultados` muestra un podio visual con los 3 jugadores mas votados,
   usando la foto de perfil de `CuentasUsuario` cuando existe y un avatar de
   iniciales como fallback.
+- La seccion visible se llama `MVP y ranking` y se divide en tabs: `MVP` para
+  votaciones pendientes e historial compacto, `Ranking` para primeros, segundos
+  y terceros puestos acumulados, y `Rachas` para racha actual y asistencia desde
+  el inicio de temporada configurado.
 - La pantalla muestra cada partido como `La Nueva Guardia vs Rival` y la fecha
   del encuentro.
 - Solo el rol Administrador puede editar cards de `Amistoso`. Los partidos

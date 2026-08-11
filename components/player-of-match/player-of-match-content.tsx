@@ -6,9 +6,11 @@ import {
   CheckCircle2,
   Crown,
   Eye,
+  Flame,
   Lock,
   Medal,
   Pencil,
+  Percent,
   Save,
   Sparkles,
   Timer,
@@ -49,14 +51,21 @@ interface PlayerOfMatchContentProps {
   data: PlayerOfMatchData;
 }
 
+type PlayerOfMatchTab = "mvp" | "ranking" | "rachas";
+
 export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentProps) {
+  const [activeTab, setActiveTab] = useState<PlayerOfMatchTab>("mvp");
   const currentMatches = data.matches.filter(isCurrentPlayerOfMatch);
   const currentMatchIds = new Set(currentMatches.map((match) => match.id));
   const historyMatches = data.matches.filter(
     (match) => isHistoryPlayerOfMatch(match) && !currentMatchIds.has(match.id),
   );
+  const hasRankingData =
+    data.rankings.mvp.length > 0 ||
+    data.rankings.streaks.length > 0 ||
+    data.rankings.attendance.length > 0;
 
-  if (currentMatches.length === 0 && historyMatches.length === 0) {
+  if (currentMatches.length === 0 && historyMatches.length === 0 && !hasRankingData) {
     return (
       <Card className="border-dashed">
         <CardContent className="p-6 text-center">
@@ -71,12 +80,59 @@ export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentPr
   }
 
   return (
-    <section className="grid gap-8">
+    <section className="grid gap-5">
+      <nav className="border-border bg-card flex max-w-full min-w-0 gap-1 overflow-x-auto rounded-md border p-1">
+        {[
+          { label: "MVP", value: "mvp" as const },
+          { label: "Ranking", value: "ranking" as const },
+          { label: "Rachas", value: "rachas" as const },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            aria-pressed={activeTab === tab.value}
+            onClick={() => setActiveTab(tab.value)}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
+              activeTab === tab.value
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "mvp" ? (
+        <MvpTab
+          canManage={canManage}
+          currentMatches={currentMatches}
+          historyMatches={historyMatches}
+        />
+      ) : null}
+      {activeTab === "ranking" ? <RankingTab data={data} /> : null}
+      {activeTab === "rachas" ? <StreaksTab data={data} /> : null}
+    </section>
+  );
+}
+
+function MvpTab({
+  canManage,
+  currentMatches,
+  historyMatches,
+}: {
+  canManage: boolean;
+  currentMatches: PlayerOfMatchMatch[];
+  historyMatches: PlayerOfMatchMatch[];
+}) {
+  return (
+    <section className="grid gap-6">
       <div className="grid gap-4">
         <div>
-          <p className="text-muted-foreground text-sm font-medium">Votación actual</p>
+          <p className="text-muted-foreground text-sm font-medium">MVP pendiente</p>
           <h2 className="mt-1 text-xl font-semibold tracking-normal">
-            Partidos finalizados para votar
+            Partidos para votar
           </h2>
         </div>
         {currentMatches.length > 0 ? (
@@ -95,22 +151,221 @@ export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentPr
         )}
       </div>
 
-      {historyMatches.length > 0 ? (
-        <div className="grid gap-4">
+      <details className="group border-border bg-card rounded-md border">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 [&::-webkit-details-marker]:hidden">
           <div>
-            <p className="text-muted-foreground text-sm font-medium">Historial</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-normal">
-              Tus votaciones y resultados
-            </h2>
+            <p className="text-sm font-medium">Historial y resultados</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Tus votaciones anteriores y podios de partidos cerrados.
+            </p>
           </div>
-          <div className="grid gap-4 xl:grid-cols-2">
-            {historyMatches.map((match) => (
-              <MatchVoteCard canManage={canManage} key={match.id} match={match} />
-            ))}
+          <Badge variant="secondary">{historyMatches.length}</Badge>
+        </summary>
+        <div className="border-border grid gap-4 border-t p-4">
+          {historyMatches.length > 0 ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {historyMatches.map((match) => (
+                <MatchVoteCard canManage={canManage} key={match.id} match={match} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Todavía no hay historial para mostrar.
+            </p>
+          )}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function RankingTab({ data }: { data: PlayerOfMatchData }) {
+  return (
+    <section className="grid gap-4">
+      <div>
+        <p className="text-muted-foreground text-sm font-medium">Ranking MVP</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-normal">
+          Podios acumulados del plantel
+        </h2>
+      </div>
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-sm">
+              <thead>
+                <tr className="border-border bg-muted/40 border-b">
+                  <TableHead>#</TableHead>
+                  <TableHead>Jugador</TableHead>
+                  <TableHead>1° puesto</TableHead>
+                  <TableHead>2° puesto</TableHead>
+                  <TableHead>3° puesto</TableHead>
+                  <TableHead>Total podios</TableHead>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rankings.mvp.length > 0 ? (
+                  data.rankings.mvp.map((row) => (
+                    <tr
+                      key={row.playerName}
+                      className="border-border border-b last:border-0"
+                    >
+                      <td className="px-4 py-3 font-semibold">#{row.rank}</td>
+                      <td className="px-4 py-3">
+                        <RankingPlayer
+                          name={row.playerName}
+                          photoDataUrl={row.photoDataUrl}
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-semibold">{row.firstPlaces}</td>
+                      <td className="px-4 py-3">{row.secondPlaces}</td>
+                      <td className="px-4 py-3">{row.thirdPlaces}</td>
+                      <td className="px-4 py-3 font-semibold">{row.totalPodiums}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="text-muted-foreground h-24 px-4 text-center"
+                    >
+                      Todavía no hay podios cerrados para armar el ranking.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function StreaksTab({ data }: { data: PlayerOfMatchData }) {
+  const current = data.rankings.currentPlayer;
+
+  return (
+    <section className="grid gap-5">
+      {current ? (
+        <Card className="overflow-hidden">
+          <CardContent className="from-primary to-secondary text-primary-foreground grid gap-4 bg-linear-to-br p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+            <PlayerAvatar
+              className="size-16 border-2"
+              name={current.playerName}
+              photoDataUrl={current.photoDataUrl}
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-white/80">Tu racha</p>
+              <h2 className="mt-1 text-xl font-semibold">
+                Tenés {current.currentStreak} partidos consecutivos
+              </h2>
+              <p className="mt-1 text-sm text-white/80">
+                {current.playerName} · puesto #{current.streakRank ?? "-"} en rachas
+              </p>
+            </div>
+            <div className="grid size-16 place-items-center rounded-md bg-white text-2xl font-semibold text-[#012f77]">
+              {current.currentStreak}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Flame className="text-primary size-5" />
+              Ranking de rachas
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <RankingList
+              emptyText="Todavía no hay rachas para mostrar."
+              rows={data.rankings.streaks.map((row) => ({
+                detail: row.lastAttendanceRival
+                  ? `Última asistencia vs ${row.lastAttendanceRival}`
+                  : "Sin asistencia todavía",
+                key: row.playerId,
+                name: row.playerName,
+                photoDataUrl: row.photoDataUrl,
+                rank: row.rank,
+                value: `${row.currentStreak}`,
+              }))}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Percent className="text-primary size-5" />
+              Asistencia
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <RankingList
+              emptyText="Todavía no hay asistencia para mostrar."
+              rows={data.rankings.attendance.map((row) => ({
+                detail: `${row.attendedMatches}/${row.totalMatches} partidos asistidos`,
+                key: row.playerId,
+                name: row.playerName,
+                photoDataUrl: row.photoDataUrl,
+                rank: row.rank,
+                value: formatPercent(row.attendanceRate),
+              }))}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+function RankingList({
+  emptyText,
+  rows,
+}: {
+  emptyText: string;
+  rows: Array<{
+    detail: string;
+    key: string;
+    name: string;
+    photoDataUrl?: string;
+    rank: number;
+    value: string;
+  }>;
+}) {
+  if (rows.length === 0) {
+    return <p className="text-muted-foreground p-4 text-sm">{emptyText}</p>;
+  }
+
+  return (
+    <div className="divide-border divide-y">
+      {rows.map((row) => (
+        <div
+          key={row.key}
+          className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3"
+        >
+          <span className="text-muted-foreground w-8 text-sm font-semibold">
+            #{row.rank}
+          </span>
+          <RankingPlayer name={row.name} photoDataUrl={row.photoDataUrl} />
+          <div className="text-right">
+            <p className="font-semibold">{row.value}</p>
+            <p className="text-muted-foreground text-xs">{row.detail}</p>
           </div>
         </div>
-      ) : null}
-    </section>
+      ))}
+    </div>
+  );
+}
+
+function RankingPlayer({ name, photoDataUrl }: { name: string; photoDataUrl?: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <PlayerAvatar className="size-9 border-2" name={name} photoDataUrl={photoDataUrl} />
+      <span className="truncate font-medium">{name}</span>
+    </div>
   );
 }
 
@@ -672,6 +927,14 @@ function VoteResult({ label, value }: { label: string; value: string }) {
   );
 }
 
+function TableHead({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="text-muted-foreground h-11 px-4 text-left align-middle font-medium">
+      {children}
+    </th>
+  );
+}
+
 function formatDate(value: string) {
   const hasTime = value.includes("T") || value.includes(" ");
   const date = parseMatchDate(value);
@@ -752,6 +1015,13 @@ function formatDateTime(value: string) {
     month: "long",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(date);
+}
+
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 0,
+    style: "percent",
+  }).format(value);
 }
 
 function normalizeValue(value?: string) {

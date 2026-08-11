@@ -74,7 +74,10 @@ export interface IDataService {
   updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput): Promise<void>;
   getFixtureMatchScheduleOverrides(): Promise<FixtureMatchScheduleOverride[]>;
   updateFixtureMatchSchedule(input: UpdateFixtureMatchScheduleInput): Promise<void>;
-  getPlayerOfMatchData(voterUserId: string): Promise<PlayerOfMatchData>;
+  getPlayerOfMatchData(
+    voterUserId: string,
+    voterPlayerId?: string,
+  ): Promise<PlayerOfMatchData>;
   submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void>;
   updatePlayerOfMatchMatch(input: UpdatePlayerOfMatchMatchInput): Promise<void>;
   getPremiumData(): Promise<PremiumData>;

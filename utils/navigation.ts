@@ -22,7 +22,7 @@ export const navigationItems: NavigationItem[] = [
     permission: "player:self:read",
   },
   {
-    label: "MVP",
+    label: "MVP y ranking",
     href: "/player-of-match",
     icon: "playerOfMatch",
     permission: "player-of-match:vote",
