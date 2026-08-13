@@ -50,6 +50,7 @@ export async function sendUpcomingMatchReminderNotifications({
     (match) =>
       match.status === "pending" &&
       !match.involvesBye &&
+      typeof match.dateIso === "string" &&
       targetDateSet.has(match.dateIso),
   );
   const subscriptionsByUser = groupPlayerSubscriptionsByUser(subscriptions);
@@ -127,7 +128,7 @@ export async function sendUpcomingMatchReminderNotifications({
       matches: matches.length,
       sent,
       skipped,
-      targetDates,
+      targetDates: targetDates.join(","),
       users: subscriptionsByUser.size,
     },
   });

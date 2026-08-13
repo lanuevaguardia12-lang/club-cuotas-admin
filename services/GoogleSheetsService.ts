@@ -160,6 +160,7 @@ interface GoogleSheetsConfig {
   expensesRange: string;
   refundPolicyRange: string;
   cacheTtlSeconds: number;
+  formResponsesCacheTtlSeconds: number;
 }
 
 interface SheetRecord {
@@ -282,6 +283,7 @@ const DEFAULT_FORM_RESPONSES_RANGE = "Respuestas de formulario!A:Z";
 const DEFAULT_EXPENSES_RANGE = "Gastos nueva guardia!A:Z";
 const DEFAULT_REFUND_POLICY_RANGE = "Politica devoluciones!A:C";
 const DEFAULT_CACHE_TTL_SECONDS = 300;
+const DEFAULT_FORM_RESPONSES_CACHE_TTL_SECONDS = 60;
 const DEFAULT_ACCOUNT_PROFILES_RANGE = "CuentasUsuario!A:Z";
 const DEFAULT_PLAYER_ATTENDANCE_SNAPSHOTS_RANGE = "AsistenciasJugadores!A:Z";
 const PLAYER_PROFILE_SEASON_START_DATE = "2026-08-11";
@@ -604,7 +606,20 @@ export class GoogleSheetsService implements IDataService {
       cacheTtlSeconds:
         config.cacheTtlSeconds ??
         parseCacheTtl(process.env.GOOGLE_SHEETS_CACHE_TTL_SECONDS),
+      formResponsesCacheTtlSeconds:
+        config.formResponsesCacheTtlSeconds ??
+        parseCacheTtl(
+          process.env.GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS,
+          DEFAULT_FORM_RESPONSES_CACHE_TTL_SECONDS,
+        ),
     };
+  }
+
+  private getPaymentAwareCacheTtlSeconds() {
+    return Math.min(
+      this.config.cacheTtlSeconds,
+      this.config.formResponsesCacheTtlSeconds,
+    );
   }
 
   async getAppSettings(): Promise<AppSettingsData> {
@@ -841,7 +856,7 @@ export class GoogleSheetsService implements IDataService {
             ? "Google Sheets conectado, sin jugadores ni cuotas cargadas."
             : message,
         cachedAt,
-        revalidateSeconds: this.config.cacheTtlSeconds,
+        revalidateSeconds: this.getPaymentAwareCacheTtlSeconds(),
       });
     } catch (error) {
       const serviceError = normalizeGoogleSheetsError(error);
@@ -851,7 +866,7 @@ export class GoogleSheetsService implements IDataService {
         status: "error",
         message: serviceError.message,
         cachedAt,
-        revalidateSeconds: this.config.cacheTtlSeconds,
+        revalidateSeconds: this.getPaymentAwareCacheTtlSeconds(),
       });
     }
   }
@@ -1933,11 +1948,13 @@ export class GoogleSheetsService implements IDataService {
           this.config.matchesRange,
           this.config.expensesRange,
           this.config.refundPolicyRange,
+          "form-responses-cache",
+          String(this.config.formResponsesCacheTtlSeconds),
           playerId,
           String(year),
         ],
         {
-          revalidate: this.config.cacheTtlSeconds,
+          revalidate: this.getPaymentAwareCacheTtlSeconds(),
           tags: [
             "google-sheets",
             "google-sheets:player-profile",
@@ -2898,6 +2915,7 @@ export class GoogleSheetsService implements IDataService {
     const spreadsheetId = this.getAppSpreadsheetId();
     const playersSpreadsheetId = spreadsheetId;
     const clubSpreadsheetId = this.getClubSpreadsheetId();
+    const revalidateSeconds = this.getPaymentAwareCacheTtlSeconds();
 
     if (!spreadsheetId) {
       throw new DataServiceError(
@@ -2920,9 +2938,11 @@ export class GoogleSheetsService implements IDataService {
         this.config.playersRange,
         this.config.feesRange,
         this.config.formResponsesRange,
+        "form-responses-cache",
+        String(this.config.formResponsesCacheTtlSeconds),
       ],
       {
-        revalidate: this.config.cacheTtlSeconds,
+        revalidate: revalidateSeconds,
         tags: ["google-sheets", "google-sheets:dashboard"],
       },
     )();
@@ -10134,11 +10154,11 @@ function buildEmptyMetrics(): DashboardMetric[] {
   ];
 }
 
-function parseCacheTtl(value?: string) {
-  const parsed = Number(value ?? DEFAULT_CACHE_TTL_SECONDS);
+function parseCacheTtl(value?: string, fallback = DEFAULT_CACHE_TTL_SECONDS) {
+  const parsed = Number(value ?? fallback);
 
   if (!Number.isFinite(parsed) || parsed < 1) {
-    return DEFAULT_CACHE_TTL_SECONDS;
+    return fallback;
   }
 
   return parsed;

@@ -230,6 +230,7 @@ GOOGLE_SHEETS_MATCHES_RANGE="Partidos jugados formulario!A:Z"
 GOOGLE_SHEETS_FORM_RESPONSES_RANGE="Respuestas de formulario!A:Z"
 GOOGLE_SHEETS_EXPENSES_RANGE="Gastos nueva guardia!A:Z"
 GOOGLE_SHEETS_CACHE_TTL_SECONDS=300
+GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS=60
 ```
 
 No subir archivos `.env.local` ni credenciales al repositorio.
@@ -1046,11 +1047,15 @@ Los endpoints mutables validan permisos RBAC y registran auditoria.
 `GOOGLE_SHEETS_CACHE_TTL_SECONDS` define el tiempo de revalidacion. Por defecto:
 `300` segundos.
 
+`GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS` define el tiempo de
+revalidacion de pagos cargados desde `Respuestas de formulario`. Por defecto:
+`60` segundos.
+
 La app no consulta Google Sheets en segundo plano de forma permanente. Vuelve a
 leer la hoja cuando se abre o refresca una pantalla, o cuando una API necesita
-datos, respetando ese TTL. Si se agrega un partido nuevo desde el formulario,
-puede tardar hasta ese valor en verse reflejado; para verlo antes, bajar
-`GOOGLE_SHEETS_CACHE_TTL_SECONDS` en Vercel y redeployar.
+datos, respetando esos TTL. Si se agrega un pago nuevo desde el formulario,
+puede tardar hasta 60 segundos en verse reflejado. Para otros datos externos,
+como partidos jugados, aplica `GOOGLE_SHEETS_CACHE_TTL_SECONDS`.
 
 ### Migracion a PostgreSQL
 
