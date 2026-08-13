@@ -919,10 +919,10 @@ intenta inmediatamente; si entran por Google Sheets/Form, el cron lo detecta en
 la siguiente corrida.
 
 El cron `/api/cron/upcoming-match-reminders` corre todos los dias a las 22:00
-UTC (19:00 de Argentina). Si el proximo partido cae dentro de dos dias, envia a
-los jugadores suscriptos el push `Prepara los botines tu proximo partido es vs
-<rival>` y usa `reference_id` en `Notificaciones` para no repetir el aviso por
-usuario/partido.
+UTC (19:00 de Argentina). Si hay un partido programado para manana o pasado
+manana, envia a los jugadores suscriptos el push `Prepara los botines tu proximo
+partido es vs <rival>` y usa `reference_id` en `Notificaciones` para no repetir
+el aviso por usuario/partido.
 
 ### Push notifications
 
@@ -956,7 +956,7 @@ Rutas principales:
 - `PATCH /api/notifications`: marca una notificacion visible como leida.
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
 - `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
-- `GET /api/cron/upcoming-match-reminders`: envia push dos dias antes del partido.
+- `GET /api/cron/upcoming-match-reminders`: envia push si hay partido en los proximos dos dias.
 - `POST /api/webhooks/player-of-match`: webhook para Google Apps Script. Expira
   el cache de MVP y envia push cuando el formulario de partidos carga jugadores.
 

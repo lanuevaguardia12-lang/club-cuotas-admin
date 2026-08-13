@@ -12,14 +12,14 @@ import type { LeagueFixtureMatch } from "@/types/fixture";
 import type { AuditActor, PushSubscriptionRecord } from "@/types/premium";
 
 const ARGENTINA_TIME_ZONE = "America/Argentina/Buenos_Aires";
-const UPCOMING_MATCH_REMINDER_DAYS_BEFORE = 2;
+const UPCOMING_MATCH_REMINDER_WINDOW_DAYS = [1, 2];
 
 export interface SendUpcomingMatchReminderNotificationsResult {
   failed: number;
   matches: number;
   sent: number;
   skipped: number;
-  targetDate: string;
+  targetDates: string[];
   users: number;
 }
 
@@ -31,10 +31,10 @@ export async function sendUpcomingMatchReminderNotifications({
   now?: Date;
 } = {}): Promise<SendUpcomingMatchReminderNotificationsResult> {
   const dataService = getDataService();
-  const targetDate = addDaysToDateIso(
-    getArgentinaDateIso(now),
-    UPCOMING_MATCH_REMINDER_DAYS_BEFORE,
+  const targetDates = UPCOMING_MATCH_REMINDER_WINDOW_DAYS.map((days) =>
+    addDaysToDateIso(getArgentinaDateIso(now), days),
   );
+  const targetDateSet = new Set(targetDates);
   const [rawFixture, fixtureScheduleOverrides, subscriptions, premium] =
     await Promise.all([
       getLeagueFixtureData(),
@@ -48,7 +48,9 @@ export async function sendUpcomingMatchReminderNotifications({
   );
   const matches = fixture.nextMatches.filter(
     (match) =>
-      match.status === "pending" && !match.involvesBye && match.dateIso === targetDate,
+      match.status === "pending" &&
+      !match.involvesBye &&
+      targetDateSet.has(match.dateIso),
   );
   const subscriptionsByUser = groupPlayerSubscriptionsByUser(subscriptions);
   const alreadyNotified = new Set(
@@ -67,7 +69,7 @@ export async function sendUpcomingMatchReminderNotifications({
 
     for (const [userId, userSubscriptions] of subscriptionsByUser) {
       const playerId = userSubscriptions[0]?.playerId;
-      const referenceId = `upcoming-match:${userId}:${match.id}:${targetDate}`;
+      const referenceId = `upcoming-match:${userId}:${match.id}`;
 
       if (alreadyNotified.has(referenceId) || notifiedThisRun.has(referenceId)) {
         skipped += 1;
@@ -116,14 +118,16 @@ export async function sendUpcomingMatchReminderNotifications({
     actor,
     action: "notification.created",
     entityType: "notification",
-    entityId: targetDate,
-    summary: `Cron envio ${sent} push de proximo partido para ${targetDate}.`,
+    entityId: targetDates.join(","),
+    summary: `Cron envio ${sent} push de proximo partido para ${targetDates.join(
+      " o ",
+    )}.`,
     metadata: {
       failed,
       matches: matches.length,
       sent,
       skipped,
-      targetDate,
+      targetDates,
       users: subscriptionsByUser.size,
     },
   });
@@ -133,7 +137,7 @@ export async function sendUpcomingMatchReminderNotifications({
     matches: matches.length,
     sent,
     skipped,
-    targetDate,
+    targetDates,
     users: subscriptionsByUser.size,
   };
 }
