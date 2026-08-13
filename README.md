@@ -187,6 +187,7 @@ AUTH_USERS_JSON='[{"id":"admin","username":"admin","password":"replace-with-a-st
 
 API_SECRET="replace-with-a-long-random-api-secret"
 CRON_SECRET="replace-with-a-long-random-cron-secret"
+PAYMENTS_WEBHOOK_SECRET="replace-with-a-long-random-payments-webhook-secret"
 
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 VAPID_PRIVATE_KEY=""
@@ -958,6 +959,8 @@ Rutas principales:
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
 - `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
 - `GET /api/cron/upcoming-match-reminders`: envia push si hay partido en los proximos dos dias.
+- `POST /api/webhooks/payments`: webhook para Google Apps Script. Expira el
+  cache de pagos cuando el formulario agrega una nueva respuesta.
 - `POST /api/webhooks/player-of-match`: webhook para Google Apps Script. Expira
   el cache de MVP y envia push cuando el formulario de partidos carga jugadores.
 
@@ -998,6 +1001,45 @@ La respuesta del formulario escribe en Google Sheets. El webhook expira el cache
 de MVP y busca partidos con al menos dos jugadores cargados para enviar:
 
 `Ya podes votar al MVP del partido vs Rival.`
+
+### Webhook Pagos Desde Google Forms
+
+Para que el estado de pago se actualice apenas entra una respuesta del formulario
+de pagos, el Google Sheet de pagos debe llamar a la app con Apps Script.
+
+En el Sheet donde vive `Respuesta de formulario`:
+
+1. Ir a `Extensiones` -> `Apps Script`.
+2. Pegar este script, reemplazando `TU_URL_DE_VERCEL` y
+   `TU_PAYMENTS_WEBHOOK_SECRET`.
+3. Crear un trigger de tipo `Al enviar formulario` para `onPaymentFormSubmit`.
+
+```javascript
+const PAYMENTS_WEBHOOK_URL = "https://TU_URL_DE_VERCEL/api/webhooks/payments";
+const PAYMENTS_WEBHOOK_SECRET = "TU_PAYMENTS_WEBHOOK_SECRET";
+
+function onPaymentFormSubmit(e) {
+  UrlFetchApp.fetch(PAYMENTS_WEBHOOK_URL, {
+    method: "post",
+    contentType: "application/json",
+    headers: {
+      Authorization: `Bearer ${PAYMENTS_WEBHOOK_SECRET}`,
+    },
+    payload: JSON.stringify({
+      source: "google-forms",
+      sheetName: e.range.getSheet().getName(),
+      range: e.range.getA1Notation(),
+      row: e.range.getRow(),
+      timestamp: new Date().toISOString(),
+    }),
+    muteHttpExceptions: true,
+  });
+}
+```
+
+El webhook expira el cache de `Dashboard`, `Mi cuota` y fichas de jugador. Si el
+script no se ejecuta por algun problema de permisos de Google, el fallback sigue
+siendo `GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS=60`.
 
 ### Pagos
 
