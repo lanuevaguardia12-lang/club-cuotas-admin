@@ -926,6 +926,19 @@ manana, envia a los jugadores suscriptos el push `Prepara los botines tu proximo
 partido es vs <rival>` y usa `reference_id` en `Notificaciones` para no repetir
 el aviso por usuario/partido.
 
+Para probar el aviso con un solo jugador, un admin o integracion con
+`CRON_SECRET` puede ejecutar:
+
+```bash
+curl -X POST "https://TU_URL_DE_VERCEL/api/cron/upcoming-match-reminders" \
+  -H "Authorization: Bearer TU_CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"playerId":"gonzalo-ladona","ignoreAlreadyNotified":true}'
+```
+
+Ese envio toma el siguiente partido pendiente, aunque no caiga manana o pasado
+manana, y queda registrado en `Notificaciones` para el jugador indicado.
+
 ### Push notifications
 
 La app soporta Web Push. El usuario abre la campana superior, habilita

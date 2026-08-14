@@ -19,16 +19,23 @@ export interface SendUpcomingMatchReminderNotificationsResult {
   matches: number;
   sent: number;
   skipped: number;
+  targetPlayerId?: string;
   targetDates: string[];
   users: number;
 }
 
 export async function sendUpcomingMatchReminderNotifications({
   actor = systemAuditActor,
+  forceNextMatch = false,
+  ignoreAlreadyNotified = false,
   now = new Date(),
+  targetPlayerId,
 }: {
   actor?: AuditActor;
+  forceNextMatch?: boolean;
+  ignoreAlreadyNotified?: boolean;
   now?: Date;
+  targetPlayerId?: string;
 } = {}): Promise<SendUpcomingMatchReminderNotificationsResult> {
   const dataService = getDataService();
   const targetDates = UPCOMING_MATCH_REMINDER_WINDOW_DAYS.map((days) =>
@@ -46,14 +53,18 @@ export async function sendUpcomingMatchReminderNotifications({
     rawFixture,
     fixtureScheduleOverrides,
   );
-  const matches = fixture.nextMatches.filter(
+  const candidateMatches = fixture.nextMatches.filter(
     (match) =>
       match.status === "pending" &&
       !match.involvesBye &&
-      typeof match.dateIso === "string" &&
-      targetDateSet.has(match.dateIso),
+      (forceNextMatch ||
+        (typeof match.dateIso === "string" && targetDateSet.has(match.dateIso))),
   );
-  const subscriptionsByUser = groupPlayerSubscriptionsByUser(subscriptions);
+  const matches = forceNextMatch ? candidateMatches.slice(0, 1) : candidateMatches;
+  const targetSubscriptions = targetPlayerId
+    ? subscriptions.filter((subscription) => subscription.playerId === targetPlayerId)
+    : subscriptions;
+  const subscriptionsByUser = groupPlayerSubscriptionsByUser(targetSubscriptions);
   const alreadyNotified = new Set(
     premium.notifications
       .map((notification) => notification.referenceId)
@@ -72,7 +83,10 @@ export async function sendUpcomingMatchReminderNotifications({
       const playerId = userSubscriptions[0]?.playerId;
       const referenceId = `upcoming-match:${userId}:${match.id}`;
 
-      if (alreadyNotified.has(referenceId) || notifiedThisRun.has(referenceId)) {
+      if (
+        (!ignoreAlreadyNotified && alreadyNotified.has(referenceId)) ||
+        notifiedThisRun.has(referenceId)
+      ) {
         skipped += 1;
         continue;
       }
@@ -129,6 +143,7 @@ export async function sendUpcomingMatchReminderNotifications({
       sent,
       skipped,
       targetDates: targetDates.join(","),
+      targetPlayerId: targetPlayerId ?? null,
       users: subscriptionsByUser.size,
     },
   });
@@ -138,6 +153,7 @@ export async function sendUpcomingMatchReminderNotifications({
     matches: matches.length,
     sent,
     skipped,
+    targetPlayerId,
     targetDates,
     users: subscriptionsByUser.size,
   };
