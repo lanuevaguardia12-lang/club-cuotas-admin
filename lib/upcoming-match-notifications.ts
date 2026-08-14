@@ -17,6 +17,7 @@ const UPCOMING_MATCH_REMINDER_WINDOW_DAYS = [1, 2];
 export interface SendUpcomingMatchReminderNotificationsResult {
   failed: number;
   matches: number;
+  notificationRecordsFailed: number;
   sent: number;
   skipped: number;
   targetPlayerId?: string;
@@ -46,8 +47,12 @@ export async function sendUpcomingMatchReminderNotifications({
     await Promise.all([
       getLeagueFixtureData(),
       dataService.getFixtureMatchScheduleOverrides().catch(() => []),
-      dataService.getPushSubscriptions(),
-      dataService.getPremiumData(),
+      targetPlayerId
+        ? dataService.getPushSubscriptionsForPlayer(targetPlayerId)
+        : dataService.getPushSubscriptions(),
+      ignoreAlreadyNotified
+        ? Promise.resolve({ notifications: [] })
+        : dataService.getPremiumData(),
     ]);
   const fixture = applyLeagueFixtureScheduleOverrides(
     rawFixture,
@@ -61,10 +66,7 @@ export async function sendUpcomingMatchReminderNotifications({
         (typeof match.dateIso === "string" && targetDateSet.has(match.dateIso))),
   );
   const matches = forceNextMatch ? candidateMatches.slice(0, 1) : candidateMatches;
-  const targetSubscriptions = targetPlayerId
-    ? subscriptions.filter((subscription) => subscription.playerId === targetPlayerId)
-    : subscriptions;
-  const subscriptionsByUser = groupPlayerSubscriptionsByUser(targetSubscriptions);
+  const subscriptionsByUser = groupPlayerSubscriptionsByUser(subscriptions);
   const alreadyNotified = new Set(
     premium.notifications
       .map((notification) => notification.referenceId)
@@ -74,6 +76,7 @@ export async function sendUpcomingMatchReminderNotifications({
   let sent = 0;
   let skipped = 0;
   let failed = 0;
+  let notificationRecordsFailed = 0;
 
   for (const match of matches) {
     const rival = getRivalName(match);
@@ -115,42 +118,50 @@ export async function sendUpcomingMatchReminderNotifications({
 
       if (matchSent > 0) {
         notifiedThisRun.add(referenceId);
-        await dataService.createNotification({
-          title: "Proximo partido",
-          message,
-          type: "info",
-          targetRole: "player",
-          targetUserId: userId,
-          targetPlayerId: playerId,
-          referenceId,
-          url: "/fixture",
-        });
+        try {
+          await dataService.createNotification({
+            title: "Proximo partido",
+            message,
+            type: "info",
+            targetRole: "player",
+            targetUserId: userId,
+            targetPlayerId: playerId,
+            referenceId,
+            url: "/fixture",
+          });
+        } catch {
+          notificationRecordsFailed += 1;
+        }
       }
     }
   }
 
-  await dataService.recordAuditEvent({
-    actor,
-    action: "notification.created",
-    entityType: "notification",
-    entityId: targetDates.join(","),
-    summary: `Cron envio ${sent} push de proximo partido para ${targetDates.join(
-      " o ",
-    )}.`,
-    metadata: {
-      failed,
-      matches: matches.length,
-      sent,
-      skipped,
-      targetDates: targetDates.join(","),
-      targetPlayerId: targetPlayerId ?? null,
-      users: subscriptionsByUser.size,
-    },
-  });
+  await dataService
+    .recordAuditEvent({
+      actor,
+      action: "notification.created",
+      entityType: "notification",
+      entityId: targetDates.join(","),
+      summary: `Cron envio ${sent} push de proximo partido para ${targetDates.join(
+        " o ",
+      )}.`,
+      metadata: {
+        failed,
+        matches: matches.length,
+        notificationRecordsFailed,
+        sent,
+        skipped,
+        targetDates: targetDates.join(","),
+        targetPlayerId: targetPlayerId ?? null,
+        users: subscriptionsByUser.size,
+      },
+    })
+    .catch(() => undefined);
 
   return {
     failed,
     matches: matches.length,
+    notificationRecordsFailed,
     sent,
     skipped,
     targetPlayerId,

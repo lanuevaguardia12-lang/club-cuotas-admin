@@ -12,11 +12,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  const result = await sendUpcomingMatchReminderNotifications({
-    actor: systemAuditActor,
-  });
+  try {
+    const result = await sendUpcomingMatchReminderNotifications({
+      actor: systemAuditActor,
+    });
 
-  return NextResponse.json(result);
+    return NextResponse.json(result);
+  } catch (error) {
+    return buildCronErrorResponse(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -44,14 +48,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Tenes que indicar playerId." }, { status: 400 });
   }
 
-  const result = await sendUpcomingMatchReminderNotifications({
-    actor: user ? userToAuditActor(user) : systemAuditActor,
-    forceNextMatch: true,
-    ignoreAlreadyNotified: body.ignoreAlreadyNotified === true,
-    targetPlayerId: playerId,
-  });
+  try {
+    const result = await sendUpcomingMatchReminderNotifications({
+      actor: user ? userToAuditActor(user) : systemAuditActor,
+      forceNextMatch: true,
+      ignoreAlreadyNotified: body.ignoreAlreadyNotified === true,
+      targetPlayerId: playerId,
+    });
 
-  return NextResponse.json(result);
+    return NextResponse.json(result);
+  } catch (error) {
+    return buildCronErrorResponse(error);
+  }
 }
 
 function isCronAuthorized(request: NextRequest) {
@@ -59,4 +67,14 @@ function isCronAuthorized(request: NextRequest) {
   const authorization = request.headers.get("authorization");
 
   return Boolean(expected && authorization === `Bearer ${expected}`);
+}
+
+function buildCronErrorResponse(error: unknown) {
+  return NextResponse.json(
+    {
+      error: error instanceof Error ? error.message : "Error desconocido.",
+      message: "No se pudo enviar la notificacion de proximo partido.",
+    },
+    { status: 500 },
+  );
 }
