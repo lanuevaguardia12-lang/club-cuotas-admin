@@ -79,6 +79,8 @@ const typeLabels: Record<FeeCalculatorCostType, string> = {
   fixed: "Fijo",
 };
 
+const RESET_COSTS_CONFIRMATION_TEXT = "LIMPIAR";
+
 type CostTemplate =
   | "court"
   | "coach"
@@ -864,11 +866,11 @@ function CostList({
   }
 
   async function handleResetCosts() {
-    if (
-      !window.confirm(
-        "Esto borra todos los costos y cantidades reales del calculador. ¿Continuar?",
-      )
-    ) {
+    const confirmation = window.prompt(
+      `Esto borra todos los costos y cantidades reales del calculador. Escribí ${RESET_COSTS_CONFIRMATION_TEXT} para confirmar.`,
+    );
+
+    if (confirmation?.trim().toUpperCase() !== RESET_COSTS_CONFIRMATION_TEXT) {
       return;
     }
 
