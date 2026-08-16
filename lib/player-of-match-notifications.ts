@@ -6,6 +6,7 @@ import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
 import { getConfiguredAuthUsers } from "@/services/auth/env-admin-user-store";
 import type { AuthUser } from "@/types/auth";
+import type { PlayerOfMatchMatch } from "@/types/player-of-match";
 import type {
   AppNotification,
   AuditActor,
@@ -15,6 +16,8 @@ import type {
 const MVP_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 
 export interface PlayerOfMatchNotificationDetail {
+  alreadyVotedMatchIds: string[];
+  eligibleMatchIds: string[];
   failed: number;
   matchIds: string[];
   pendingMatches: number;
@@ -107,13 +110,12 @@ export async function sendOpenPlayerOfMatchNotifications({
       continue;
     }
 
-    const pendingMatches = data.matches.filter(
-      (match) =>
-        !match.userVote &&
-        match.players.length >= 2 &&
-        match.votingStatus === "open" &&
-        isMatchDateReached(match.date),
-    );
+    const eligibleMatches = data.matches.filter(isEligiblePlayerOfMatchReminderMatch);
+    const alreadyVotedMatches = eligibleMatches.filter((match) => match.userVote);
+    const pendingMatches = eligibleMatches.filter((match) => !match.userVote);
+
+    detail.alreadyVotedMatchIds = alreadyVotedMatches.map((match) => match.id);
+    detail.eligibleMatchIds = eligibleMatches.map((match) => match.id);
     detail.pendingMatches = pendingMatches.length;
     detail.matchIds = pendingMatches.map((match) => match.id);
 
@@ -121,7 +123,7 @@ export async function sendOpenPlayerOfMatchNotifications({
       skipped += 1;
       skippedNoPendingMatches += 1;
       detail.skipped += 1;
-      detail.reasons.push("no-pending-matches");
+      detail.reasons.push(...getNoPendingMatchReasons(data.matches));
       details.push(detail);
       continue;
     }
@@ -346,6 +348,8 @@ function createNotificationDetail(
   subscriptions: PushSubscriptionRecord[],
 ): PlayerOfMatchNotificationDetail {
   return {
+    alreadyVotedMatchIds: [],
+    eligibleMatchIds: [],
     failed: 0,
     matchIds: [],
     pendingMatches: 0,
@@ -356,6 +360,53 @@ function createNotificationDetail(
     subscriptionCount: subscriptions.length,
     userId,
   };
+}
+
+function isEligiblePlayerOfMatchReminderMatch(match: PlayerOfMatchMatch) {
+  return (
+    match.players.length >= 2 &&
+    match.votingStatus === "open" &&
+    isMatchDateReached(match.date)
+  );
+}
+
+function getNoPendingMatchReasons(matches: PlayerOfMatchMatch[]) {
+  const reasons = new Set<string>();
+  const eligibleMatches = matches.filter(isEligiblePlayerOfMatchReminderMatch);
+
+  if (eligibleMatches.length > 0 && eligibleMatches.every((match) => match.userVote)) {
+    reasons.add("already-voted");
+  }
+
+  if (matches.length === 0) {
+    reasons.add("no-matches");
+  }
+
+  if (matches.some((match) => match.players.length < 2)) {
+    reasons.add("not-enough-players");
+  }
+
+  if (matches.some((match) => match.votingStatus === "scheduled")) {
+    reasons.add("voting-scheduled");
+  }
+
+  if (matches.some((match) => match.votingStatus === "closed")) {
+    reasons.add("voting-closed");
+  }
+
+  if (
+    matches.some(
+      (match) => match.votingStatus === "open" && !isMatchDateReached(match.date),
+    )
+  ) {
+    reasons.add("match-date-not-reached");
+  }
+
+  if (reasons.size === 0) {
+    reasons.add("no-pending-matches");
+  }
+
+  return [...reasons];
 }
 
 function pushUniqueReason(detail: PlayerOfMatchNotificationDetail, reason: string) {
