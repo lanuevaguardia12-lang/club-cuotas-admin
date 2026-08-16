@@ -62,6 +62,14 @@ export interface PlayerStreakRankingRow {
   rank: number;
 }
 
+export interface PlayerHistoricalStreakRankingRow {
+  bestStreak: number;
+  photoDataUrl?: string;
+  playerId: string;
+  playerName: string;
+  rank: number;
+}
+
 export interface PlayerAttendanceRankingRow {
   attendanceRate: number;
   attendedMatches: number;
@@ -76,6 +84,7 @@ export interface PlayerOfMatchCurrentRanking {
   attendanceRank?: number;
   attendanceRate: number;
   attendedMatches: number;
+  bestStreak: number;
   currentStreak: number;
   photoDataUrl?: string;
   playerId: string;
@@ -87,6 +96,7 @@ export interface PlayerOfMatchCurrentRanking {
 export interface PlayerOfMatchRankings {
   attendance: PlayerAttendanceRankingRow[];
   currentPlayer?: PlayerOfMatchCurrentRanking;
+  historicalStreaks: PlayerHistoricalStreakRankingRow[];
   mvp: PlayerOfMatchRankingRow[];
   streaks: PlayerStreakRankingRow[];
 }

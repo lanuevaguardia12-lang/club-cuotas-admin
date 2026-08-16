@@ -250,18 +250,27 @@ export function AccountContent({ profile }: AccountContentProps) {
                   Última asistencia: vs {attendance.lastAttendanceRival}
                 </p>
               ) : null}
+              <p className="text-muted-foreground mt-1 text-sm">
+                Mejor racha histórica: {attendance?.bestStreak ?? 0} partidos.
+              </p>
             </div>
             <div className="bg-primary text-primary-foreground grid size-14 place-items-center rounded-md text-2xl font-semibold">
               {attendance?.currentStreak ?? 0}
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <MetricCard
               icon={Trophy}
               label="MVP ganados"
               value={String(player?.mvpWins ?? 0)}
               detail="Votaciones cerradas"
+            />
+            <MetricCard
+              icon={Flame}
+              label="Mejor racha"
+              value={String(attendance?.bestStreak ?? 0)}
+              detail="Récord histórico"
             />
             <MetricCard
               icon={Percent}

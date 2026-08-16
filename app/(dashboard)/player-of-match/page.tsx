@@ -22,17 +22,17 @@ export default async function PlayerOfMatchPage() {
   const canVote = user.role !== "admin" && hasPermission(user, "player-of-match:vote");
 
   return (
-    <main className="grid gap-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+    <main className="grid min-w-0 gap-6 overflow-hidden">
+      <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <p className="text-muted-foreground text-sm font-medium">
             Votación del plantel
           </p>
-          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-normal sm:text-3xl">
-            <Trophy className="text-primary size-7" />
+          <h1 className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-2xl font-semibold tracking-normal sm:text-3xl">
+            <Trophy className="text-primary size-7 shrink-0" />
             MVP y rachas
           </h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
+          <p className="text-muted-foreground mt-2 max-w-full text-sm break-words sm:max-w-2xl">
             Votá el MVP, revisá resultados y compará rankings internos del plantel.
           </p>
         </div>

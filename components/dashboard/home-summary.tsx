@@ -38,9 +38,9 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
   const standingsRows = buildHomeStandingsRows(fixture);
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
       {playerProfile ? (
-        <Card className="club-animate-fade-up">
+        <Card className="club-animate-fade-up overflow-hidden">
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -80,7 +80,7 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         </Card>
       ) : null}
 
-      <Card className="club-animate-fade-up">
+      <Card className="club-animate-fade-up overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <CalendarDays className="text-primary size-5" />
@@ -107,7 +107,7 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         </CardContent>
       </Card>
 
-      <Card className="club-animate-fade-up">
+      <Card className="club-animate-fade-up overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <CheckCircle2 className="text-primary size-5" />
@@ -130,7 +130,7 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         </CardContent>
       </Card>
 
-      <Card className="club-animate-fade-up">
+      <Card className="club-animate-fade-up overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Trophy className="text-primary size-5" />
@@ -198,16 +198,16 @@ function HomeMatchCard({
   return (
     <div
       className={cn(
-        "grid gap-3 rounded-md border p-3",
+        "grid min-w-0 gap-3 rounded-md border p-3",
         getCompetitionCardClass(match.competitionKind),
       )}
     >
-      <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
-        <span>
+      <div className="text-muted-foreground flex min-w-0 items-center justify-between gap-3 text-xs">
+        <span className="min-w-0 truncate">
           {match.round}
           {match.roundDate ? ` · ${match.roundDate}` : ""}
         </span>
-        <span>{match.time || "-"}</span>
+        <span className="shrink-0">{match.time || "-"}</span>
       </div>
       <CompetitionBadge kind={match.competitionKind} />
       <div className="grid gap-2 text-sm">
@@ -256,16 +256,16 @@ function HomePlayedMatchCard({
   return (
     <div
       className={cn(
-        "grid gap-3 rounded-md border p-3",
+        "grid min-w-0 gap-3 rounded-md border p-3",
         getCompetitionCardClass(match.competitionKind),
       )}
     >
-      <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
-        <span>
+      <div className="text-muted-foreground flex min-w-0 items-center justify-between gap-3 text-xs">
+        <span className="min-w-0 truncate">
           {match.round}
           {match.roundDate ? ` · ${match.roundDate}` : ""}
         </span>
-        <span>{match.time || "-"}</span>
+        <span className="shrink-0">{match.time || "-"}</span>
       </div>
       <CompetitionBadge kind={match.competitionKind} />
       <div className="grid gap-2 text-sm">
@@ -312,8 +312,8 @@ function RecentTeamMatches({
   );
 
   return (
-    <div className="grid gap-2">
-      <p className="text-muted-foreground text-xs font-semibold uppercase">
+    <div className="grid min-w-0 gap-2">
+      <p className="text-muted-foreground truncate text-xs font-semibold uppercase">
         Últimos de {teamName}
       </p>
       {recentMatches.length > 0 ? (
@@ -353,9 +353,9 @@ function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
   }
 
   return (
-    <div className="bg-muted/60 rounded-md px-3 py-2 text-xs">
+    <div className="bg-muted/60 min-w-0 rounded-md px-3 py-2 text-xs">
       <p className="font-semibold">Goles</p>
-      <p className="text-muted-foreground mt-1">{match.goals.join(" · ")}</p>
+      <p className="text-muted-foreground mt-1 break-words">{match.goals.join(" · ")}</p>
     </div>
   );
 }
@@ -378,7 +378,7 @@ function TeamLine({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 rounded-md px-3 py-2",
+        "flex min-w-0 items-center justify-between gap-3 rounded-md px-3 py-2",
         isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
       )}
     >

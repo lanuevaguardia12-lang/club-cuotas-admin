@@ -41,6 +41,7 @@ import {
   type PlayerOfMatchVoteFormValues,
 } from "@/lib/player-of-match/validation";
 import type {
+  PlayerHistoricalStreakRankingRow,
   PlayerOfMatchData,
   PlayerOfMatchMatch,
   PlayerOfMatchResult,
@@ -68,6 +69,7 @@ export function PlayerOfMatchContent({
   );
   const hasRankingData =
     data.rankings.mvp.length > 0 ||
+    data.rankings.historicalStreaks.length > 0 ||
     data.rankings.streaks.length > 0 ||
     data.rankings.attendance.length > 0;
 
@@ -86,7 +88,7 @@ export function PlayerOfMatchContent({
   }
 
   return (
-    <section className="grid gap-5">
+    <section className="grid min-w-0 gap-5 overflow-hidden">
       <nav className="border-border bg-card flex max-w-full min-w-0 gap-1 overflow-x-auto rounded-md border p-1">
         {[
           { label: "MVP", value: "mvp" as const },
@@ -200,25 +202,45 @@ function MvpTab({
 
 function RankingTab({ data }: { data: PlayerOfMatchData }) {
   return (
-    <section className="grid gap-4">
+    <section className="grid min-w-0 gap-4">
       <div>
         <p className="text-muted-foreground text-sm font-medium">Ranking MVP</p>
-        <h2 className="mt-1 text-xl font-semibold tracking-normal">
+        <h2 className="mt-1 text-xl font-semibold tracking-normal text-balance">
           Podios acumulados del plantel
         </h2>
       </div>
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-sm">
+          <div className="max-w-full overflow-hidden">
+            <table className="w-full table-fixed text-xs sm:text-sm">
+              <colgroup>
+                <col className="w-10 sm:w-14" />
+                <col />
+                <col className="w-11 sm:w-20" />
+                <col className="w-11 sm:w-20" />
+                <col className="w-11 sm:w-20" />
+                <col className="w-12 sm:w-24" />
+              </colgroup>
               <thead>
                 <tr className="border-border bg-muted/40 border-b">
                   <TableHead>#</TableHead>
                   <TableHead>Jugador</TableHead>
-                  <TableHead>1º puesto</TableHead>
-                  <TableHead>2º puesto</TableHead>
-                  <TableHead>3º puesto</TableHead>
-                  <TableHead>Total podios</TableHead>
+                  <TableHead className="text-center">
+                    <span className="sm:hidden">1º</span>
+                    <span className="hidden sm:inline">1º puesto</span>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <span className="sm:hidden">2º</span>
+                    <span className="hidden sm:inline">2º puesto</span>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <span className="sm:hidden">3º</span>
+                    <span className="hidden sm:inline">3º puesto</span>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <span className="sm:hidden">Tot</span>
+                    <span className="hidden sm:inline">Total</span>
+                  </TableHead>
                 </tr>
               </thead>
               <tbody>
@@ -228,17 +250,24 @@ function RankingTab({ data }: { data: PlayerOfMatchData }) {
                       key={row.playerName}
                       className="border-border border-b last:border-0"
                     >
-                      <td className="px-4 py-3 font-semibold">#{row.rank}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-3 font-semibold sm:px-4">#{row.rank}</td>
+                      <td className="min-w-0 px-2 py-3 sm:px-4">
                         <RankingPlayer
+                          compact
                           name={row.playerName}
                           photoDataUrl={row.photoDataUrl}
                         />
                       </td>
-                      <td className="px-4 py-3 font-semibold">{row.firstPlaces}</td>
-                      <td className="px-4 py-3">{row.secondPlaces}</td>
-                      <td className="px-4 py-3">{row.thirdPlaces}</td>
-                      <td className="px-4 py-3 font-semibold">{row.totalPodiums}</td>
+                      <td className="px-2 py-3 text-center font-semibold sm:px-4">
+                        {row.firstPlaces}
+                      </td>
+                      <td className="px-2 py-3 text-center sm:px-4">
+                        {row.secondPlaces}
+                      </td>
+                      <td className="px-2 py-3 text-center sm:px-4">{row.thirdPlaces}</td>
+                      <td className="px-2 py-3 text-center font-semibold sm:px-4">
+                        {row.totalPodiums}
+                      </td>
                     </tr>
                   ))
                 ) : (
@@ -264,10 +293,10 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
   const current = data.rankings.currentPlayer;
 
   return (
-    <section className="grid gap-5">
+    <section className="grid min-w-0 gap-5">
       <div>
         <p className="text-muted-foreground text-sm font-medium">Rachas y asistencia</p>
-        <h2 className="mt-1 text-xl font-semibold tracking-normal">
+        <h2 className="mt-1 text-xl font-semibold tracking-normal text-balance">
           Ranking de jugadores con mayor cantidad de asistencia consecutiva
         </h2>
         <p className="text-muted-foreground mt-2 text-sm">
@@ -285,11 +314,14 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
             />
             <div className="min-w-0">
               <p className="text-sm font-medium text-white/80">Tu racha</p>
-              <h2 className="mt-1 text-xl font-semibold">
+              <h2 className="mt-1 text-xl font-semibold text-balance">
                 Tenés {current.currentStreak} partidos consecutivos
               </h2>
               <p className="mt-1 text-sm text-white/80">
                 {current.playerName} · puesto #{current.streakRank ?? "-"} en rachas
+              </p>
+              <p className="mt-1 text-xs font-medium text-white/75">
+                Tu récord histórico: {current.bestStreak} partidos.
               </p>
             </div>
             <div className="grid size-16 place-items-center rounded-md bg-white text-2xl font-semibold text-[#012f77]">
@@ -299,12 +331,14 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
         </Card>
       ) : null}
 
+      <HistoricalStreakPodium rows={data.rankings.historicalStreaks.slice(0, 3)} />
+
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Flame className="text-primary size-5" />
-              Ranking de rachas
+              Rachas al día de hoy
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -338,6 +372,50 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
   );
 }
 
+function HistoricalStreakPodium({ rows }: { rows: PlayerHistoricalStreakRankingRow[] }) {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Crown className="text-primary size-5" />
+          Récords históricos
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-2">
+          {rows.map((row) => (
+            <div
+              key={row.playerId}
+              className={cn(
+                "bg-muted/50 grid min-w-0 gap-2 rounded-md border p-2 text-center",
+                row.rank === 1 && "border-[#f4ce0f] bg-[#f4ce0f]/15",
+              )}
+            >
+              <span className="text-muted-foreground text-xs font-bold">#{row.rank}</span>
+              <PlayerAvatar
+                className="mx-auto size-11 border-2 sm:size-14"
+                name={row.playerName}
+                photoDataUrl={row.photoDataUrl}
+              />
+              <p className="line-clamp-2 min-h-8 text-xs leading-tight font-semibold">
+                {row.playerName}
+              </p>
+              <p className="text-primary text-lg font-bold">{row.bestStreak}</p>
+              <p className="text-muted-foreground text-[0.68rem] leading-tight">
+                rachas consecutivas
+              </p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function StreakRankingTable({ rows }: { rows: PlayerStreakRankingRow[] }) {
   if (rows.length === 0) {
     return (
@@ -348,30 +426,47 @@ function StreakRankingTable({ rows }: { rows: PlayerStreakRankingRow[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-sm">
+    <div className="max-w-full overflow-hidden">
+      <table className="w-full table-fixed text-xs sm:text-sm">
+        <colgroup>
+          <col className="w-10 sm:w-14" />
+          <col />
+          <col className="w-20 sm:w-28" />
+          <col className="w-24 sm:w-40" />
+        </colgroup>
         <thead>
           <tr className="border-border bg-muted/40 border-b">
             <TableHead>#</TableHead>
             <TableHead>Jugador</TableHead>
-            <TableHead>Fueguitos</TableHead>
-            <TableHead>Última asistencia</TableHead>
+            <TableHead className="text-center leading-tight">
+              Rachas
+              <br />
+              consecutivas
+            </TableHead>
+            <TableHead>
+              <span className="sm:hidden">Última</span>
+              <span className="hidden sm:inline">Última asistencia</span>
+            </TableHead>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.playerId} className="border-border border-b last:border-0">
-              <td className="px-4 py-3 font-semibold">#{row.rank}</td>
-              <td className="px-4 py-3">
-                <RankingPlayer name={row.playerName} photoDataUrl={row.photoDataUrl} />
+              <td className="px-2 py-3 font-semibold sm:px-4">#{row.rank}</td>
+              <td className="min-w-0 px-2 py-3 sm:px-4">
+                <RankingPlayer
+                  compact
+                  name={row.playerName}
+                  photoDataUrl={row.photoDataUrl}
+                />
               </td>
-              <td className="px-4 py-3">
-                <span className="bg-primary/10 text-primary inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold">
-                  <Flame className="size-4 fill-current" />
+              <td className="px-2 py-3 text-center sm:px-4">
+                <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold">
+                  <Flame className="size-3.5 fill-current sm:size-4" />
                   {row.currentStreak}
                 </span>
               </td>
-              <td className="text-muted-foreground px-4 py-3">
+              <td className="text-muted-foreground min-w-0 truncate px-2 py-3 sm:px-4">
                 {row.lastAttendanceRival
                   ? `vs ${row.lastAttendanceRival}`
                   : "Sin asistencia todavía"}
@@ -423,11 +518,25 @@ function RankingList({
   );
 }
 
-function RankingPlayer({ name, photoDataUrl }: { name: string; photoDataUrl?: string }) {
+function RankingPlayer({
+  compact = false,
+  name,
+  photoDataUrl,
+}: {
+  compact?: boolean;
+  name: string;
+  photoDataUrl?: string;
+}) {
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <PlayerAvatar className="size-9 border-2" name={name} photoDataUrl={photoDataUrl} />
-      <span className="truncate font-medium">{name}</span>
+    <div className={cn("flex min-w-0 items-center", compact ? "gap-2" : "gap-3")}>
+      <PlayerAvatar
+        className={cn(compact ? "size-8 border-2" : "size-9 border-2")}
+        name={name}
+        photoDataUrl={photoDataUrl}
+      />
+      <span className={cn("truncate font-medium", compact && "text-xs sm:text-sm")}>
+        {name}
+      </span>
     </div>
   );
 }
@@ -997,9 +1106,20 @@ function VoteResult({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TableHead({ children }: { children: React.ReactNode }) {
+function TableHead({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <th className="text-muted-foreground h-11 px-4 text-left align-middle font-medium">
+    <th
+      className={cn(
+        "text-muted-foreground h-11 px-2 text-left align-middle font-medium sm:px-4",
+        className,
+      )}
+    >
       {children}
     </th>
   );

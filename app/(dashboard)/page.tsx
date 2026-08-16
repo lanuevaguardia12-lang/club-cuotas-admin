@@ -68,13 +68,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ]);
 
     return (
-      <main className="grid gap-6">
-        <header className="grid gap-2">
+      <main className="grid min-w-0 gap-6 overflow-hidden">
+        <header className="grid min-w-0 gap-2">
           <p className="text-muted-foreground text-sm font-medium">Home</p>
           <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Hola, {user.name}
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-sm">
+          <p className="text-muted-foreground max-w-full text-sm break-words sm:max-w-2xl">
             Tu cuota, el proximo partido y la tabla del torneo en una vista rapida.
           </p>
         </header>

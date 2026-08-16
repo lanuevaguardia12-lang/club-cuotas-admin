@@ -422,6 +422,7 @@ export class DatabaseService implements IDataService {
       matches: [],
       rankings: {
         attendance: [],
+        historicalStreaks: [],
         mvp: [],
         streaks: [],
       },

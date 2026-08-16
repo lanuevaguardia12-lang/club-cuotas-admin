@@ -484,6 +484,7 @@ const playerAttendanceSnapshotHeaders = [
   "partidos_totales",
   "partidos_asistidos",
   "porcentaje_asistencia",
+  "mejor_racha",
   "racha_actual",
   "ultima_asistencia_fecha",
   "ultima_asistencia_rival",
@@ -4031,6 +4032,9 @@ function mapRowsToPlayerAttendanceSnapshots(
               pick(record, ["porcentaje_asistencia", "attendance_rate", "attendance"]),
             ).replace(",", "."),
           ) || 0,
+        bestStreak: parseNumericValue(
+          pick(record, ["mejor_racha", "best_streak", "racha_historica", "record_racha"]),
+        ),
         currentStreak: parseNumericValue(
           pick(record, ["racha_actual", "current_streak", "streak"]),
         ),
@@ -4112,9 +4116,9 @@ function buildPlayerAttendanceSummary(
   const seasonMatches = matches.filter(
     (match) => match.date >= seasonStartDate && match.date <= today,
   );
-  const attendedMatches = seasonMatches.filter((match) =>
-    match.players.some((name) => normalizeClubPlayerName(name) === normalizedPlayerName),
-  );
+  const hasAttendance = (match: MatchRecord) =>
+    match.players.some((name) => normalizeClubPlayerName(name) === normalizedPlayerName);
+  const attendedMatches = seasonMatches.filter(hasAttendance);
   const currentStreak = [...seasonMatches]
     .sort((left, right) => right.date.localeCompare(left.date))
     .reduce(
@@ -4123,9 +4127,7 @@ function buildPlayerAttendanceSummary(
           return streak;
         }
 
-        const attended = match.players.some(
-          (name) => normalizeClubPlayerName(name) === normalizedPlayerName,
-        );
+        const attended = hasAttendance(match);
 
         return attended
           ? { count: streak.count + 1, done: false }
@@ -4133,6 +4135,23 @@ function buildPlayerAttendanceSummary(
       },
       { count: 0, done: false },
     ).count;
+  const bestStreak = [...seasonMatches]
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .reduce(
+      (streak, match) => {
+        if (!hasAttendance(match)) {
+          return { best: streak.best, current: 0 };
+        }
+
+        const current = streak.current + 1;
+
+        return {
+          best: Math.max(streak.best, current),
+          current,
+        };
+      },
+      { best: 0, current: 0 },
+    ).best;
   const lastAttendance = [...attendedMatches].sort((left, right) =>
     right.date.localeCompare(left.date),
   )[0];
@@ -4141,6 +4160,7 @@ function buildPlayerAttendanceSummary(
     attendedMatches: attendedMatches.length,
     attendanceRate:
       seasonMatches.length > 0 ? attendedMatches.length / seasonMatches.length : 0,
+    bestStreak,
     calculatedAt: new Date().toISOString(),
     currentStreak,
     lastAttendanceDate: lastAttendance?.date ?? "",
@@ -4155,6 +4175,7 @@ function createEmptyPlayerAttendanceSummary(): PlayerAttendanceSummary {
   return {
     attendedMatches: 0,
     attendanceRate: 0,
+    bestStreak: 0,
     calculatedAt: new Date().toISOString(),
     currentStreak: 0,
     lastAttendanceDate: "",
@@ -4205,6 +4226,10 @@ function buildPlayerAttendanceSnapshotWritableRow(
     porcentaje_asistencia: String(snapshot.attendanceRate),
     attendance_rate: String(snapshot.attendanceRate),
     attendance: String(snapshot.attendanceRate),
+    mejor_racha: String(snapshot.bestStreak),
+    best_streak: String(snapshot.bestStreak),
+    racha_historica: String(snapshot.bestStreak),
+    record_racha: String(snapshot.bestStreak),
     racha_actual: String(snapshot.currentStreak),
     current_streak: String(snapshot.currentStreak),
     streak: String(snapshot.currentStreak),
@@ -4228,6 +4253,7 @@ function hasSamePlayerAttendanceSnapshot(
   return (
     left.attendedMatches === right.attendedMatches &&
     left.attendanceRate === right.attendanceRate &&
+    left.bestStreak === right.bestStreak &&
     left.currentStreak === right.currentStreak &&
     left.lastAttendanceDate === right.lastAttendanceDate &&
     left.lastAttendanceRival === right.lastAttendanceRival &&
@@ -5547,6 +5573,21 @@ function buildPlayerOfMatchRankings({
         left.playerName.localeCompare(right.playerName, "es"),
     )
     .map((row, index) => ({ ...row, rank: index + 1 }));
+  const historicalStreaks = attendanceSummaries
+    .map(({ player, summary }) => ({
+      bestStreak: summary.bestStreak,
+      photoDataUrl: photoMap.get(normalizeClubPlayerName(player.name)),
+      playerId: player.id,
+      playerName: player.name,
+      rank: 0,
+    }))
+    .filter((row) => row.bestStreak > 0)
+    .sort(
+      (left, right) =>
+        right.bestStreak - left.bestStreak ||
+        left.playerName.localeCompare(right.playerName, "es"),
+    )
+    .map((row, index) => ({ ...row, rank: index + 1 }));
   const attendance = attendanceSummaries
     .map(({ player, summary }) => ({
       attendanceRate: summary.attendanceRate,
@@ -5592,6 +5633,9 @@ function buildPlayerOfMatchRankings({
             attendanceRank: currentAttendance.rank,
             attendanceRate: currentAttendance.attendanceRate,
             attendedMatches: currentAttendance.attendedMatches,
+            bestStreak:
+              historicalStreaks.find((row) => row.playerId === currentPlayer.id)
+                ?.bestStreak ?? 0,
             currentStreak: currentStreak?.currentStreak ?? 0,
             photoDataUrl:
               currentStreak?.photoDataUrl ??
@@ -5602,6 +5646,7 @@ function buildPlayerOfMatchRankings({
             totalMatches: currentAttendance.totalMatches,
           }
         : undefined,
+    historicalStreaks,
     mvp,
     streaks,
   };

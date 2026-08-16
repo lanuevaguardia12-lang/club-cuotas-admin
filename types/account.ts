@@ -31,6 +31,7 @@ export interface AccountPlayerProfile {
 export interface PlayerAttendanceSummary {
   attendedMatches: number;
   attendanceRate: number;
+  bestStreak: number;
   calculatedAt: string;
   currentStreak: number;
   lastAttendanceDate: string;
