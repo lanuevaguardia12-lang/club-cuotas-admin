@@ -22,6 +22,7 @@ const webhookEndpoints = [
   ["POST", "/api/webhooks/mercado-pago", "Mercado Pago Checkout Pro"],
   ["POST", "/api/webhooks/payments", "Google Forms expira cache de pagos"],
   ["POST", "/api/webhooks/player-of-match", "Google Forms dispara push MVP"],
+  ["POST", "/api/bot/whatsapp-reminders", "Dispara bot externo de WhatsApp"],
   ["GET", "/api/cron/player-fee-reminders", "Cron de cuotas impagas"],
   ["GET", "/api/cron/player-of-match-reminders", "Cron de respaldo MVP"],
   ["GET", "/api/cron/upcoming-match-reminders", "Cron de proximo partido"],
@@ -86,6 +87,8 @@ export default async function ApiDocsPage() {
         <CardContent className="grid gap-2 text-sm">
           <code>API_SECRET</code>
           <code>CRON_SECRET</code>
+          <code>WHATSAPP_BOT_WEBHOOK_URL</code>
+          <code>WHATSAPP_BOT_WEBHOOK_SECRET</code>
           <code>PAYMENTS_WEBHOOK_SECRET</code>
           <code>MERCADO_PAGO_ACCESS_TOKEN</code>
           <code>MERCADO_PAGO_WEBHOOK_SECRET</code>

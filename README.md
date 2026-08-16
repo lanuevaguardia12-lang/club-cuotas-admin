@@ -188,6 +188,8 @@ AUTH_USERS_JSON='[{"id":"admin","username":"admin","password":"replace-with-a-st
 API_SECRET="replace-with-a-long-random-api-secret"
 CRON_SECRET="replace-with-a-long-random-cron-secret"
 PAYMENTS_WEBHOOK_SECRET="replace-with-a-long-random-payments-webhook-secret"
+WHATSAPP_BOT_WEBHOOK_URL=""
+WHATSAPP_BOT_WEBHOOK_SECRET=""
 
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 VAPID_PRIVATE_KEY=""
@@ -266,6 +268,8 @@ Variables privadas:
 - `AUTH_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_NAME`,
   `AUTH_USERS_JSON`.
 - `API_SECRET`, `CRON_SECRET`.
+- `WHATSAPP_BOT_WEBHOOK_URL`, `WHATSAPP_BOT_WEBHOOK_SECRET` si se usa el bot
+  externo de WhatsApp.
 - `MERCADO_PAGO_*`, `STRIPE_*`.
 - `GOOGLE_SHEETS_*`.
 - `DATA_SOURCE`.
@@ -905,6 +909,37 @@ El cron no envia WhatsApp directamente. Genera recordatorios auditables en cola,
 preparados para conectar luego WhatsApp Business API, Twilio, Zenvia, QStash,
 Inngest u otro worker.
 
+El dashboard de administrador incluye el boton `Correr bot recordatorios`. Ese
+boton toma solamente el periodo visible en Home, busca jugadores impagos de ese
+mes, arma el mensaje con la plantilla vigente de Configuracion y lo envia al
+webhook configurado en `WHATSAPP_BOT_WEBHOOK_URL`. Vercel actua como disparador:
+el envio real de WhatsApp debe ejecutarlo un bot externo o PC virtual con sesion
+propia. Si `WHATSAPP_BOT_WEBHOOK_SECRET` esta definido, la app envia
+`Authorization: Bearer <WHATSAPP_BOT_WEBHOOK_SECRET>` al webhook.
+
+Payload enviado al bot:
+
+```json
+{
+  "source": "club-cuotas-admin",
+  "period": "2026-08",
+  "periodLabel": "agosto de 2026",
+  "currentOnly": true,
+  "messages": [
+    {
+      "playerId": "ivo-unzaga",
+      "playerName": "Ivo Unzaga",
+      "rawPhone": "1159556277",
+      "phone": "1159556277",
+      "fee": "$ 64.132",
+      "amount": 64132,
+      "paymentStatus": "pending",
+      "message": "Buenas Ivo Unzaga..."
+    }
+  ]
+}
+```
+
 El cron `/api/cron/player-fee-reminders` corre cada cuatro dias a las 18:00 UTC
 (15:00 de Argentina), envia push solo a jugadores impagos y usa `Recordatorios`
 como memoria para no repetir el aviso automatico antes de 4 dias por jugador y
@@ -1275,6 +1310,8 @@ Variables requeridas en Vercel:
 - `AUTH_SECRET`, `AUTH_USERS_JSON` o `ADMIN_*`.
 - `API_SECRET`.
 - `CRON_SECRET`.
+- `WHATSAPP_BOT_WEBHOOK_URL` y `WHATSAPP_BOT_WEBHOOK_SECRET` si se conecta el
+  bot externo de WhatsApp.
 - `GOOGLE_SHEETS_*`.
 - `MERCADO_PAGO_*` si se usa Mercado Pago.
 - `STRIPE_*` si se usa Stripe.

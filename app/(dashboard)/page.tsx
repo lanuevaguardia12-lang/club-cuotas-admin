@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
 import { HomeSummary } from "@/components/dashboard/home-summary";
+import { RunWhatsAppReminderBotButton } from "@/components/dashboard/run-whatsapp-reminder-bot-button";
 import { SendPendingNotificationsButton } from "@/components/dashboard/send-pending-notifications-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -118,7 +119,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
             <DashboardPeriodSelector period={dashboard.period} />
             {user?.role === "admin" ? (
-              <SendPendingNotificationsButton period={dashboard.period} />
+              <>
+                <SendPendingNotificationsButton period={dashboard.period} />
+                <RunWhatsAppReminderBotButton period={dashboard.period} />
+              </>
             ) : null}
           </div>
         </div>
