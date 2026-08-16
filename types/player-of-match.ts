@@ -37,6 +37,7 @@ export interface PlayerOfMatchMatch {
 export interface PlayerOfMatchResult {
   playerName: string;
   photoDataUrl?: string;
+  points: number;
   rank: number;
   votes: number;
 }

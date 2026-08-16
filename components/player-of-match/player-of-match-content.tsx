@@ -116,6 +116,7 @@ export function PlayerOfMatchContent({
         <MvpTab
           canManage={canManage}
           canVote={canVote}
+          currentPlayerName={data.rankings.currentPlayer?.playerName}
           currentMatches={currentMatches}
           historyMatches={historyMatches}
         />
@@ -129,11 +130,13 @@ export function PlayerOfMatchContent({
 function MvpTab({
   canManage,
   canVote,
+  currentPlayerName,
   currentMatches,
   historyMatches,
 }: {
   canManage: boolean;
   canVote: boolean;
+  currentPlayerName?: string;
   currentMatches: PlayerOfMatchMatch[];
   historyMatches: PlayerOfMatchMatch[];
 }) {
@@ -152,6 +155,7 @@ function MvpTab({
               <MatchVoteCard
                 canManage={canManage}
                 canVote={canVote}
+                currentPlayerName={currentPlayerName}
                 key={match.id}
                 match={match}
               />
@@ -184,6 +188,7 @@ function MvpTab({
                 <MatchVoteCard
                   canManage={canManage}
                   canVote={canVote}
+                  currentPlayerName={currentPlayerName}
                   key={match.id}
                   match={match}
                 />
@@ -544,10 +549,12 @@ function RankingPlayer({
 function MatchVoteCard({
   canManage,
   canVote: canUserVote,
+  currentPlayerName,
   match,
 }: {
   canManage: boolean;
   canVote: boolean;
+  currentPlayerName?: string;
   match: PlayerOfMatchMatch;
 }) {
   const [showResults, setShowResults] = useState(false);
@@ -556,8 +563,13 @@ function MatchVoteCard({
   const votingClosed = match.votingStatus === "closed";
   const votingScheduled = match.votingStatus === "scheduled";
   const hasEnoughPlayers = match.players.length >= 2;
+  const voteablePlayers = getVoteablePlayers(match.players, currentPlayerName);
+  const hasEnoughVoteablePlayers = voteablePlayers.length >= 2;
   const canVote =
-    canUserVote && hasEnoughPlayers && !alreadyVoted && match.votingStatus === "open";
+    canUserVote &&
+    hasEnoughVoteablePlayers &&
+    !alreadyVoted &&
+    match.votingStatus === "open";
   const statusConfig = {
     closed: {
       icon: Lock,
@@ -662,7 +674,7 @@ function MatchVoteCard({
             />
           </div>
         ) : canVote ? (
-          <PlayerVoteForm match={match} />
+          <PlayerVoteForm match={match} players={voteablePlayers} />
         ) : votingScheduled ? (
           <p className="text-muted-foreground text-sm">
             La votación se habilita automáticamente cuando el partido tiene jugadores
@@ -675,6 +687,10 @@ function MatchVoteCard({
         ) : !canUserVote ? (
           <p className="text-muted-foreground text-sm">
             La votación está disponible solo para usuarios jugadores.
+          </p>
+        ) : !hasEnoughVoteablePlayers ? (
+          <p className="text-muted-foreground text-sm">
+            Necesitás tener al menos dos compañeros disponibles para votar.
           </p>
         ) : (
           <p className="text-muted-foreground text-sm">
@@ -819,6 +835,7 @@ function FriendlyMatchEditForm({
 
 function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
   const podium = match.results.slice(0, 3);
+  const totalPoints = match.results.reduce((total, result) => total + result.points, 0);
 
   return (
     <div className="club-animate-fade-up border-border bg-card overflow-hidden rounded-lg border shadow-sm">
@@ -835,7 +852,7 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
             </h3>
           </div>
           <Badge className="shrink-0 border-white/20 bg-white/10 text-white">
-            {match.totalVotes} {match.totalVotes === 1 ? "voto" : "votos"}
+            {totalPoints} {totalPoints === 1 ? "punto" : "puntos"}
           </Badge>
         </div>
 
@@ -865,7 +882,7 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
                   #{result.rank} {result.playerName}
                 </span>
                 <span className="font-semibold text-[#f4ce0f]">
-                  {result.votes} {result.votes === 1 ? "voto" : "votos"}
+                  {formatResultScore(result)}
                 </span>
               </div>
             ))}
@@ -930,7 +947,7 @@ function PodiumSpot({
           {result?.playerName ?? "Sin votos"}
         </p>
         <p className="mt-1 text-[0.65rem] font-semibold opacity-80 sm:text-xs">
-          {result ? `${result.votes} ${result.votes === 1 ? "voto" : "votos"}` : "-"}
+          {result ? formatResultScore(result) : "-"}
         </p>
       </div>
     </div>
@@ -964,7 +981,13 @@ function PlayerAvatar({
   );
 }
 
-function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
+function PlayerVoteForm({
+  match,
+  players,
+}: {
+  match: PlayerOfMatchMatch;
+  players: string[];
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
@@ -1008,11 +1031,18 @@ function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
     >
       <LoadingModal open={isPending} description="Guardando voto..." />
       <input type="hidden" {...register("matchId")} />
+      <div className="border-border bg-primary/5 text-primary rounded-md border p-3 text-sm">
+        <p className="font-semibold">Cómo suma tu voto</p>
+        <p className="mt-1 text-xs leading-relaxed">
+          Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros
+          del partido; tu propio nombre no participa de tus opciones.
+        </p>
+      </div>
       <VoteSelect
         disabledOption={secondVote}
         error={errors.firstVotePlayerName?.message}
         label="Primer voto"
-        players={match.players}
+        players={players}
         registration={register("firstVotePlayerName")}
         selected={Boolean(firstVote)}
       />
@@ -1020,7 +1050,7 @@ function PlayerVoteForm({ match }: { match: PlayerOfMatchMatch }) {
         disabledOption={firstVote}
         error={errors.secondVotePlayerName?.message}
         label="Segundo voto"
-        players={match.players}
+        players={players}
         registration={register("secondVotePlayerName")}
         selected={Boolean(secondVote)}
       />
@@ -1212,6 +1242,23 @@ function formatPercent(value: number) {
     maximumFractionDigits: 0,
     style: "percent",
   }).format(value);
+}
+
+function formatResultScore(result: PlayerOfMatchResult) {
+  const pointsLabel = result.points === 1 ? "punto" : "puntos";
+  const votesLabel = result.votes === 1 ? "voto" : "votos";
+
+  return `${result.points} ${pointsLabel} (${result.votes} ${votesLabel})`;
+}
+
+function getVoteablePlayers(players: string[], currentPlayerName?: string) {
+  const currentPlayerKey = normalizeValue(currentPlayerName);
+
+  if (!currentPlayerKey) {
+    return players;
+  }
+
+  return players.filter((player) => normalizeValue(player) !== currentPlayerKey);
 }
 
 function normalizeValue(value?: string) {

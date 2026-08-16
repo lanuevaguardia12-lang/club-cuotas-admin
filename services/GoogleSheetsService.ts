@@ -2372,6 +2372,16 @@ export class GoogleSheetsService implements IDataService {
       throw new DataServiceError("Elegí dos jugadores distintos.", "CONFIGURATION_ERROR");
     }
 
+    const firstVoteLookupKeys = buildPlayerLookupKeys(firstVotePlayerName);
+    const secondVoteLookupKeys = buildPlayerLookupKeys(secondVotePlayerName);
+
+    if (
+      lookupSetsIntersect(voterLookupKeys, firstVoteLookupKeys) ||
+      lookupSetsIntersect(voterLookupKeys, secondVoteLookupKeys)
+    ) {
+      throw new DataServiceError("No podés votarte a vos mismo.", "CONFIGURATION_ERROR");
+    }
+
     const spreadsheetId = this.getAppSpreadsheetId();
 
     await this.ensureSheetForRange(this.config.playerOfMatchVotesRange, spreadsheetId);
@@ -5599,7 +5609,7 @@ function buildPlayerOfMatchRankings({
     .filter((match) => match.votingStatus === "closed" && match.totalVotes > 0)
     .forEach((match) => {
       match.results
-        .filter((result) => result.rank <= 3 && result.votes > 0)
+        .filter((result) => result.rank <= 3 && result.points > 0)
         .forEach((result) => {
           const key = normalizeClubPlayerName(result.playerName);
           const row = mvpRowsByKey.get(key);
@@ -5736,24 +5746,30 @@ function buildPlayerOfMatchResults(
   votes: PlayerOfMatchVote[],
   playerPhotoMap: Map<string, string>,
 ) {
+  const pointCounts = new Map<string, number>();
   const voteCounts = new Map<string, number>();
   const playerNamesByKey = new Map<string, string>();
 
   match.players.forEach((player) => {
     const key = normalizeClubPlayerName(player);
 
+    pointCounts.set(key, 0);
     voteCounts.set(key, 0);
     playerNamesByKey.set(key, player);
   });
 
   votes.forEach((vote) => {
-    [vote.firstVotePlayerName, vote.secondVotePlayerName].forEach((playerName) => {
+    [
+      { playerName: vote.firstVotePlayerName, points: 2 },
+      { playerName: vote.secondVotePlayerName, points: 1 },
+    ].forEach(({ playerName, points }) => {
       const key = normalizeClubPlayerName(playerName);
 
       if (!voteCounts.has(key)) {
         return;
       }
 
+      pointCounts.set(key, (pointCounts.get(key) ?? 0) + points);
       voteCounts.set(key, (voteCounts.get(key) ?? 0) + 1);
     });
   });
@@ -5762,10 +5778,15 @@ function buildPlayerOfMatchResults(
     .map(([key, votesCount]) => ({
       playerName: playerNamesByKey.get(key) ?? key,
       photoDataUrl: playerPhotoMap.get(key),
+      points: pointCounts.get(key) ?? 0,
       rank: 0,
       votes: votesCount,
     }))
     .sort((left, right) => {
+      if (right.points !== left.points) {
+        return right.points - left.points;
+      }
+
       if (right.votes !== left.votes) {
         return right.votes - left.votes;
       }
