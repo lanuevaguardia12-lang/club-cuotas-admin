@@ -51,11 +51,17 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
     categoryId: params.campeonato,
     year: params.year,
   });
-  const fixtureScheduleOverrides = await getDataService()
+  const dataService = getDataService();
+  const fixtureScheduleOverrides = await dataService
     .getFixtureMatchScheduleOverrides()
     .catch(() => []);
   const data = applyLeagueFixtureScheduleOverrides(rawData, fixtureScheduleOverrides);
   const canManageFixture = user.role === "admin";
+  const playerOptions = canManageFixture
+    ? (await dataService.getPlayersData().catch(() => ({ players: [] }))).players
+        .filter((player) => player.status === "active")
+        .map((player) => ({ id: player.id, name: player.name }))
+    : [];
 
   return (
     <main className="grid gap-6">
@@ -88,6 +94,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
         activeTab={params.tab}
         canManage={canManageFixture}
         data={data}
+        playerOptions={playerOptions}
         selectedRoundKeys={toArray(params.round)}
       />
     </main>

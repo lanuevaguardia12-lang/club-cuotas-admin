@@ -58,9 +58,11 @@ export interface LeagueFixtureMatch {
   detailUrl?: string;
   goalEvents: LeagueGoalEvent[];
   goals: string[];
+  manualGoalScorers?: string[];
   cards: string[];
   isClubMatch: boolean;
   involvesBye: boolean;
+  resultOverrideUpdatedAt?: string;
   scheduleOverrideUpdatedAt?: string;
 }
 
@@ -95,16 +97,27 @@ export interface LeagueFixtureData {
 }
 
 export interface FixtureMatchScheduleOverride {
+  goalScorers: string[];
+  localScore?: number;
   matchId: string;
   dateTime: string;
   updatedAt: string;
   updatedByName: string;
   updatedByUserId: string;
+  visitorScore?: number;
 }
 
 export interface UpdateFixtureMatchScheduleInput {
+  goalScorers?: string[];
+  localScore?: number;
   matchId: string;
   dateTime: string;
   updatedByName: string;
   updatedByUserId: string;
+  visitorScore?: number;
+}
+
+export interface FixturePlayerOption {
+  id: string;
+  name: string;
 }

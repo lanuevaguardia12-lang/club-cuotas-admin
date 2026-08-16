@@ -74,6 +74,7 @@ import type {
   FixtureMatchScheduleOverride,
   LeagueCompetitionKind,
   LeagueFixtureMatch,
+  LeagueGoalEvent,
   LeagueMatchStatus,
   UpdateFixtureMatchScheduleInput,
 } from "@/types/fixture";
@@ -493,6 +494,9 @@ const playerAttendanceSnapshotHeaders = [
 const fixtureOverrideHeaders = [
   "match_id",
   "fecha_hora",
+  "goles_local",
+  "goles_visitante",
+  "goleadores_lng",
   "actualizado_por_user_id",
   "actualizado_por",
   "actualizado_en",
@@ -2151,11 +2155,14 @@ export class GoogleSheetsService implements IDataService {
     );
 
     const override: FixtureMatchScheduleOverride = {
-      matchId: input.matchId,
       dateTime: input.dateTime,
+      goalScorers: input.goalScorers ?? [],
+      localScore: input.localScore,
+      matchId: input.matchId,
       updatedAt: new Date().toISOString(),
       updatedByName: input.updatedByName,
       updatedByUserId: input.updatedByUserId,
+      visitorScore: input.visitorScore,
     };
     const row = buildFixtureOverrideWritableRow(headers, override);
     const matchIdIndex = findHeaderIndex(headers, ["match_id", "partido_id", "id"]);
@@ -5179,14 +5186,24 @@ function mapRowsToFixtureMatchScheduleOverrides(
       const dateTime = normalizeFixtureOverrideDateTime(
         pick(record, ["fecha_hora", "datetime", "date_time", "fecha"]),
       );
+      const localScore = parseOptionalScore(
+        pick(record, ["goles_local", "local_score", "resultado_local"]),
+      );
+      const visitorScore = parseOptionalScore(
+        pick(record, ["goles_visitante", "visitor_score", "resultado_visitante"]),
+      );
 
       if (!matchId || !dateTime) {
         return null;
       }
 
       return {
-        matchId,
         dateTime,
+        goalScorers: parseFixtureGoalScorers(
+          pick(record, ["goleadores_lng", "goleadores", "goal_scorers"]),
+        ),
+        localScore,
+        matchId,
         updatedAt:
           parseDateTime(pick(record, ["actualizado_en", "updated_at", "timestamp"])) ??
           "",
@@ -5196,9 +5213,44 @@ function mapRowsToFixtureMatchScheduleOverrides(
           "updated_by_user_id",
           "user_id",
         ]),
+        visitorScore,
       };
     })
     .filter((override): override is FixtureMatchScheduleOverride => Boolean(override));
+}
+
+function parseOptionalScore(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized.replace(",", "."));
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function formatOptionalScore(value?: number) {
+  return typeof value === "number" ? String(value) : "";
+}
+
+function parseFixtureGoalScorers(value: string) {
+  return value
+    .split(/\n|,/)
+    .map((scorer) => scorer.trim())
+    .filter(Boolean);
+}
+
+function buildManualGoalEvents(goalScorers: string[]): LeagueGoalEvent[] {
+  return goalScorers.map((playerName) => ({
+    playerName,
+    teamName: APP_TEAM_NAME,
+  }));
+}
+
+function formatManualGoalLabels(goalScorers: string[]) {
+  return goalScorers.map((playerName) => `${APP_TEAM_NAME}: ${playerName}`);
 }
 
 function applyFixtureMatchScheduleOverrides(
@@ -5218,14 +5270,34 @@ function applyFixtureMatchScheduleOverrides(
 
     const { dateIso, time } = splitFixtureOverrideDateTime(override.dateTime);
     const nextDateIso = dateIso ?? match.dateIso;
+    const hasOfficialScore =
+      typeof match.localScore === "number" && typeof match.visitorScore === "number";
+    const hasManualScore =
+      typeof override.localScore === "number" &&
+      typeof override.visitorScore === "number";
+    const manualGoalEvents = buildManualGoalEvents(override.goalScorers);
 
     return {
       ...match,
       dateIso: nextDateIso,
+      goalEvents: [...match.goalEvents, ...manualGoalEvents],
+      goals: [...match.goals, ...formatManualGoalLabels(override.goalScorers)],
+      localScore:
+        !hasOfficialScore && hasManualScore ? override.localScore : match.localScore,
+      manualGoalScorers: override.goalScorers,
+      resultOverrideUpdatedAt:
+        hasManualScore || override.goalScorers.length > 0
+          ? override.updatedAt
+          : undefined,
       roundDate: dateIso ? formatFixtureRoundDate(dateIso) : match.roundDate,
       scheduleOverrideUpdatedAt: override.updatedAt,
-      status: getScheduleAdjustedStatus(match, nextDateIso),
+      status:
+        !hasOfficialScore && hasManualScore
+          ? "played"
+          : getScheduleAdjustedStatus(match, nextDateIso),
       time: time ?? match.time,
+      visitorScore:
+        !hasOfficialScore && hasManualScore ? override.visitorScore : match.visitorScore,
     };
   });
 }
@@ -5721,6 +5793,7 @@ function buildFixtureOverrideWritableRow(
   headers: string[],
   override: FixtureMatchScheduleOverride,
 ) {
+  const goalScorersText = override.goalScorers.join("\n");
   const values: Record<string, string> = {
     actualizado_en: override.updatedAt,
     actualizado_por: override.updatedByName,
@@ -5729,15 +5802,24 @@ function buildFixtureOverrideWritableRow(
     datetime: override.dateTime,
     fecha: override.dateTime,
     fecha_hora: override.dateTime,
+    goal_scorers: goalScorersText,
+    goles_local: formatOptionalScore(override.localScore),
+    goles_visitante: formatOptionalScore(override.visitorScore),
+    goleadores: goalScorersText,
+    goleadores_lng: goalScorersText,
     id: override.matchId,
+    local_score: formatOptionalScore(override.localScore),
     match_id: override.matchId,
     partido_id: override.matchId,
+    resultado_local: formatOptionalScore(override.localScore),
+    resultado_visitante: formatOptionalScore(override.visitorScore),
     timestamp: override.updatedAt,
     updated_at: override.updatedAt,
     updated_by: override.updatedByName,
     updated_by_user_id: override.updatedByUserId,
     user_id: override.updatedByUserId,
     usuario: override.updatedByName,
+    visitor_score: formatOptionalScore(override.visitorScore),
   };
 
   return headers.map((header) => values[normalizeHeader(header)] ?? "");

@@ -21,6 +21,7 @@ import { NavigationLink } from "@/components/ui/navigation-link";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import { cn } from "@/lib/utils";
 import type {
+  FixturePlayerOption,
   LeagueFixtureData,
   LeagueFixtureMatch,
   LeagueFixtureRound,
@@ -33,6 +34,7 @@ interface FixtureContentProps {
   activeTab?: string;
   canManage?: boolean;
   data: LeagueFixtureData;
+  playerOptions?: FixturePlayerOption[];
   selectedRoundKeys?: string[];
 }
 
@@ -42,6 +44,7 @@ export function FixtureContent({
   activeTab,
   canManage = false,
   data,
+  playerOptions = [],
   selectedRoundKeys = [],
 }: FixtureContentProps) {
   const tab = normalizeFixtureTab(activeTab);
@@ -75,6 +78,7 @@ export function FixtureContent({
         <FixtureRounds
           canManage={canManage}
           data={data}
+          playerOptions={playerOptions}
           rounds={data.rounds}
           selectedRoundKeys={selectedRoundKeys}
         />
@@ -570,11 +574,13 @@ function StandingsLegend() {
 function FixtureRounds({
   canManage,
   data,
+  playerOptions,
   rounds,
   selectedRoundKeys,
 }: {
   canManage: boolean;
   data: LeagueFixtureData;
+  playerOptions: FixturePlayerOption[];
   rounds: LeagueFixtureRound[];
   selectedRoundKeys: string[];
 }) {
@@ -655,7 +661,12 @@ function FixtureRounds({
               </summary>
               <div className="border-border grid min-w-0 gap-0 border-t">
                 {round.matches.map((match) => (
-                  <FullMatchRow key={match.id} canManage={canManage} match={match} />
+                  <FullMatchRow
+                    key={match.id}
+                    canManage={canManage}
+                    match={match}
+                    playerOptions={playerOptions}
+                  />
                 ))}
               </div>
             </details>
@@ -685,9 +696,11 @@ function FixtureRounds({
 function FullMatchRow({
   canManage,
   match,
+  playerOptions,
 }: {
   canManage: boolean;
   match: LeagueFixtureMatch;
+  playerOptions: FixturePlayerOption[];
 }) {
   const canEditSchedule = canManage && match.isClubMatch;
 
@@ -719,6 +732,9 @@ function FullMatchRow({
         {match.scheduleOverrideUpdatedAt ? (
           <Badge variant="outline">Editado</Badge>
         ) : null}
+        {match.resultOverrideUpdatedAt ? (
+          <Badge variant="secondary">Datos LNG</Badge>
+        ) : null}
         {match.detailUrl ? (
           <Button asChild size="sm" variant="outline">
             <a href={match.detailUrl} rel="noreferrer" target="_blank">
@@ -731,7 +747,7 @@ function FullMatchRow({
 
       {canEditSchedule ? (
         <div className="md:col-span-3">
-          <FixtureMatchScheduleEditor match={match} />
+          <FixtureMatchScheduleEditor match={match} playerOptions={playerOptions} />
         </div>
       ) : null}
 

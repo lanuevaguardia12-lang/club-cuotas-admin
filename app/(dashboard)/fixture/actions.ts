@@ -16,7 +16,10 @@ const fixtureScheduleSchema = z.object({
     .string()
     .trim()
     .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Usá una fecha y hora válida."),
+  goalScorers: z.array(z.string().trim().min(1).max(120)).optional(),
+  localScore: z.number().int().min(0).max(99).optional(),
   matchId: z.string().trim().min(1, "No se encontró el partido."),
+  visitorScore: z.number().int().min(0).max(99).optional(),
 });
 
 export async function updateFixtureMatchSchedule(
@@ -50,16 +53,19 @@ export async function updateFixtureMatchSchedule(
   try {
     await getDataService().updateFixtureMatchSchedule({
       dateTime: parsed.data.dateTime,
+      goalScorers: parsed.data.goalScorers,
+      localScore: parsed.data.localScore,
       matchId: parsed.data.matchId,
       updatedByName: user.name,
       updatedByUserId: user.id,
+      visitorScore: parsed.data.visitorScore,
     });
     revalidatePath("/fixture");
     revalidatePath("/player-of-match");
 
     return {
       ok: true,
-      message: "Fecha y hora actualizadas.",
+      message: "Partido actualizado.",
     };
   } catch (error) {
     return {

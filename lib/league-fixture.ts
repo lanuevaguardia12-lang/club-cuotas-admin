@@ -242,14 +242,34 @@ export function applyLeagueFixtureScheduleOverrides(
 
     const { dateIso, time } = splitFixtureOverrideDateTime(override.dateTime);
     const nextDateIso = dateIso ?? match.dateIso;
+    const hasOfficialScore =
+      typeof match.localScore === "number" && typeof match.visitorScore === "number";
+    const hasManualScore =
+      typeof override.localScore === "number" &&
+      typeof override.visitorScore === "number";
+    const manualGoalEvents = buildManualGoalEvents(override.goalScorers);
 
     return {
       ...match,
       dateIso: nextDateIso,
+      goalEvents: [...match.goalEvents, ...manualGoalEvents],
+      goals: [...match.goals, ...formatManualGoalLabels(override.goalScorers)],
+      localScore:
+        !hasOfficialScore && hasManualScore ? override.localScore : match.localScore,
+      manualGoalScorers: override.goalScorers,
+      resultOverrideUpdatedAt:
+        hasManualScore || override.goalScorers.length > 0
+          ? override.updatedAt
+          : undefined,
       roundDate: dateIso ? formatFixtureRoundDate(dateIso) : match.roundDate,
       scheduleOverrideUpdatedAt: override.updatedAt,
-      status: getScheduleAdjustedStatus(match, nextDateIso),
+      status:
+        !hasOfficialScore && hasManualScore
+          ? "played"
+          : getScheduleAdjustedStatus(match, nextDateIso),
       time: time ?? match.time,
+      visitorScore:
+        !hasOfficialScore && hasManualScore ? override.visitorScore : match.visitorScore,
     };
   };
   const rounds = data.rounds.map((round) => ({
@@ -258,19 +278,27 @@ export function applyLeagueFixtureScheduleOverrides(
   }));
   const matches = rounds.flatMap((round) => round.matches);
   const clubMatches = matches.filter((match) => match.isClubMatch);
-  const nextMatchesSource =
-    data.nextMatches.length > 0 ? data.nextMatches.map(applyOverride) : clubMatches;
-  const lastMatchesSource =
-    data.lastMatches.length > 0 ? data.lastMatches.map(applyOverride) : clubMatches;
 
   return {
     ...data,
     clubMatches,
     matches,
-    nextMatches: buildNextMatches(nextMatchesSource),
-    lastMatches: buildLastMatches(lastMatchesSource),
+    nextMatches: buildNextMatches(clubMatches),
+    lastMatches: buildLastMatches(clubMatches),
     rounds,
+    scorers: buildScorerRows(matches),
   };
+}
+
+function buildManualGoalEvents(goalScorers: string[]): LeagueGoalEvent[] {
+  return goalScorers.map((playerName) => ({
+    playerName,
+    teamName: APP_TEAM_NAME,
+  }));
+}
+
+function formatManualGoalLabels(goalScorers: string[]) {
+  return goalScorers.map((playerName) => `${APP_TEAM_NAME}: ${playerName}`);
 }
 
 async function loadLeagueMetadata() {
