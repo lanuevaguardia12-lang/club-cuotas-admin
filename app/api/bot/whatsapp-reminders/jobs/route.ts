@@ -20,8 +20,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const period = searchParams.get("period");
   const limit = clampLimit(searchParams.get("limit"));
-  const premium = await getDataService().getPremiumData();
-  const jobs = premium.reminders
+  const jobs = (await getDataService().getReminderJobs())
     .filter((reminder) => reminder.status === "queued")
     .filter(isWhatsAppBotReminder)
     .filter((reminder) => !period || reminder.period === period)

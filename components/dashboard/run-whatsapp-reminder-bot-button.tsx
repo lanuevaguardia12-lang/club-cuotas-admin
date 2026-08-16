@@ -1,6 +1,7 @@
 "use client";
 
 import { Bot } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -24,8 +25,10 @@ interface RunWhatsAppReminderBotResponse {
 export function RunWhatsAppReminderBotButton({
   period,
 }: RunWhatsAppReminderBotButtonProps) {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const selectedPeriod = getSelectedPeriod(searchParams.get("period"), period);
 
   async function runBot() {
     setLoading(true);
@@ -33,7 +36,7 @@ export function RunWhatsAppReminderBotButton({
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
-        body: JSON.stringify({ period }),
+        body: JSON.stringify({ period: selectedPeriod }),
         headers: {
           "content-type": "application/json",
         },
@@ -54,7 +57,7 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? period}. Pendientes ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
+        `Mes ${result?.periodLabel ?? selectedPeriod}. Pendientes ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
       );
     } catch (error) {
       setMessage(
@@ -83,6 +86,10 @@ export function RunWhatsAppReminderBotButton({
       ) : null}
     </div>
   );
+}
+
+function getSelectedPeriod(urlPeriod: string | null, fallback: string) {
+  return urlPeriod && /^\d{4}-\d{2}$/.test(urlPeriod) ? urlPeriod : fallback;
 }
 
 function parseBotResponse(responseText: string) {

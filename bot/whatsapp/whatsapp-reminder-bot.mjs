@@ -18,6 +18,7 @@ const batchLimit = readPositiveNumber("WHATSAPP_BOT_BATCH_LIMIT", 5);
 const sendDelayMs = readPositiveNumber("WHATSAPP_BOT_SEND_DELAY_MS", 4_000);
 const defaultCountryCode = process.env.WHATSAPP_BOT_DEFAULT_COUNTRY_CODE ?? "549";
 const dryRun = parseBoolean(process.env.WHATSAPP_BOT_DRY_RUN);
+const headless = parseBoolean(process.env.WHATSAPP_BOT_HEADLESS);
 const sessionPath = path.resolve(
   __dirname,
   process.env.WHATSAPP_SESSION_PATH ?? "./.wwebjs_auth",
@@ -31,7 +32,7 @@ const client = new Client({
   }),
   puppeteer: {
     args: ["--disable-dev-shm-usage", "--no-sandbox"],
-    headless: true,
+    headless,
   },
 });
 
@@ -71,6 +72,7 @@ async function pollQueue() {
     const jobs = await fetchJobs();
 
     if (jobs.length === 0) {
+      console.log("Sin trabajos pendientes.");
       return;
     }
 

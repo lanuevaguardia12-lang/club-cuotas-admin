@@ -63,14 +63,14 @@ async function runWhatsAppReminderBot(request: NextRequest) {
       ? body.period
       : getCurrentPeriod();
   const dataService = getDataService();
-  const [dashboard, settingsData, premium] = await Promise.all([
+  const [dashboard, settingsData, reminders] = await Promise.all([
     dataService.getDashboardData(period),
     dataService.getAppSettings(),
-    dataService.getPremiumData(),
+    dataService.getReminderJobs(),
   ]);
   const pendingPlayers = dashboard.players.filter((player) => player.status !== "paid");
   const alreadyQueuedPlayerIds = new Set(
-    premium.reminders
+    reminders
       .filter(
         (reminder) =>
           reminder.period === period &&

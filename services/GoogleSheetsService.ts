@@ -2683,6 +2683,17 @@ export class GoogleSheetsService implements IDataService {
     invalidatePremiumCache();
   }
 
+  async getReminderJobs(): Promise<ReminderJob[]> {
+    this.assertConfigured();
+
+    const rows = await this.readValuesFromSpreadsheet(
+      this.getAppSpreadsheetId(),
+      this.config.remindersRange,
+    ).catch(() => []);
+
+    return mapRowsToReminderJobs(rows);
+  }
+
   async createReminderJob(input: CreateReminderJobInput): Promise<void> {
     this.assertConfigured();
 

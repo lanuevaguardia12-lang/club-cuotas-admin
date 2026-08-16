@@ -36,6 +36,8 @@ WhatsApp > Dispositivos vinculados > Vincular un dispositivo
 - `WHATSAPP_BOT_RUNNER_SECRET`: mismo valor cargado en Vercel.
 - `WHATSAPP_BOT_DEFAULT_COUNTRY_CODE`: `549` para Argentina.
 - `WHATSAPP_BOT_DRY_RUN`: `true` para probar sin mandar mensajes.
+- `WHATSAPP_BOT_HEADLESS`: `false` abre WhatsApp Web visible; `true` lo deja
+  en segundo plano.
 
 ## Importante
 
