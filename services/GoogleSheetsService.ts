@@ -4786,7 +4786,19 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
 
   return rowsToRecords(rows)
     .map<MatchRecord | null>((record) => {
-      const date = parseClubDateTime(pick(record, ["fecha", "date", "dia"]));
+      const date = parseClubDateTime(
+        pick(record, [
+          "fecha",
+          "fecha_partido",
+          "fecha_del_partido",
+          "fecha_y_hora",
+          "fecha_hora",
+          "date",
+          "dia",
+          "dia_partido",
+          "dia_del_partido",
+        ]),
+      );
       const loadedAt =
         parseClubDateTime(
           pick(record, [
@@ -4826,9 +4838,17 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
       );
       const rawPlayers = pick(record, [
         "jugadores_que_ingresaron",
+        "jugadores_que_jugaron",
+        "jugadores_que_jugaron_el_partido",
+        "jugadores_que_asistieron",
+        "jugadores_presentes",
+        "jugadores_del_partido",
         "jugadores",
+        "presentes",
         "players",
         "ingresaron",
+        "jugaron",
+        "asistieron",
       ]);
       const players = splitPlayerNames(rawPlayers);
 

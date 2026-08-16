@@ -1,10 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 
-import { unstable_expireTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 import { apiAuditActor } from "@/lib/audit";
-import { sendOpenPlayerOfMatchNotifications } from "@/lib/player-of-match-notifications";
+import {
+  expirePlayerOfMatchCache,
+  sendOpenPlayerOfMatchNotifications,
+} from "@/lib/player-of-match-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,13 +46,4 @@ function safeCompare(value: string, expected: string) {
     valueBuffer.length === expectedBuffer.length &&
     timingSafeEqual(valueBuffer, expectedBuffer)
   );
-}
-
-function expirePlayerOfMatchCache() {
-  try {
-    unstable_expireTag("google-sheets", "google-sheets:player-of-match");
-  } catch {
-    // Cache expiration is best-effort. The webhook must still be able to return
-    // a result in contexts where Next has no cache store.
-  }
 }

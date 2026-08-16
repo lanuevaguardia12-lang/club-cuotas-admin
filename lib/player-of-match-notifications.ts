@@ -1,41 +1,82 @@
 import "server-only";
 
+import { unstable_expireTag } from "next/cache";
+
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
-import type { AuditActor, PushSubscriptionRecord } from "@/types/premium";
+import type {
+  AppNotification,
+  AuditActor,
+  PushSubscriptionRecord,
+} from "@/types/premium";
+
+const MVP_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 
 export interface SendOpenPlayerOfMatchNotificationsResult {
   failed: number;
+  matches: number;
+  notificationRecordsFailed: number;
   sent: number;
   skipped: number;
+  skippedAlreadyNotified: number;
+  skippedNoPendingMatches: number;
+  targetPlayerId?: string;
+  targetUserId?: string;
+  userDataFailed: number;
   users: number;
 }
 
 export async function sendOpenPlayerOfMatchNotifications({
   actor,
+  ignoreAlreadyNotified = false,
+  targetPlayerId,
+  targetUserId,
   trigger,
 }: {
   actor: AuditActor;
+  ignoreAlreadyNotified?: boolean;
+  targetPlayerId?: string;
+  targetUserId?: string;
   trigger: "cron" | "match-update" | "manual" | "webhook";
 }): Promise<SendOpenPlayerOfMatchNotificationsResult> {
   const dataService = getDataService();
   const [subscriptions, premium] = await Promise.all([
-    dataService.getPushSubscriptions(),
-    dataService.getPremiumData(),
+    targetPlayerId
+      ? dataService.getPushSubscriptionsForPlayer(targetPlayerId)
+      : targetUserId
+        ? dataService.getPushSubscriptionsForUser(targetUserId)
+        : dataService.getPushSubscriptions(),
+    ignoreAlreadyNotified
+      ? Promise.resolve({ notifications: [] })
+      : dataService.getPremiumData(),
   ]);
   const subscriptionsByUser = groupSubscriptionsByUser(subscriptions);
-  const alreadyNotified = new Set(
-    premium.notifications
-      .map((notification) => notification.referenceId)
-      .filter((referenceId): referenceId is string => Boolean(referenceId)),
+  const lastNotificationsByReferenceId = groupLatestNotificationByReferenceId(
+    premium.notifications,
   );
   const notifiedThisRun = new Set<string>();
+  const pendingMatchIds = new Set<string>();
   let sent = 0;
   let skipped = 0;
+  let skippedAlreadyNotified = 0;
+  let skippedNoPendingMatches = 0;
   let failed = 0;
+  let notificationRecordsFailed = 0;
+  let userDataFailed = 0;
 
   for (const [userId, userSubscriptions] of subscriptionsByUser) {
-    const data = await dataService.getPlayerOfMatchData(userId);
+    const userPlayerId = userSubscriptions[0]?.playerId;
+    const data = await dataService
+      .getPlayerOfMatchData(userId, userPlayerId)
+      .catch(() => {
+        userDataFailed += 1;
+        return null;
+      });
+
+    if (!data) {
+      continue;
+    }
+
     const pendingMatches = data.matches.filter(
       (match) =>
         !match.userVote &&
@@ -46,18 +87,25 @@ export async function sendOpenPlayerOfMatchNotifications({
 
     if (pendingMatches.length === 0) {
       skipped += 1;
+      skippedNoPendingMatches += 1;
       continue;
     }
 
     for (const match of pendingMatches) {
+      pendingMatchIds.add(match.id);
       const referenceId = `mvp:${userId}:${match.id}`;
+      const lastNotification = lastNotificationsByReferenceId.get(referenceId);
 
-      if (alreadyNotified.has(referenceId) || notifiedThisRun.has(referenceId)) {
+      if (
+        (!ignoreAlreadyNotified && isRecentMvpReminder(lastNotification)) ||
+        notifiedThisRun.has(referenceId)
+      ) {
         skipped += 1;
+        skippedAlreadyNotified += 1;
         continue;
       }
 
-      const message = `Ya podes votar al MVP del partido vs ${match.rival}.`;
+      const message = `Aún no votaste al MVP del partido vs ${match.rival}. Hacé clic y votá.`;
       let matchSent = 0;
 
       for (const subscription of userSubscriptions) {
@@ -82,40 +130,71 @@ export async function sendOpenPlayerOfMatchNotifications({
 
       if (matchSent > 0) {
         notifiedThisRun.add(referenceId);
-        await dataService.createNotification({
-          title: "MVP listo para votar",
-          message,
-          type: "info",
-          targetRole: "player",
-          targetUserId: userId,
-          targetPlayerId: userSubscriptions[0]?.playerId,
-          referenceId,
-          url: "/player-of-match",
-        });
+        try {
+          await dataService.createNotification({
+            title: "MVP listo para votar",
+            message,
+            type: "info",
+            targetRole: "player",
+            targetUserId: userId,
+            targetPlayerId: userPlayerId,
+            referenceId,
+            url: "/player-of-match",
+          });
+        } catch {
+          notificationRecordsFailed += 1;
+        }
       }
     }
   }
 
-  await dataService.recordAuditEvent({
-    actor,
-    action: "notification.created",
-    entityType: "notification",
-    entityId: "player-of-match",
-    summary: `${trigger} envio ${sent} push de MVP.`,
-    metadata: {
-      failed,
-      sent,
-      skipped,
-      trigger,
-    },
-  });
+  await dataService
+    .recordAuditEvent({
+      actor,
+      action: "notification.created",
+      entityType: "notification",
+      entityId: "player-of-match",
+      summary: `${trigger} envio ${sent} push de MVP.`,
+      metadata: {
+        failed,
+        ignoreAlreadyNotified,
+        matches: pendingMatchIds.size,
+        notificationRecordsFailed,
+        sent,
+        skipped,
+        skippedAlreadyNotified,
+        skippedNoPendingMatches,
+        targetPlayerId: targetPlayerId ?? null,
+        targetUserId: targetUserId ?? null,
+        trigger,
+        userDataFailed,
+        users: subscriptionsByUser.size,
+      },
+    })
+    .catch(() => undefined);
 
   return {
     failed,
+    matches: pendingMatchIds.size,
+    notificationRecordsFailed,
     sent,
     skipped,
+    skippedAlreadyNotified,
+    skippedNoPendingMatches,
+    targetPlayerId,
+    targetUserId,
+    userDataFailed,
     users: subscriptionsByUser.size,
   };
+}
+
+export function expirePlayerOfMatchCache() {
+  try {
+    unstable_expireTag("google-sheets", "google-sheets:player-of-match");
+  } catch {
+    // Cache expiration is best-effort. Notification delivery should still run
+    // in tests, scripts, or server contexts without a cache store.
+  }
 }
 
 function isMatchDateReached(value: string) {
@@ -142,6 +221,43 @@ function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
 
     return groups;
   }, new Map<string, PushSubscriptionRecord[]>());
+}
+
+function groupLatestNotificationByReferenceId(notifications: AppNotification[]) {
+  const latestByReferenceId = new Map<string, AppNotification>();
+
+  for (const notification of notifications) {
+    if (!notification.referenceId) {
+      continue;
+    }
+
+    const current = latestByReferenceId.get(notification.referenceId);
+
+    if (
+      !current ||
+      getTimestamp(notification.createdAt) > getTimestamp(current.createdAt)
+    ) {
+      latestByReferenceId.set(notification.referenceId, notification);
+    }
+  }
+
+  return latestByReferenceId;
+}
+
+function isRecentMvpReminder(notification?: AppNotification) {
+  if (!notification) {
+    return false;
+  }
+
+  const timestamp = getTimestamp(notification.createdAt);
+
+  return timestamp > 0 && Date.now() - timestamp < MVP_REMINDER_INTERVAL_MS;
+}
+
+function getTimestamp(value: string) {
+  const timestamp = new Date(value).getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 async function maybeDeactivateExpiredSubscription(

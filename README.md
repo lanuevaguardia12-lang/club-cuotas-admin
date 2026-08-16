@@ -913,8 +913,9 @@ administrativas.
 
 El cron `/api/cron/player-of-match-reminders` corre una vez por dia a las 02:00
 UTC (23:00 de Argentina), avisa a usuarios suscriptos cuando hay partidos listos
-para votar MVP y evita repetir el mismo aviso por usuario/partido mediante
-`reference_id` en `Notificaciones`. La votacion MVP se abre automaticamente
+para votar MVP y reenvia el aviso cada 2 dias a quienes todavia no votaron. Usa
+`reference_id` en `Notificaciones` para controlar el intervalo por usuario y
+partido. La votacion MVP se abre automaticamente
 cuando el partido tiene al menos dos jugadores cargados, sin depender de que la
 liga publique el resultado. Si los jugadores se cargan desde la app, el envio se
 intenta inmediatamente; si entran por Google Sheets/Form, el cron lo detecta en
@@ -971,6 +972,8 @@ Rutas principales:
 - `PATCH /api/notifications`: marca una notificacion visible como leida.
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
 - `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
+- `POST /api/cron/player-of-match-reminders`: prueba manual de push MVP para un
+  `playerId` o `userId`.
 - `GET /api/cron/upcoming-match-reminders`: envia push si hay partido en los proximos dos dias.
 - `POST /api/webhooks/payments`: webhook para Google Apps Script. Expira el
   cache de pagos cuando el formulario agrega una nueva respuesta.
@@ -1014,6 +1017,19 @@ La respuesta del formulario escribe en Google Sheets. El webhook expira el cache
 de MVP y busca partidos con al menos dos jugadores cargados para enviar:
 
 `Ya podes votar al MVP del partido vs Rival.`
+
+Para probar sin esperar al cron diario:
+
+```bash
+curl -X POST "https://TU_URL_DE_VERCEL/api/cron/player-of-match-reminders" \
+  -H "Authorization: Bearer TU_CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"playerId":"id-del-jugador","ignoreAlreadyNotified":true}'
+```
+
+La respuesta incluye `users`, `matches`, `sent`, `failed`,
+`skippedNoPendingMatches`, `skippedAlreadyNotified` y `userDataFailed` para
+diagnosticar si faltan suscripciones push, partidos abiertos, permisos o datos.
 
 ### Webhook Pagos Desde Google Forms
 
