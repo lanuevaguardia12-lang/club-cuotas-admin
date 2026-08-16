@@ -66,18 +66,19 @@ export async function sendOpenPlayerOfMatchNotifications({
       ? dataService.getPushSubscriptionsForPlayer(targetPlayerId)
       : targetUserId
         ? dataService.getPushSubscriptionsForUser(targetUserId)
-        : dataService.getPushSubscriptions(),
+        : Promise.resolve([]),
     ignoreAlreadyNotified
       ? Promise.resolve({ notifications: [] })
       : dataService.getPremiumData(),
   ]);
-  const subscriptionsByUser = groupSubscriptionsByUser(subscriptions);
-  const recipients = buildNotificationRecipients({
-    includeConfiguredUsers: includeDetails,
-    subscriptionsByUser,
+  const recipients = await buildNotificationRecipients({
+    dataService,
+    includeConfiguredUsers: includeDetails || (!targetPlayerId && !targetUserId),
+    subscriptions,
     targetPlayerId,
     targetUserId,
   });
+  const subscriptionUsers = countRecipientsWithSubscriptions(recipients);
   const lastNotificationsByReferenceId = groupLatestNotificationByReferenceId(
     premium.notifications,
   );
@@ -222,7 +223,7 @@ export async function sendOpenPlayerOfMatchNotifications({
         targetUserId: targetUserId ?? null,
         trigger,
         userDataFailed,
-        users: subscriptionsByUser.size,
+        users: subscriptionUsers,
       },
     })
     .catch(() => undefined);
@@ -240,7 +241,7 @@ export async function sendOpenPlayerOfMatchNotifications({
     targetPlayerId,
     targetUserId,
     userDataFailed,
-    users: subscriptionsByUser.size,
+    users: subscriptionUsers,
   };
 }
 
@@ -279,17 +280,20 @@ function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
   }, new Map<string, PushSubscriptionRecord[]>());
 }
 
-function buildNotificationRecipients({
+async function buildNotificationRecipients({
+  dataService,
   includeConfiguredUsers,
-  subscriptionsByUser,
+  subscriptions,
   targetPlayerId,
   targetUserId,
 }: {
+  dataService: ReturnType<typeof getDataService>;
   includeConfiguredUsers: boolean;
-  subscriptionsByUser: Map<string, PushSubscriptionRecord[]>;
+  subscriptions: PushSubscriptionRecord[];
   targetPlayerId?: string;
   targetUserId?: string;
 }) {
+  const subscriptionsByUser = groupSubscriptionsByUser(subscriptions);
   const recipients = new Map<
     string,
     {
@@ -311,25 +315,64 @@ function buildNotificationRecipients({
     return recipients;
   }
 
-  for (const user of getConfiguredPlayerUsers()) {
-    if (targetUserId && user.id !== targetUserId) {
-      continue;
+  const configuredPlayerUsers = getConfiguredPlayerUsers();
+
+  if (configuredPlayerUsers.length === 0 && !targetPlayerId && !targetUserId) {
+    const fallbackSubscriptions = await dataService
+      .getPushSubscriptions()
+      .catch(() => []);
+    const fallbackSubscriptionsByUser = groupSubscriptionsByUser(fallbackSubscriptions);
+
+    for (const [userId, userSubscriptions] of fallbackSubscriptionsByUser) {
+      recipients.set(userId, {
+        playerId: userSubscriptions[0]?.playerId,
+        userId,
+        userSubscriptions,
+      });
     }
 
-    if (targetPlayerId && user.playerId !== targetPlayerId) {
-      continue;
-    }
-
-    const current = recipients.get(user.id);
-
-    recipients.set(user.id, {
-      playerId: current?.playerId ?? user.playerId,
-      userId: user.id,
-      userSubscriptions: current?.userSubscriptions ?? [],
-    });
+    return recipients;
   }
 
+  await Promise.all(
+    configuredPlayerUsers.map(async (user) => {
+      if (targetUserId && user.id !== targetUserId) {
+        return;
+      }
+
+      if (targetPlayerId && user.playerId !== targetPlayerId) {
+        return;
+      }
+
+      const current = recipients.get(user.id);
+      const playerSubscriptions = user.playerId
+        ? await dataService.getPushSubscriptionsForPlayer(user.playerId).catch(() => [])
+        : [];
+      const userSubscriptions =
+        playerSubscriptions.length > 0
+          ? playerSubscriptions
+          : await dataService.getPushSubscriptionsForUser(user.id).catch(() => []);
+
+      recipients.set(user.id, {
+        playerId: current?.playerId ?? user.playerId ?? userSubscriptions[0]?.playerId,
+        userId: user.id,
+        userSubscriptions:
+          current?.userSubscriptions && current.userSubscriptions.length > 0
+            ? current.userSubscriptions
+            : userSubscriptions,
+      });
+    }),
+  );
+
   return recipients;
+}
+
+function countRecipientsWithSubscriptions(
+  recipients: Map<string, { userSubscriptions: PushSubscriptionRecord[] }>,
+) {
+  return [...recipients.values()].filter(
+    (recipient) => recipient.userSubscriptions.length > 0,
+  ).length;
 }
 
 function getConfiguredPlayerUsers(): AuthUser[] {
