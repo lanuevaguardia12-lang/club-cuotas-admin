@@ -2226,7 +2226,34 @@ export class GoogleSheetsService implements IDataService {
         mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
         overrides,
       );
-      const voterVotes = votes.filter((vote) => vote.voterUserId === voterUserId);
+      const players = mapRowsToPlayers(playerRows).filter(
+        (player) => !isDroppedPlayer(player),
+      );
+      const currentProfile = accountProfiles.find(
+        (profile) => profile.userId === voterUserId,
+      );
+      const currentPlayerLookupKeys = buildPlayerLookupKeys(
+        voterPlayerId,
+        voterUserId,
+        currentProfile?.name,
+        currentProfile?.username,
+      );
+      const currentPlayer = players.find((player) =>
+        playerMatchesLookup(player, currentPlayerLookupKeys),
+      );
+      const voterLookupKeys = buildPlayerLookupKeys(
+        voterUserId,
+        voterPlayerId,
+        currentProfile?.name,
+        currentProfile?.username,
+        currentPlayer?.id,
+        currentPlayer?.name,
+        currentPlayer?.email,
+        currentPlayer?.phone,
+      );
+      const voterVotes = votes.filter((vote) =>
+        isPlayerOfMatchVoteFromVoter(vote, voterLookupKeys),
+      );
 
       return buildPlayerOfMatchData({
         accountProfiles,
@@ -2234,9 +2261,7 @@ export class GoogleSheetsService implements IDataService {
         currentPlayerId: voterPlayerId,
         currentUserId: voterUserId,
         matches,
-        players: mapRowsToPlayers(playerRows).filter(
-          (player) => !isDroppedPlayer(player),
-        ),
+        players,
         revalidateSeconds: this.config.cacheTtlSeconds,
         status: matches.length === 0 ? "empty" : "ready",
         votes,
@@ -2296,9 +2321,17 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
+    const voterLookupKeys = buildPlayerLookupKeys(
+      input.voterUserId,
+      input.voterPlayerId,
+      input.voterName,
+    );
+
     if (
       votes.some(
-        (vote) => vote.matchId === match.id && vote.voterUserId === input.voterUserId,
+        (vote) =>
+          vote.matchId === match.id &&
+          isPlayerOfMatchVoteFromVoter(vote, voterLookupKeys),
       )
     ) {
       throw new DataServiceError(
@@ -5236,6 +5269,16 @@ function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
       } satisfies PlayerOfMatchVote;
     })
     .filter((vote): vote is PlayerOfMatchVote => Boolean(vote));
+}
+
+function isPlayerOfMatchVoteFromVoter(
+  vote: PlayerOfMatchVote,
+  voterLookupKeys: Set<string>,
+) {
+  return lookupSetsIntersect(
+    buildPlayerLookupKeys(vote.voterUserId, vote.voterPlayerId, vote.voterName),
+    voterLookupKeys,
+  );
 }
 
 function buildPlayerOfMatchData({
