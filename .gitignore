@@ -37,6 +37,7 @@ yarn-error.log*
 !bot/**/.env.example
 
 # local WhatsApp bot session
+bot/whatsapp/node_modules
 bot/whatsapp/.wwebjs_auth
 bot/whatsapp/.wwebjs_cache
 

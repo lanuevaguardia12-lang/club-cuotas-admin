@@ -39,11 +39,15 @@ export function RunWhatsAppReminderBotButton({
         },
         method: "POST",
       });
-      const result = (await response.json().catch(() => null)) as
-        (Partial<RunWhatsAppReminderBotResponse> & { message?: string }) | null;
+      const responseText = await response.text();
+      const result = parseBotResponse(responseText);
 
       if (!response.ok) {
-        throw new Error(result?.message ?? "No se pudo correr el bot de recordatorios.");
+        throw new Error(
+          result?.message ??
+            responseText.slice(0, 240) ??
+            `No se pudo correr el bot de recordatorios. HTTP ${response.status}.`,
+        );
       }
 
       const target =
@@ -79,4 +83,18 @@ export function RunWhatsAppReminderBotButton({
       ) : null}
     </div>
   );
+}
+
+function parseBotResponse(responseText: string) {
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as Partial<RunWhatsAppReminderBotResponse> & {
+      message?: string;
+    };
+  } catch {
+    return null;
+  }
 }

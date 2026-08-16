@@ -27,6 +27,21 @@ interface WhatsAppBotPayloadMessage {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    return await runWhatsAppReminderBot(request);
+  } catch (error) {
+    console.error("No se pudo correr el bot de recordatorios.", error);
+
+    return NextResponse.json(
+      {
+        message: getErrorMessage(error, "No se pudo correr el bot de recordatorios."),
+      },
+      { status: 500 },
+    );
+  }
+}
+
+async function runWhatsAppReminderBot(request: NextRequest) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -101,19 +116,21 @@ export async function POST(request: NextRequest) {
   }
 
   if (messages.length === 0) {
-    await dataService.recordAuditEvent({
-      actor: userToAuditActor(user),
-      action: "reminder.queued",
-      entityType: "reminder",
-      entityId: period,
-      summary: `Bot de WhatsApp no encontro pendientes con telefono para ${period}.`,
-      metadata: {
-        period,
-        skippedAlreadyQueued,
-        skippedNoPhone,
-        totalPending: pendingPlayers.length,
-      },
-    });
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "reminder.queued",
+        entityType: "reminder",
+        entityId: period,
+        summary: `Bot de WhatsApp no encontro pendientes con telefono para ${period}.`,
+        metadata: {
+          period,
+          skippedAlreadyQueued,
+          skippedNoPhone,
+          totalPending: pendingPlayers.length,
+        },
+      })
+      .catch(() => undefined);
 
     return NextResponse.json({
       ok: true,
@@ -149,19 +166,21 @@ export async function POST(request: NextRequest) {
     : { ok: true, status: "local-queue", message: "" };
 
   if (!webhookResponse.ok) {
-    await dataService.recordAuditEvent({
-      actor: userToAuditActor(user),
-      action: "system.error",
-      entityType: "reminder",
-      entityId: period,
-      summary: `Fallo el bot de WhatsApp para ${period}.`,
-      metadata: {
-        period,
-        queued: messages.length,
-        skippedAlreadyQueued,
-        status: webhookResponse.status,
-      },
-    });
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "system.error",
+        entityType: "reminder",
+        entityId: period,
+        summary: `Fallo el bot de WhatsApp para ${period}.`,
+        metadata: {
+          period,
+          queued: messages.length,
+          skippedAlreadyQueued,
+          status: webhookResponse.status,
+        },
+      })
+      .catch(() => undefined);
 
     return NextResponse.json(
       {
@@ -196,38 +215,59 @@ export async function POST(request: NextRequest) {
     (result) => result.status === "rejected",
   ).length;
 
-  await dataService.createNotification({
-    title: "Bot de recordatorios iniciado",
-    message: webhookUrl
-      ? `${messages.length} mensajes de WhatsApp enviados al bot para ${periodLabel}.`
-      : `${messages.length} mensajes de WhatsApp quedaron en cola para el bot local de ${periodLabel}.`,
-    type: reminderRecordsFailed > 0 ? "warning" : "success",
-    targetRole: "all",
-    referenceId: runId,
-  });
-  await dataService.recordAuditEvent({
-    actor: userToAuditActor(user),
-    action: "reminder.queued",
-    entityType: "reminder",
-    entityId: period,
-    summary: `Admin envio ${messages.length} recordatorios de WhatsApp al bot para ${period}.`,
-    metadata: {
-      mode: webhookUrl ? "webhook" : "local-queue",
-      period,
-      queued: messages.length,
-      reminderRecordsFailed,
-      skippedAlreadyQueued,
-      skippedNoPhone,
-      totalPending: pendingPlayers.length,
-    },
-  });
+  if (reminderRecordsFailed === messages.length) {
+    return NextResponse.json(
+      {
+        message:
+          "No se pudo crear la cola en la hoja Recordatorios. Revisá que la Service Account tenga permisos de edición y que exista el rango GOOGLE_SHEETS_REMINDERS_RANGE.",
+        mode: webhookUrl ? "webhook" : "local-queue",
+        period,
+        queued: 0,
+        reminderRecordsFailed,
+        skippedAlreadyQueued,
+        skippedNoPhone,
+        totalPending: pendingPlayers.length,
+      },
+      { status: 500 },
+    );
+  }
+
+  await dataService
+    .createNotification({
+      title: "Bot de recordatorios iniciado",
+      message: webhookUrl
+        ? `${messages.length} mensajes de WhatsApp enviados al bot para ${periodLabel}.`
+        : `${messages.length} mensajes de WhatsApp quedaron en cola para el bot local de ${periodLabel}.`,
+      type: reminderRecordsFailed > 0 ? "warning" : "success",
+      targetRole: "all",
+      referenceId: runId,
+    })
+    .catch(() => undefined);
+  await dataService
+    .recordAuditEvent({
+      actor: userToAuditActor(user),
+      action: "reminder.queued",
+      entityType: "reminder",
+      entityId: period,
+      summary: `Admin envio ${messages.length} recordatorios de WhatsApp al bot para ${period}.`,
+      metadata: {
+        mode: webhookUrl ? "webhook" : "local-queue",
+        period,
+        queued: messages.length - reminderRecordsFailed,
+        reminderRecordsFailed,
+        skippedAlreadyQueued,
+        skippedNoPhone,
+        totalPending: pendingPlayers.length,
+      },
+    })
+    .catch(() => undefined);
 
   return NextResponse.json({
     ok: true,
     mode: webhookUrl ? "webhook" : "local-queue",
     period,
     periodLabel,
-    queued: messages.length,
+    queued: messages.length - reminderRecordsFailed,
     reminderRecordsFailed,
     skippedAlreadyQueued,
     skippedNoPhone,
@@ -302,4 +342,12 @@ function formatPeriod(period: string) {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
   }).format(date);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return fallback;
 }
