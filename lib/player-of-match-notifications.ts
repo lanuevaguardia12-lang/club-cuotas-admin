@@ -19,14 +19,45 @@ export interface PlayerOfMatchNotificationDetail {
   alreadyVotedMatchIds: string[];
   eligibleMatchIds: string[];
   failed: number;
+  failedMatchIds: string[];
   matchIds: string[];
+  missingNotificationMatchIds: string[];
+  notifiedMatchIds: string[];
   pendingMatches: number;
+  playerId?: string;
+  recentNotificationMatchIds: string[];
+  reasons: string[];
+  sent: number;
+  sentMatchIds: string[];
+  skipped: number;
+  skippedAlreadyNotifiedMatchIds: string[];
+  subscriptionCount: number;
+  userId: string;
+  userName?: string;
+}
+
+export interface PlayerOfMatchNotificationReportItem {
+  failed: number;
+  matchIds: string[];
+  notifiedMatchIds: string[];
   playerId?: string;
   reasons: string[];
   sent: number;
-  skipped: number;
   subscriptionCount: number;
   userId: string;
+  userName?: string;
+}
+
+export interface PlayerOfMatchNotificationReport {
+  dataErrors: PlayerOfMatchNotificationReportItem[];
+  notEligible: PlayerOfMatchNotificationReportItem[];
+  pendingAlreadyNotified: PlayerOfMatchNotificationReportItem[];
+  pendingNoActiveSubscription: PlayerOfMatchNotificationReportItem[];
+  pendingPushFailed: PlayerOfMatchNotificationReportItem[];
+  pendingSentNow: PlayerOfMatchNotificationReportItem[];
+  pendingWithoutNotification: PlayerOfMatchNotificationReportItem[];
+  votedWithNotification: PlayerOfMatchNotificationReportItem[];
+  votedWithoutNotification: PlayerOfMatchNotificationReportItem[];
 }
 
 export interface SendOpenPlayerOfMatchNotificationsResult {
@@ -39,6 +70,7 @@ export interface SendOpenPlayerOfMatchNotificationsResult {
   skippedAlreadyNotified: number;
   skippedNoPendingMatches: number;
   skippedNoSubscriptions: number;
+  report?: PlayerOfMatchNotificationReport;
   targetPlayerId?: string;
   targetUserId?: string;
   userDataFailed: number;
@@ -67,7 +99,7 @@ export async function sendOpenPlayerOfMatchNotifications({
       : targetUserId
         ? dataService.getPushSubscriptionsForUser(targetUserId)
         : Promise.resolve([]),
-    ignoreAlreadyNotified
+    ignoreAlreadyNotified && !includeDetails
       ? Promise.resolve({ notifications: [] })
       : dataService.getPremiumData(),
   ]);
@@ -97,7 +129,12 @@ export async function sendOpenPlayerOfMatchNotifications({
   for (const recipient of recipients.values()) {
     const { userId, userSubscriptions } = recipient;
     const userPlayerId = recipient.playerId ?? userSubscriptions[0]?.playerId;
-    const detail = createNotificationDetail(userId, userPlayerId, userSubscriptions);
+    const detail = createNotificationDetail(
+      userId,
+      userPlayerId,
+      userSubscriptions,
+      recipient.userName,
+    );
     const data = await dataService
       .getPlayerOfMatchData(userId, userPlayerId)
       .catch(() => {
@@ -114,11 +151,26 @@ export async function sendOpenPlayerOfMatchNotifications({
     const eligibleMatches = data.matches.filter(isEligiblePlayerOfMatchReminderMatch);
     const alreadyVotedMatches = eligibleMatches.filter((match) => match.userVote);
     const pendingMatches = eligibleMatches.filter((match) => !match.userVote);
+    const notifiedMatches = eligibleMatches.filter((match) =>
+      lastNotificationsByReferenceId.has(getMvpReferenceId(userId, match.id)),
+    );
+    const recentNotificationMatches = eligibleMatches.filter((match) =>
+      isRecentMvpReminder(
+        lastNotificationsByReferenceId.get(getMvpReferenceId(userId, match.id)),
+      ),
+    );
 
     detail.alreadyVotedMatchIds = alreadyVotedMatches.map((match) => match.id);
     detail.eligibleMatchIds = eligibleMatches.map((match) => match.id);
+    detail.notifiedMatchIds = notifiedMatches.map((match) => match.id);
+    detail.recentNotificationMatchIds = recentNotificationMatches.map(
+      (match) => match.id,
+    );
     detail.pendingMatches = pendingMatches.length;
     detail.matchIds = pendingMatches.map((match) => match.id);
+    detail.missingNotificationMatchIds = eligibleMatches
+      .filter((match) => !detail.notifiedMatchIds.includes(match.id))
+      .map((match) => match.id);
 
     if (pendingMatches.length === 0) {
       skipped += 1;
@@ -140,7 +192,7 @@ export async function sendOpenPlayerOfMatchNotifications({
 
     for (const match of pendingMatches) {
       pendingMatchIds.add(match.id);
-      const referenceId = `mvp:${userId}:${match.id}`;
+      const referenceId = getMvpReferenceId(userId, match.id);
       const lastNotification = lastNotificationsByReferenceId.get(referenceId);
 
       if (
@@ -151,6 +203,7 @@ export async function sendOpenPlayerOfMatchNotifications({
         skippedAlreadyNotified += 1;
         detail.skipped += 1;
         pushUniqueReason(detail, "already-notified");
+        pushUniqueId(detail.skippedAlreadyNotifiedMatchIds, match.id);
         continue;
       }
 
@@ -171,6 +224,7 @@ export async function sendOpenPlayerOfMatchNotifications({
         } catch (error) {
           failed += 1;
           detail.failed += 1;
+          pushUniqueId(detail.failedMatchIds, match.id);
           await maybeDeactivateExpiredSubscription(
             dataService,
             subscription.endpoint,
@@ -181,6 +235,7 @@ export async function sendOpenPlayerOfMatchNotifications({
 
       if (matchSent > 0) {
         notifiedThisRun.add(referenceId);
+        pushUniqueId(detail.sentMatchIds, match.id);
         try {
           await dataService.createNotification({
             title: "MVP listo para votar",
@@ -192,6 +247,7 @@ export async function sendOpenPlayerOfMatchNotifications({
             referenceId,
             url: "/player-of-match",
           });
+          pushUniqueId(detail.notifiedMatchIds, match.id);
         } catch {
           notificationRecordsFailed += 1;
         }
@@ -200,6 +256,9 @@ export async function sendOpenPlayerOfMatchNotifications({
 
     details.push(detail);
   }
+  const report = includeDetails
+    ? buildPlayerOfMatchNotificationReport(details)
+    : undefined;
 
   await dataService
     .recordAuditEvent({
@@ -214,6 +273,9 @@ export async function sendOpenPlayerOfMatchNotifications({
         includeDetails,
         matches: pendingMatchIds.size,
         notificationRecordsFailed,
+        reportSummary: report
+          ? JSON.stringify(summarizeNotificationReport(report))
+          : null,
         sent,
         skipped,
         skippedAlreadyNotified,
@@ -229,7 +291,7 @@ export async function sendOpenPlayerOfMatchNotifications({
     .catch(() => undefined);
 
   return {
-    ...(includeDetails ? { details } : {}),
+    ...(includeDetails ? { details, report } : {}),
     failed,
     matches: pendingMatchIds.size,
     notificationRecordsFailed,
@@ -299,6 +361,7 @@ async function buildNotificationRecipients({
     {
       playerId?: string;
       userId: string;
+      userName?: string;
       userSubscriptions: PushSubscriptionRecord[];
     }
   >();
@@ -356,6 +419,7 @@ async function buildNotificationRecipients({
       recipients.set(user.id, {
         playerId: current?.playerId ?? user.playerId ?? userSubscriptions[0]?.playerId,
         userId: user.id,
+        userName: user.name,
         userSubscriptions:
           current?.userSubscriptions && current.userSubscriptions.length > 0
             ? current.userSubscriptions
@@ -389,19 +453,27 @@ function createNotificationDetail(
   userId: string,
   playerId: string | undefined,
   subscriptions: PushSubscriptionRecord[],
+  userName?: string,
 ): PlayerOfMatchNotificationDetail {
   return {
     alreadyVotedMatchIds: [],
     eligibleMatchIds: [],
     failed: 0,
+    failedMatchIds: [],
     matchIds: [],
+    missingNotificationMatchIds: [],
+    notifiedMatchIds: [],
     pendingMatches: 0,
     playerId,
+    recentNotificationMatchIds: [],
     reasons: [],
     sent: 0,
+    sentMatchIds: [],
     skipped: 0,
+    skippedAlreadyNotifiedMatchIds: [],
     subscriptionCount: subscriptions.length,
     userId,
+    userName,
   };
 }
 
@@ -452,9 +524,122 @@ function getNoPendingMatchReasons(matches: PlayerOfMatchMatch[]) {
   return [...reasons];
 }
 
+function buildPlayerOfMatchNotificationReport(
+  details: PlayerOfMatchNotificationDetail[],
+): PlayerOfMatchNotificationReport {
+  const report: PlayerOfMatchNotificationReport = {
+    dataErrors: [],
+    notEligible: [],
+    pendingAlreadyNotified: [],
+    pendingNoActiveSubscription: [],
+    pendingPushFailed: [],
+    pendingSentNow: [],
+    pendingWithoutNotification: [],
+    votedWithNotification: [],
+    votedWithoutNotification: [],
+  };
+
+  for (const detail of details) {
+    if (detail.reasons.includes("user-data-failed")) {
+      report.dataErrors.push(createReportItem(detail, []));
+    }
+
+    const votedWithNotification = detail.alreadyVotedMatchIds.filter((matchId) =>
+      detail.notifiedMatchIds.includes(matchId),
+    );
+    const votedWithoutNotification = detail.alreadyVotedMatchIds.filter(
+      (matchId) => !detail.notifiedMatchIds.includes(matchId),
+    );
+
+    if (votedWithNotification.length > 0) {
+      report.votedWithNotification.push(createReportItem(detail, votedWithNotification));
+    }
+
+    if (votedWithoutNotification.length > 0) {
+      report.votedWithoutNotification.push(
+        createReportItem(detail, votedWithoutNotification),
+      );
+    }
+
+    if (detail.matchIds.length > 0 && detail.subscriptionCount === 0) {
+      report.pendingNoActiveSubscription.push(createReportItem(detail, detail.matchIds));
+    }
+
+    if (detail.failedMatchIds.length > 0) {
+      report.pendingPushFailed.push(createReportItem(detail, detail.failedMatchIds));
+    }
+
+    if (detail.sentMatchIds.length > 0) {
+      report.pendingSentNow.push(createReportItem(detail, detail.sentMatchIds));
+    }
+
+    if (detail.skippedAlreadyNotifiedMatchIds.length > 0) {
+      report.pendingAlreadyNotified.push(
+        createReportItem(detail, detail.skippedAlreadyNotifiedMatchIds),
+      );
+    }
+
+    const pendingWithoutNotification = detail.matchIds.filter(
+      (matchId) =>
+        !detail.notifiedMatchIds.includes(matchId) &&
+        !detail.sentMatchIds.includes(matchId) &&
+        !detail.failedMatchIds.includes(matchId) &&
+        detail.subscriptionCount > 0,
+    );
+
+    if (pendingWithoutNotification.length > 0) {
+      report.pendingWithoutNotification.push(
+        createReportItem(detail, pendingWithoutNotification),
+      );
+    }
+
+    if (
+      detail.eligibleMatchIds.length === 0 &&
+      !detail.reasons.includes("user-data-failed")
+    ) {
+      report.notEligible.push(createReportItem(detail, []));
+    }
+  }
+
+  return report;
+}
+
+function createReportItem(
+  detail: PlayerOfMatchNotificationDetail,
+  matchIds: string[],
+): PlayerOfMatchNotificationReportItem {
+  return {
+    failed: detail.failed,
+    matchIds,
+    notifiedMatchIds: detail.notifiedMatchIds,
+    playerId: detail.playerId,
+    reasons: detail.reasons,
+    sent: detail.sent,
+    subscriptionCount: detail.subscriptionCount,
+    userId: detail.userId,
+    userName: detail.userName,
+  };
+}
+
+function summarizeNotificationReport(report: PlayerOfMatchNotificationReport) {
+  return Object.fromEntries(
+    Object.entries(report).map(([key, rows]) => [key, rows.length]),
+  );
+}
+
+function getMvpReferenceId(userId: string, matchId: string) {
+  return `mvp:${userId}:${matchId}`;
+}
+
 function pushUniqueReason(detail: PlayerOfMatchNotificationDetail, reason: string) {
   if (!detail.reasons.includes(reason)) {
     detail.reasons.push(reason);
+  }
+}
+
+function pushUniqueId(values: string[], value: string) {
+  if (!values.includes(value)) {
+    values.push(value);
   }
 }
 
