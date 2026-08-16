@@ -32,6 +32,7 @@ import type {
   PremiumData,
   PushSubscriptionInput,
   PushSubscriptionRecord,
+  UpdateReminderJobStatusInput,
   UpsertPaymentRecordInput,
 } from "@/types/premium";
 import type {
@@ -86,6 +87,7 @@ export interface IDataService {
   createNotification(input: CreateNotificationInput): Promise<void>;
   markNotificationRead(notificationId: string): Promise<void>;
   createReminderJob(input: CreateReminderJobInput): Promise<void>;
+  updateReminderJobStatus(input: UpdateReminderJobStatusInput): Promise<void>;
   upsertPaymentRecord(input: UpsertPaymentRecordInput): Promise<void>;
   upsertPushSubscription(input: PushSubscriptionInput): Promise<void>;
   deletePushSubscription(endpoint: string, userId?: string): Promise<void>;

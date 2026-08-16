@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { buildReminderMessage, sanitizeWhatsAppPhone } from "@/lib/reminders";
+import {
+  buildWhatsAppBotReminderMarker,
+  isWhatsAppBotReminder,
+} from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
 
 export const runtime = "nodejs";
@@ -38,32 +42,39 @@ export async function POST(request: NextRequest) {
 
   const webhookUrl = process.env.WHATSAPP_BOT_WEBHOOK_URL?.trim();
 
-  if (!webhookUrl) {
-    return NextResponse.json(
-      {
-        message:
-          "Falta configurar WHATSAPP_BOT_WEBHOOK_URL para conectar el bot externo.",
-      },
-      { status: 501 },
-    );
-  }
-
   const body = (await request.json().catch(() => ({}))) as { period?: unknown };
   const period =
     typeof body.period === "string" && /^\d{4}-\d{2}$/.test(body.period)
       ? body.period
       : getCurrentPeriod();
   const dataService = getDataService();
-  const [dashboard, settingsData] = await Promise.all([
+  const [dashboard, settingsData, premium] = await Promise.all([
     dataService.getDashboardData(period),
     dataService.getAppSettings(),
+    dataService.getPremiumData(),
   ]);
   const pendingPlayers = dashboard.players.filter((player) => player.status !== "paid");
+  const alreadyQueuedPlayerIds = new Set(
+    premium.reminders
+      .filter(
+        (reminder) =>
+          reminder.period === period &&
+          reminder.status === "queued" &&
+          isWhatsAppBotReminder(reminder),
+      )
+      .map((reminder) => reminder.playerId),
+  );
   const periodLabel = formatPeriod(period);
   const messages: WhatsAppBotPayloadMessage[] = [];
+  let skippedAlreadyQueued = 0;
   let skippedNoPhone = 0;
 
   for (const player of pendingPlayers) {
+    if (alreadyQueuedPlayerIds.has(player.id)) {
+      skippedAlreadyQueued += 1;
+      continue;
+    }
+
     const phone = sanitizeWhatsAppPhone(player.phone);
 
     if (phone.length === 0) {
@@ -98,6 +109,7 @@ export async function POST(request: NextRequest) {
       summary: `Bot de WhatsApp no encontro pendientes con telefono para ${period}.`,
       metadata: {
         period,
+        skippedAlreadyQueued,
         skippedNoPhone,
         totalPending: pendingPlayers.length,
       },
@@ -108,6 +120,7 @@ export async function POST(request: NextRequest) {
       period,
       periodLabel,
       queued: 0,
+      skippedAlreadyQueued,
       skippedNoPhone,
       totalPending: pendingPlayers.length,
       webhookStatus: "not-called",
@@ -131,7 +144,9 @@ export async function POST(request: NextRequest) {
     },
     totalPending: pendingPlayers.length,
   };
-  const webhookResponse = await postToWhatsAppBot(webhookUrl, payload);
+  const webhookResponse = webhookUrl
+    ? await postToWhatsAppBot(webhookUrl, payload)
+    : { ok: true, status: "local-queue", message: "" };
 
   if (!webhookResponse.ok) {
     await dataService.recordAuditEvent({
@@ -143,6 +158,7 @@ export async function POST(request: NextRequest) {
       metadata: {
         period,
         queued: messages.length,
+        skippedAlreadyQueued,
         status: webhookResponse.status,
       },
     });
@@ -153,6 +169,7 @@ export async function POST(request: NextRequest) {
           webhookResponse.message || "El bot externo no pudo recibir los recordatorios.",
         period,
         queued: messages.length,
+        skippedAlreadyQueued,
         skippedNoPhone,
         totalPending: pendingPlayers.length,
       },
@@ -171,6 +188,7 @@ export async function POST(request: NextRequest) {
         paymentStatus: item.paymentStatus === "debt" ? "debt" : "pending",
         message: item.message,
         status: "queued",
+        error: buildWhatsAppBotReminderMarker(runId),
       }),
     ),
   );
@@ -180,7 +198,9 @@ export async function POST(request: NextRequest) {
 
   await dataService.createNotification({
     title: "Bot de recordatorios iniciado",
-    message: `${messages.length} mensajes de WhatsApp enviados al bot para ${periodLabel}.`,
+    message: webhookUrl
+      ? `${messages.length} mensajes de WhatsApp enviados al bot para ${periodLabel}.`
+      : `${messages.length} mensajes de WhatsApp quedaron en cola para el bot local de ${periodLabel}.`,
     type: reminderRecordsFailed > 0 ? "warning" : "success",
     targetRole: "all",
     referenceId: runId,
@@ -192,9 +212,11 @@ export async function POST(request: NextRequest) {
     entityId: period,
     summary: `Admin envio ${messages.length} recordatorios de WhatsApp al bot para ${period}.`,
     metadata: {
+      mode: webhookUrl ? "webhook" : "local-queue",
       period,
       queued: messages.length,
       reminderRecordsFailed,
+      skippedAlreadyQueued,
       skippedNoPhone,
       totalPending: pendingPlayers.length,
     },
@@ -202,10 +224,12 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    mode: webhookUrl ? "webhook" : "local-queue",
     period,
     periodLabel,
     queued: messages.length,
     reminderRecordsFailed,
+    skippedAlreadyQueued,
     skippedNoPhone,
     totalPending: pendingPlayers.length,
     webhookStatus: webhookResponse.status,

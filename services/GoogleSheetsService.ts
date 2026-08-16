@@ -99,6 +99,7 @@ import type {
   PushSubscriptionRecord,
   ReminderJob,
   ReminderStatus,
+  UpdateReminderJobStatusInput,
   UpsertPaymentRecordInput,
 } from "@/types/premium";
 import type {
@@ -2699,6 +2700,73 @@ export class GoogleSheetsService implements IDataService {
       input.status === "sent" ? new Date().toISOString() : "",
       input.error ?? "",
     ]);
+    invalidatePremiumCache();
+  }
+
+  async updateReminderJobStatus(input: UpdateReminderJobStatusInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const sheetPrefix = getSheetPrefix(this.config.remindersRange);
+    const values = await this.readValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.remindersRange,
+    ).catch(() => []);
+    const [headerRow = [], ...dataRows] = values;
+    const headers = headerRow.map((header) => normalizeHeader(String(header)));
+    const idIndex = findHeaderIndex(headers, ["id", "reminder_id"]);
+    const statusIndex = findHeaderIndex(headers, ["status", "estado_recordatorio"]);
+    const sentAtIndex = findHeaderIndex(headers, ["sent_at", "enviado_el"]);
+    const errorIndex = findHeaderIndex(headers, ["error", "motivo_error"]);
+
+    if (idIndex < 0 || statusIndex < 0) {
+      throw new DataServiceError(
+        "La hoja Recordatorios no tiene columnas id/status.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const targetRowIndex = dataRows.findIndex(
+      (row) => String(row[idIndex] ?? "").trim() === input.reminderId,
+    );
+
+    if (targetRowIndex < 0) {
+      throw new DataServiceError(
+        "No se encontro el recordatorio a actualizar.",
+        "CONFIGURATION_ERROR",
+      );
+    }
+
+    const spreadsheetRow = targetRowIndex + 2;
+    const now = new Date().toISOString();
+    const data: Array<{ range: string; values: string[][] }> = [
+      {
+        range: `${sheetPrefix}!${toColumnName(statusIndex)}${spreadsheetRow}`,
+        values: [[input.status]],
+      },
+    ];
+
+    if (sentAtIndex >= 0 && input.status === "sent") {
+      data.push({
+        range: `${sheetPrefix}!${toColumnName(sentAtIndex)}${spreadsheetRow}`,
+        values: [[input.sentAt ?? now]],
+      });
+    }
+
+    if (errorIndex >= 0 && typeof input.error === "string") {
+      data.push({
+        range: `${sheetPrefix}!${toColumnName(errorIndex)}${spreadsheetRow}`,
+        values: [[input.error]],
+      });
+    }
+
+    await this.createSheetsClient().spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data,
+      },
+    });
     invalidatePremiumCache();
   }
 

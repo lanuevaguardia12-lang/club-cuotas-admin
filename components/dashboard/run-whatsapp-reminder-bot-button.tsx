@@ -11,10 +11,12 @@ interface RunWhatsAppReminderBotButtonProps {
 }
 
 interface RunWhatsAppReminderBotResponse {
+  mode?: "local-queue" | "webhook";
   period: string;
   periodLabel: string;
   queued: number;
   reminderRecordsFailed?: number;
+  skippedAlreadyQueued?: number;
   skippedNoPhone: number;
   totalPending: number;
 }
@@ -44,8 +46,11 @@ export function RunWhatsAppReminderBotButton({
         throw new Error(result?.message ?? "No se pudo correr el bot de recordatorios.");
       }
 
+      const target =
+        result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
+
       setMessage(
-        `Mes ${result?.periodLabel ?? period}. Pendientes ${result?.totalPending ?? 0}. Enviados al bot ${result?.queued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
+        `Mes ${result?.periodLabel ?? period}. Pendientes ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
       );
     } catch (error) {
       setMessage(
@@ -63,7 +68,7 @@ export function RunWhatsAppReminderBotButton({
       <LoadingModal
         open={loading}
         title="Corriendo bot"
-        description="Preparando pendientes del mes y enviandolos al bot externo..."
+        description="Preparando pendientes del mes y dejandolos listos para el bot..."
       />
       <Button type="button" variant="outline" onClick={runBot} disabled={loading}>
         <Bot />

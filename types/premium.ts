@@ -190,6 +190,13 @@ export interface CreateReminderJobInput {
   error?: string;
 }
 
+export interface UpdateReminderJobStatusInput {
+  reminderId: string;
+  status: ReminderStatus;
+  sentAt?: string;
+  error?: string;
+}
+
 export interface UpsertPaymentRecordInput {
   provider: PaymentProvider;
   externalId: string;

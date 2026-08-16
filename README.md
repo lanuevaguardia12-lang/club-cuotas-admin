@@ -190,6 +190,7 @@ CRON_SECRET="replace-with-a-long-random-cron-secret"
 PAYMENTS_WEBHOOK_SECRET="replace-with-a-long-random-payments-webhook-secret"
 WHATSAPP_BOT_WEBHOOK_URL=""
 WHATSAPP_BOT_WEBHOOK_SECRET=""
+WHATSAPP_BOT_RUNNER_SECRET=""
 
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 VAPID_PRIVATE_KEY=""
@@ -268,7 +269,8 @@ Variables privadas:
 - `AUTH_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_NAME`,
   `AUTH_USERS_JSON`.
 - `API_SECRET`, `CRON_SECRET`.
-- `WHATSAPP_BOT_WEBHOOK_URL`, `WHATSAPP_BOT_WEBHOOK_SECRET` si se usa el bot
+- `WHATSAPP_BOT_RUNNER_SECRET` si se usa el bot local de WhatsApp.
+- `WHATSAPP_BOT_WEBHOOK_URL`, `WHATSAPP_BOT_WEBHOOK_SECRET` si se usa un bot
   externo de WhatsApp.
 - `MERCADO_PAGO_*`, `STRIPE_*`.
 - `GOOGLE_SHEETS_*`.
@@ -911,11 +913,53 @@ Inngest u otro worker.
 
 El dashboard de administrador incluye el boton `Correr bot recordatorios`. Ese
 boton toma solamente el periodo visible en Home, busca jugadores impagos de ese
-mes, arma el mensaje con la plantilla vigente de Configuracion y lo envia al
-webhook configurado en `WHATSAPP_BOT_WEBHOOK_URL`. Vercel actua como disparador:
-el envio real de WhatsApp debe ejecutarlo un bot externo o PC virtual con sesion
-propia. Si `WHATSAPP_BOT_WEBHOOK_SECRET` esta definido, la app envia
-`Authorization: Bearer <WHATSAPP_BOT_WEBHOOK_SECRET>` al webhook.
+mes y arma el mensaje con la plantilla vigente de Configuracion.
+
+Hay dos modos:
+
+- Bot local gratis: si `WHATSAPP_BOT_WEBHOOK_URL` esta vacio, el boton deja los
+  mensajes en cola en la hoja `Recordatorios`. El bot local de tu Mac consulta
+  `/api/bot/whatsapp-reminders/jobs`, manda por WhatsApp Web y marca cada
+  recordatorio como `sent` o `failed`.
+- Bot externo/VM: si `WHATSAPP_BOT_WEBHOOK_URL` esta definido, la app envia el
+  lote a ese webhook. Si `WHATSAPP_BOT_WEBHOOK_SECRET` esta definido, la app
+  envia `Authorization: Bearer <WHATSAPP_BOT_WEBHOOK_SECRET>` al webhook.
+
+El bot local vive en `bot/whatsapp` y usa una sesion persistente de WhatsApp Web
+en `.wwebjs_auth`. La primera vez muestra QR. Luego manda desde ese mismo
+WhatsApp mientras la Mac este prendida, conectada a internet y sin entrar en
+reposo.
+
+Configuracion del bot local:
+
+```bash
+cd bot/whatsapp
+cp .env.example .env
+npm install
+npm start
+```
+
+Tambien se puede correr desde la raiz del repo con:
+
+```bash
+npm run bot:whatsapp
+```
+
+Variables de `bot/whatsapp/.env`:
+
+```bash
+CLUB_APP_URL="https://club-cuotas-admin.vercel.app"
+WHATSAPP_BOT_RUNNER_SECRET="mismo_valor_que_en_vercel"
+WHATSAPP_BOT_POLL_INTERVAL_MS=10000
+WHATSAPP_BOT_BATCH_LIMIT=5
+WHATSAPP_BOT_SEND_DELAY_MS=4000
+WHATSAPP_BOT_DEFAULT_COUNTRY_CODE=549
+WHATSAPP_BOT_DRY_RUN=false
+WHATSAPP_SESSION_PATH="./.wwebjs_auth"
+```
+
+En Vercel tambien debe existir `WHATSAPP_BOT_RUNNER_SECRET` con el mismo valor.
+La ruta del bot local valida `Authorization: Bearer <WHATSAPP_BOT_RUNNER_SECRET>`.
 
 Payload enviado al bot:
 
@@ -1310,7 +1354,8 @@ Variables requeridas en Vercel:
 - `AUTH_SECRET`, `AUTH_USERS_JSON` o `ADMIN_*`.
 - `API_SECRET`.
 - `CRON_SECRET`.
-- `WHATSAPP_BOT_WEBHOOK_URL` y `WHATSAPP_BOT_WEBHOOK_SECRET` si se conecta el
+- `WHATSAPP_BOT_RUNNER_SECRET` si se usa el bot local de WhatsApp.
+- `WHATSAPP_BOT_WEBHOOK_URL` y `WHATSAPP_BOT_WEBHOOK_SECRET` si se conecta un
   bot externo de WhatsApp.
 - `GOOGLE_SHEETS_*`.
 - `MERCADO_PAGO_*` si se usa Mercado Pago.

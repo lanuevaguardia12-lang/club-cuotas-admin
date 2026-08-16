@@ -14,7 +14,8 @@
     "audit:prod": "npm audit --audit-level=high --omit=dev",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm run audit:prod && npm run build",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "bot:whatsapp": "npm --prefix bot/whatsapp start"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

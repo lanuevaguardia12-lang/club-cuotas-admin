@@ -1,0 +1,13 @@
+{
+  "name": "club-cuotas-whatsapp-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node whatsapp-reminder-bot.mjs"
+  },
+  "dependencies": {
+    "qrcode-terminal": "latest",
+    "whatsapp-web.js": "latest"
+  }
+}
