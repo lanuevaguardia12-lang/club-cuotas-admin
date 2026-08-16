@@ -51,6 +51,7 @@ export interface PlayerOfMatchNotificationReportItem {
 export interface PlayerOfMatchNotificationReport {
   dataErrors: PlayerOfMatchNotificationReportItem[];
   notEligible: PlayerOfMatchNotificationReportItem[];
+  notifiedNoPending: PlayerOfMatchNotificationReportItem[];
   pendingAlreadyNotified: PlayerOfMatchNotificationReportItem[];
   pendingNoActiveSubscription: PlayerOfMatchNotificationReportItem[];
   pendingPushFailed: PlayerOfMatchNotificationReportItem[];
@@ -151,7 +152,7 @@ export async function sendOpenPlayerOfMatchNotifications({
     const eligibleMatches = data.matches.filter(isEligiblePlayerOfMatchReminderMatch);
     const alreadyVotedMatches = eligibleMatches.filter((match) => match.userVote);
     const pendingMatches = eligibleMatches.filter((match) => !match.userVote);
-    const notifiedMatches = eligibleMatches.filter((match) =>
+    const notifiedMatches = data.matches.filter((match) =>
       Boolean(
         findLatestMvpNotificationForMatch(
           premium.notifications,
@@ -161,7 +162,7 @@ export async function sendOpenPlayerOfMatchNotifications({
         ),
       ),
     );
-    const recentNotificationMatches = eligibleMatches.filter((match) =>
+    const recentNotificationMatches = data.matches.filter((match) =>
       isRecentMvpReminder(
         findLatestMvpNotificationForMatch(
           premium.notifications,
@@ -549,6 +550,7 @@ function buildPlayerOfMatchNotificationReport(
   const report: PlayerOfMatchNotificationReport = {
     dataErrors: [],
     notEligible: [],
+    notifiedNoPending: [],
     pendingAlreadyNotified: [],
     pendingNoActiveSubscription: [],
     pendingPushFailed: [],
@@ -616,7 +618,11 @@ function buildPlayerOfMatchNotificationReport(
       detail.eligibleMatchIds.length === 0 &&
       !detail.reasons.includes("user-data-failed")
     ) {
-      report.notEligible.push(createReportItem(detail, []));
+      if (detail.notifiedMatchIds.length > 0) {
+        report.notifiedNoPending.push(createReportItem(detail, detail.notifiedMatchIds));
+      } else {
+        report.notEligible.push(createReportItem(detail, []));
+      }
     }
   }
 
