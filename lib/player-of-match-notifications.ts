@@ -152,11 +152,23 @@ export async function sendOpenPlayerOfMatchNotifications({
     const alreadyVotedMatches = eligibleMatches.filter((match) => match.userVote);
     const pendingMatches = eligibleMatches.filter((match) => !match.userVote);
     const notifiedMatches = eligibleMatches.filter((match) =>
-      lastNotificationsByReferenceId.has(getMvpReferenceId(userId, match.id)),
+      Boolean(
+        findLatestMvpNotificationForMatch(
+          premium.notifications,
+          userId,
+          userPlayerId,
+          match,
+        ),
+      ),
     );
     const recentNotificationMatches = eligibleMatches.filter((match) =>
       isRecentMvpReminder(
-        lastNotificationsByReferenceId.get(getMvpReferenceId(userId, match.id)),
+        findLatestMvpNotificationForMatch(
+          premium.notifications,
+          userId,
+          userPlayerId,
+          match,
+        ),
       ),
     );
 
@@ -193,7 +205,14 @@ export async function sendOpenPlayerOfMatchNotifications({
     for (const match of pendingMatches) {
       pendingMatchIds.add(match.id);
       const referenceId = getMvpReferenceId(userId, match.id);
-      const lastNotification = lastNotificationsByReferenceId.get(referenceId);
+      const lastNotification =
+        lastNotificationsByReferenceId.get(referenceId) ??
+        findLatestMvpNotificationForMatch(
+          premium.notifications,
+          userId,
+          userPlayerId,
+          match,
+        );
 
       if (
         (!ignoreAlreadyNotified && isRecentMvpReminder(lastNotification)) ||
@@ -629,6 +648,86 @@ function summarizeNotificationReport(report: PlayerOfMatchNotificationReport) {
 
 function getMvpReferenceId(userId: string, matchId: string) {
   return `mvp:${userId}:${matchId}`;
+}
+
+function findLatestMvpNotificationForMatch(
+  notifications: AppNotification[],
+  userId: string,
+  playerId: string | undefined,
+  match: PlayerOfMatchMatch,
+) {
+  const candidates = notifications.filter((notification) =>
+    isMvpNotificationForMatch(notification, userId, playerId, match),
+  );
+
+  return candidates.sort(
+    (left, right) => getTimestamp(right.createdAt) - getTimestamp(left.createdAt),
+  )[0];
+}
+
+function isMvpNotificationForMatch(
+  notification: AppNotification,
+  userId: string,
+  playerId: string | undefined,
+  match: PlayerOfMatchMatch,
+) {
+  if (notification.referenceId === getMvpReferenceId(userId, match.id)) {
+    return true;
+  }
+
+  if (!isNotificationTargetedToPlayer(notification, userId, playerId)) {
+    return false;
+  }
+
+  if (!isMvpNotification(notification)) {
+    return false;
+  }
+
+  return doesNotificationReferenceMatch(notification, match);
+}
+
+function isNotificationTargetedToPlayer(
+  notification: AppNotification,
+  userId: string,
+  playerId: string | undefined,
+) {
+  return (
+    notification.targetUserId === userId ||
+    notification.targetPlayerId === userId ||
+    (Boolean(playerId) && notification.targetPlayerId === playerId)
+  );
+}
+
+function isMvpNotification(notification: AppNotification) {
+  const title = normalizeNotificationText(notification.title);
+
+  return (
+    title.includes("mvp") ||
+    notification.url === "/player-of-match" ||
+    notification.referenceId?.startsWith("mvp:") === true
+  );
+}
+
+function doesNotificationReferenceMatch(
+  notification: AppNotification,
+  match: PlayerOfMatchMatch,
+) {
+  if (notification.referenceId?.includes(match.id)) {
+    return true;
+  }
+
+  const message = normalizeNotificationText(notification.message);
+  const rival = normalizeNotificationText(match.rival);
+
+  return Boolean(rival && message.includes(rival));
+}
+
+function normalizeNotificationText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function pushUniqueReason(detail: PlayerOfMatchNotificationDetail, reason: string) {
