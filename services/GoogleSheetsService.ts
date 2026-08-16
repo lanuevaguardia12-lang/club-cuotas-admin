@@ -5444,12 +5444,13 @@ function buildPlayerOfMatchRankings({
     });
 
   const mvp = mvpRows
+    .filter((row) => row.totalPodiums > 0)
     .sort(
       (left, right) =>
+        right.totalPodiums - left.totalPodiums ||
         right.firstPlaces - left.firstPlaces ||
         right.secondPlaces - left.secondPlaces ||
         right.thirdPlaces - left.thirdPlaces ||
-        right.totalPodiums - left.totalPodiums ||
         left.playerName.localeCompare(right.playerName, "es"),
     )
     .map((row, index) => ({ ...row, rank: index + 1 }));

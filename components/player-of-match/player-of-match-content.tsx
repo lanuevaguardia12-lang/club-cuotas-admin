@@ -44,16 +44,22 @@ import type {
   PlayerOfMatchData,
   PlayerOfMatchMatch,
   PlayerOfMatchResult,
+  PlayerStreakRankingRow,
 } from "@/types/player-of-match";
 
 interface PlayerOfMatchContentProps {
   canManage: boolean;
+  canVote: boolean;
   data: PlayerOfMatchData;
 }
 
 type PlayerOfMatchTab = "mvp" | "ranking" | "rachas";
 
-export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentProps) {
+export function PlayerOfMatchContent({
+  canManage,
+  canVote,
+  data,
+}: PlayerOfMatchContentProps) {
   const [activeTab, setActiveTab] = useState<PlayerOfMatchTab>("mvp");
   const currentMatches = data.matches.filter(isCurrentPlayerOfMatch);
   const currentMatchIds = new Set(currentMatches.map((match) => match.id));
@@ -107,6 +113,7 @@ export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentPr
       {activeTab === "mvp" ? (
         <MvpTab
           canManage={canManage}
+          canVote={canVote}
           currentMatches={currentMatches}
           historyMatches={historyMatches}
         />
@@ -119,10 +126,12 @@ export function PlayerOfMatchContent({ canManage, data }: PlayerOfMatchContentPr
 
 function MvpTab({
   canManage,
+  canVote,
   currentMatches,
   historyMatches,
 }: {
   canManage: boolean;
+  canVote: boolean;
   currentMatches: PlayerOfMatchMatch[];
   historyMatches: PlayerOfMatchMatch[];
 }) {
@@ -138,7 +147,12 @@ function MvpTab({
         {currentMatches.length > 0 ? (
           <div className="grid gap-4 xl:grid-cols-2">
             {currentMatches.map((match) => (
-              <MatchVoteCard canManage={canManage} key={match.id} match={match} />
+              <MatchVoteCard
+                canManage={canManage}
+                canVote={canVote}
+                key={match.id}
+                match={match}
+              />
             ))}
           </div>
         ) : (
@@ -165,7 +179,12 @@ function MvpTab({
           {historyMatches.length > 0 ? (
             <div className="grid gap-4 xl:grid-cols-2">
               {historyMatches.map((match) => (
-                <MatchVoteCard canManage={canManage} key={match.id} match={match} />
+                <MatchVoteCard
+                  canManage={canManage}
+                  canVote={canVote}
+                  key={match.id}
+                  match={match}
+                />
               ))}
             </div>
           ) : (
@@ -196,10 +215,10 @@ function RankingTab({ data }: { data: PlayerOfMatchData }) {
                 <tr className="border-border bg-muted/40 border-b">
                   <TableHead>#</TableHead>
                   <TableHead>Jugador</TableHead>
-                  <TableHead>Primer puesto</TableHead>
-                  <TableHead>Segundo puesto</TableHead>
-                  <TableHead>Tercer puesto</TableHead>
-                  <TableHead>Total</TableHead>
+                  <TableHead>1º puesto</TableHead>
+                  <TableHead>2º puesto</TableHead>
+                  <TableHead>3º puesto</TableHead>
+                  <TableHead>Total podios</TableHead>
                 </tr>
               </thead>
               <tbody>
@@ -289,19 +308,7 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <RankingList
-              emptyText="Todavía no hay rachas para mostrar."
-              rows={data.rankings.streaks.map((row) => ({
-                detail: row.lastAttendanceRival
-                  ? `Última asistencia vs ${row.lastAttendanceRival}`
-                  : "Sin asistencia todavía",
-                key: row.playerId,
-                name: row.playerName,
-                photoDataUrl: row.photoDataUrl,
-                rank: row.rank,
-                value: `${row.currentStreak}`,
-              }))}
-            />
+            <StreakRankingTable rows={data.rankings.streaks} />
           </CardContent>
         </Card>
 
@@ -328,6 +335,52 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
         </Card>
       </div>
     </section>
+  );
+}
+
+function StreakRankingTable({ rows }: { rows: PlayerStreakRankingRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-muted-foreground p-4 text-sm">
+        Todavía no hay rachas para mostrar.
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] text-sm">
+        <thead>
+          <tr className="border-border bg-muted/40 border-b">
+            <TableHead>#</TableHead>
+            <TableHead>Jugador</TableHead>
+            <TableHead>Fueguitos</TableHead>
+            <TableHead>Última asistencia</TableHead>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.playerId} className="border-border border-b last:border-0">
+              <td className="px-4 py-3 font-semibold">#{row.rank}</td>
+              <td className="px-4 py-3">
+                <RankingPlayer name={row.playerName} photoDataUrl={row.photoDataUrl} />
+              </td>
+              <td className="px-4 py-3">
+                <span className="bg-primary/10 text-primary inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold">
+                  <Flame className="size-4 fill-current" />
+                  {row.currentStreak}
+                </span>
+              </td>
+              <td className="text-muted-foreground px-4 py-3">
+                {row.lastAttendanceRival
+                  ? `vs ${row.lastAttendanceRival}`
+                  : "Sin asistencia todavía"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -381,9 +434,11 @@ function RankingPlayer({ name, photoDataUrl }: { name: string; photoDataUrl?: st
 
 function MatchVoteCard({
   canManage,
+  canVote: canUserVote,
   match,
 }: {
   canManage: boolean;
+  canVote: boolean;
   match: PlayerOfMatchMatch;
 }) {
   const [showResults, setShowResults] = useState(false);
@@ -392,7 +447,8 @@ function MatchVoteCard({
   const votingClosed = match.votingStatus === "closed";
   const votingScheduled = match.votingStatus === "scheduled";
   const hasEnoughPlayers = match.players.length >= 2;
-  const canVote = hasEnoughPlayers && !alreadyVoted && match.votingStatus === "open";
+  const canVote =
+    canUserVote && hasEnoughPlayers && !alreadyVoted && match.votingStatus === "open";
   const statusConfig = {
     closed: {
       icon: Lock,
@@ -506,6 +562,10 @@ function MatchVoteCard({
         ) : votingClosed ? (
           <p className="text-muted-foreground text-sm">
             La votación de este partido ya cerró. Podés ver cómo quedó el podio.
+          </p>
+        ) : !canUserVote ? (
+          <p className="text-muted-foreground text-sm">
+            La votación está disponible solo para usuarios jugadores.
           </p>
         ) : (
           <p className="text-muted-foreground text-sm">

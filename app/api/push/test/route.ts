@@ -15,6 +15,13 @@ export async function POST() {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
+  if (user.role !== "player") {
+    return NextResponse.json(
+      { message: "Las notificaciones push son solo para jugadores." },
+      { status: 403 },
+    );
+  }
+
   const dataService = getDataService();
   const subscriptions = await dataService.getPushSubscriptionsForUser(user.id);
 
@@ -34,7 +41,7 @@ export async function POST() {
         title: "Notificaciones activas",
         body: `Hola ${user.name}. Este dispositivo ya puede recibir avisos de La Nueva Guardia.`,
         tag: `push-test-${user.id}`,
-        url: user.role === "player" ? "/mi-cuota" : "/notifications",
+        url: "/mi-cuota",
       });
       sent += 1;
     } catch (error) {

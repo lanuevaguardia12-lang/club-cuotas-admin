@@ -21,6 +21,10 @@ export async function GET() {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
+  if (user.role !== "player") {
+    return NextResponse.json({ notifications: [], unreadCount: 0 });
+  }
+
   const notifications = (await getDataService().getNotifications())
     .filter((notification) => canUserSeeNotification(notification, user))
     .slice(0, 50);
@@ -37,6 +41,13 @@ export async function PATCH(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
+  }
+
+  if (user.role !== "player") {
+    return NextResponse.json(
+      { message: "Las notificaciones de usuario son solo para jugadores." },
+      { status: 403 },
+    );
   }
 
   const parsed = markReadSchema.safeParse(await request.json().catch(() => null));

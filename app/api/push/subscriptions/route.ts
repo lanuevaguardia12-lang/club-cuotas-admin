@@ -36,6 +36,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
+  if (user.role !== "player") {
+    return NextResponse.json(
+      { message: "Las notificaciones push son solo para jugadores." },
+      { status: 403 },
+    );
+  }
+
   if (!isPushConfigured()) {
     return NextResponse.json(
       { message: "Push notifications no esta configurado." },
@@ -50,8 +57,7 @@ export async function POST(request: NextRequest) {
   }
 
   const dataService = getDataService();
-  const playerId =
-    user.role === "player" ? (parsed.data.playerId ?? user.playerId) : user.playerId;
+  const playerId = parsed.data.playerId ?? user.playerId;
 
   await dataService.upsertPushSubscription({
     userId: user.id,

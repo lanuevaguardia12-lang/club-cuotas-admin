@@ -30,6 +30,13 @@ export async function submitPlayerOfMatchVote(
     };
   }
 
+  if (user.role === "admin") {
+    return {
+      ok: false,
+      message: "La votación está disponible solo para usuarios jugadores.",
+    };
+  }
+
   const parsed = playerOfMatchVoteSchema.safeParse(input);
 
   if (!parsed.success) {

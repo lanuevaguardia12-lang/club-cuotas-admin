@@ -353,6 +353,10 @@ function isMatchDateReached(value: string) {
 
 function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
   return subscriptions.reduce((groups, subscription) => {
+    if (!subscription.playerId) {
+      return groups;
+    }
+
     const current = groups.get(subscription.userId) ?? [];
 
     current.push(subscription);

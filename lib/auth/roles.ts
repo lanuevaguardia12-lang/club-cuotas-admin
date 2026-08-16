@@ -56,7 +56,6 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "api:write",
     "fixture:read",
     "player:self:read",
-    "player-of-match:vote",
     "player-of-match:manage",
   ],
   coach: [
@@ -119,7 +118,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
   }
 
   if (href.startsWith("/player-of-match")) {
-    return hasPermission(user, "player-of-match:vote");
+    return (
+      hasPermission(user, "player-of-match:vote") ||
+      hasPermission(user, "player-of-match:manage")
+    );
   }
 
   if (href.startsWith("/fixture")) {

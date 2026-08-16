@@ -19,6 +19,7 @@ export default async function PlayerOfMatchPage() {
 
   const data = await getDataService().getPlayerOfMatchData(user.id, user.playerId);
   const canManage = hasPermission(user, "player-of-match:manage");
+  const canVote = user.role !== "admin" && hasPermission(user, "player-of-match:vote");
 
   return (
     <main className="grid gap-6">
@@ -40,7 +41,7 @@ export default async function PlayerOfMatchPage() {
         </Badge>
       </header>
 
-      <PlayerOfMatchContent canManage={canManage} data={data} />
+      <PlayerOfMatchContent canManage={canManage} canVote={canVote} data={data} />
     </main>
   );
 }
