@@ -98,7 +98,9 @@ async function fetchJobs() {
   });
 
   if (!response.ok) {
-    throw new Error(`La app respondio ${response.status}: ${await response.text()}`);
+    const message = await response.text();
+
+    throw new Error(`La app respondio ${response.status}: ${message}`);
   }
 
   const data = await response.json();
@@ -122,12 +124,12 @@ async function processJob(job) {
     }
 
     await updateJob(job.id, "sent");
-    console.log("Enviado:", job.playerName, phone);
+    console.log("Enviado:", job.period, job.playerName, phone);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido.";
 
     await updateJob(job.id, "failed", message);
-    console.error("Fallo:", job.playerName, message);
+    console.error("Fallo:", job.period, job.playerName, message);
   }
 }
 

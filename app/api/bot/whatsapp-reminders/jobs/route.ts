@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { apiAuditActor } from "@/lib/audit";
-import { isWhatsAppBotReminder } from "@/lib/whatsapp-bot";
+import { getWhatsAppBotReminderRunId, isWhatsAppBotReminder } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
-import type { ReminderStatus } from "@/types/premium";
+import type { ReminderJob, ReminderStatus } from "@/types/premium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,12 +18,17 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
+  const includeAllRuns = searchParams.get("all") === "1";
   const period = searchParams.get("period");
   const limit = clampLimit(searchParams.get("limit"));
-  const jobs = (await getDataService().getReminderJobs())
+  const queuedReminders = (await getDataService().getReminderJobs())
     .filter((reminder) => reminder.status === "queued")
     .filter(isWhatsAppBotReminder)
-    .filter((reminder) => !period || reminder.period === period)
+    .filter((reminder) => !period || reminder.period === period);
+  const targetReminders = includeAllRuns
+    ? queuedReminders
+    : filterLatestReminderRun(queuedReminders);
+  const jobs = targetReminders
     .sort(
       (left, right) =>
         new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
@@ -40,7 +45,13 @@ export async function GET(request: NextRequest) {
       scheduledFor: reminder.scheduledFor,
     }));
 
-  return NextResponse.json({ jobs, limit, total: jobs.length });
+  return NextResponse.json({
+    jobs,
+    latestOnly: !includeAllRuns,
+    limit,
+    total: jobs.length,
+    totalQueued: queuedReminders.length,
+  });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -100,10 +111,37 @@ function requireBotAuth(request: NextRequest) {
   const authorization = request.headers.get("authorization");
 
   if (!expected || authorization !== `Bearer ${expected}`) {
-    return NextResponse.json({ message: "No autorizado." }, { status: 401 });
+    return NextResponse.json(
+      {
+        message:
+          "No autorizado. Revisá que WHATSAPP_BOT_RUNNER_SECRET sea igual en Vercel y en bot/whatsapp/.env, y hacé redeploy en Vercel.",
+        runnerSecretConfigured: Boolean(process.env.WHATSAPP_BOT_RUNNER_SECRET?.trim()),
+      },
+      { status: 401 },
+    );
   }
 
   return null;
+}
+
+function filterLatestReminderRun(reminders: ReminderJob[]) {
+  if (reminders.length === 0) {
+    return [];
+  }
+
+  const latestReminder = [...reminders].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  )[0];
+  const latestRunId = getWhatsAppBotReminderRunId(latestReminder);
+
+  if (!latestRunId) {
+    return [latestReminder];
+  }
+
+  return reminders.filter(
+    (reminder) => getWhatsAppBotReminderRunId(reminder) === latestRunId,
+  );
 }
 
 function clampLimit(value: string | null) {

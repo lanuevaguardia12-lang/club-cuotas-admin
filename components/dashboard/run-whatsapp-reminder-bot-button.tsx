@@ -29,14 +29,17 @@ export function RunWhatsAppReminderBotButton({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const selectedPeriod = getSelectedPeriod(searchParams.get("period"), period);
+  const selectedPeriodLabel = formatPeriodLabel(selectedPeriod);
 
   async function runBot() {
+    const periodToSend = getVisibleMonthInputPeriod(selectedPeriod);
+
     setLoading(true);
     setMessage("");
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
-        body: JSON.stringify({ period: selectedPeriod }),
+        body: JSON.stringify({ period: periodToSend }),
         headers: {
           "content-type": "application/json",
         },
@@ -57,7 +60,7 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? selectedPeriod}. Pendientes ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
+        `Mes ${result?.periodLabel ?? formatPeriodLabel(periodToSend)}. Pendientes ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
       );
     } catch (error) {
       setMessage(
@@ -81,6 +84,9 @@ export function RunWhatsAppReminderBotButton({
         <Bot />
         Correr bot recordatorios
       </Button>
+      <p className="text-muted-foreground text-xs sm:text-right">
+        Mes a enviar: {selectedPeriodLabel}
+      </p>
       {message ? (
         <p className="text-muted-foreground max-w-sm text-xs sm:text-right">{message}</p>
       ) : null}
@@ -90,6 +96,27 @@ export function RunWhatsAppReminderBotButton({
 
 function getSelectedPeriod(urlPeriod: string | null, fallback: string) {
   return urlPeriod && /^\d{4}-\d{2}$/.test(urlPeriod) ? urlPeriod : fallback;
+}
+
+function getVisibleMonthInputPeriod(fallback: string) {
+  if (typeof document === "undefined") {
+    return fallback;
+  }
+
+  const visiblePeriod =
+    document.querySelector<HTMLInputElement>('input[type="month"]')?.value;
+
+  return getSelectedPeriod(visiblePeriod ?? null, fallback);
+}
+
+function formatPeriodLabel(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }
 
 function parseBotResponse(responseText: string) {

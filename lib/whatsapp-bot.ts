@@ -9,3 +9,9 @@ export function buildWhatsAppBotReminderMarker(runId: string) {
 export function isWhatsAppBotReminder(reminder: ReminderJob) {
   return reminder.error?.includes(WHATSAPP_BOT_REMINDER_MARKER) ?? false;
 }
+
+export function getWhatsAppBotReminderRunId(reminder: ReminderJob) {
+  const [, runId = ""] = reminder.error?.match(/run:([^;]+)/) ?? [];
+
+  return runId;
+}
