@@ -86,6 +86,7 @@ export interface LeagueFixtureData {
   matches: LeagueFixtureMatch[];
   rounds: LeagueFixtureRound[];
   clubStanding?: LeagueStandingRow;
+  allClubMatches: LeagueFixtureMatch[];
   clubMatches: LeagueFixtureMatch[];
   nextMatches: LeagueFixtureMatch[];
   lastMatches: LeagueFixtureMatch[];

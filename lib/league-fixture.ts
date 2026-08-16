@@ -111,12 +111,9 @@ export async function getLeagueFixtureData(
       metadata.tournaments,
       { includeDetails: true },
     ).catch(() => []);
-    const nextMatches = buildNextMatches(
-      allClubMatches.length > 0 ? allClubMatches : clubMatches,
-    );
-    const lastMatches = buildLastMatches(
-      allClubMatches.length > 0 ? allClubMatches : clubMatches,
-    );
+    const globalClubMatches = allClubMatches.length > 0 ? allClubMatches : clubMatches;
+    const nextMatches = buildNextMatches(globalClubMatches);
+    const lastMatches = buildLastMatches(globalClubMatches);
     const scorers = buildScorerRows(matches);
 
     return {
@@ -133,6 +130,7 @@ export async function getLeagueFixtureData(
       matches,
       rounds,
       clubStanding: standings.find((row) => row.isClub),
+      allClubMatches: globalClubMatches,
       clubMatches,
       nextMatches,
       lastMatches,
@@ -164,6 +162,7 @@ export async function getLeagueFixtureData(
       standings: [],
       matches: [],
       rounds: [],
+      allClubMatches: [],
       clubMatches: [],
       nextMatches: [],
       lastMatches: [],
@@ -278,13 +277,19 @@ export function applyLeagueFixtureScheduleOverrides(
   }));
   const matches = rounds.flatMap((round) => round.matches);
   const clubMatches = matches.filter((match) => match.isClubMatch);
+  const allClubMatches = dedupeLeagueMatches(
+    (data.allClubMatches.length > 0 ? data.allClubMatches : data.clubMatches)
+      .map(applyOverride)
+      .filter((match) => match.isClubMatch && !match.involvesBye),
+  );
 
   return {
     ...data,
+    allClubMatches,
     clubMatches,
     matches,
-    nextMatches: buildNextMatches(clubMatches),
-    lastMatches: buildLastMatches(clubMatches),
+    nextMatches: buildNextMatches(allClubMatches),
+    lastMatches: buildLastMatches(allClubMatches),
     rounds,
     scorers: buildScorerRows(matches),
   };
