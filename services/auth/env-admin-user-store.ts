@@ -53,6 +53,16 @@ export class EnvAdminUserStore implements UserStore {
   }
 }
 
+export function getConfiguredAuthUsers(): AuthUser[] {
+  return getEnvUsers().map((user) => ({
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    playerId: user.playerId,
+  }));
+}
+
 function getEnvUsers() {
   const usersFromJson = parseAuthUsersJson();
   const adminUsername = process.env.ADMIN_USERNAME;

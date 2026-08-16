@@ -4,6 +4,8 @@ import { unstable_expireTag } from "next/cache";
 
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
+import { getConfiguredAuthUsers } from "@/services/auth/env-admin-user-store";
+import type { AuthUser } from "@/types/auth";
 import type {
   AppNotification,
   AuditActor,
@@ -12,7 +14,20 @@ import type {
 
 const MVP_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 
+export interface PlayerOfMatchNotificationDetail {
+  failed: number;
+  matchIds: string[];
+  pendingMatches: number;
+  playerId?: string;
+  reasons: string[];
+  sent: number;
+  skipped: number;
+  subscriptionCount: number;
+  userId: string;
+}
+
 export interface SendOpenPlayerOfMatchNotificationsResult {
+  details?: PlayerOfMatchNotificationDetail[];
   failed: number;
   matches: number;
   notificationRecordsFailed: number;
@@ -20,6 +35,7 @@ export interface SendOpenPlayerOfMatchNotificationsResult {
   skipped: number;
   skippedAlreadyNotified: number;
   skippedNoPendingMatches: number;
+  skippedNoSubscriptions: number;
   targetPlayerId?: string;
   targetUserId?: string;
   userDataFailed: number;
@@ -28,12 +44,14 @@ export interface SendOpenPlayerOfMatchNotificationsResult {
 
 export async function sendOpenPlayerOfMatchNotifications({
   actor,
+  includeDetails = false,
   ignoreAlreadyNotified = false,
   targetPlayerId,
   targetUserId,
   trigger,
 }: {
   actor: AuditActor;
+  includeDetails?: boolean;
   ignoreAlreadyNotified?: boolean;
   targetPlayerId?: string;
   targetUserId?: string;
@@ -51,29 +69,41 @@ export async function sendOpenPlayerOfMatchNotifications({
       : dataService.getPremiumData(),
   ]);
   const subscriptionsByUser = groupSubscriptionsByUser(subscriptions);
+  const recipients = buildNotificationRecipients({
+    includeConfiguredUsers: includeDetails,
+    subscriptionsByUser,
+    targetPlayerId,
+    targetUserId,
+  });
   const lastNotificationsByReferenceId = groupLatestNotificationByReferenceId(
     premium.notifications,
   );
   const notifiedThisRun = new Set<string>();
   const pendingMatchIds = new Set<string>();
+  const details: PlayerOfMatchNotificationDetail[] = [];
   let sent = 0;
   let skipped = 0;
   let skippedAlreadyNotified = 0;
   let skippedNoPendingMatches = 0;
+  let skippedNoSubscriptions = 0;
   let failed = 0;
   let notificationRecordsFailed = 0;
   let userDataFailed = 0;
 
-  for (const [userId, userSubscriptions] of subscriptionsByUser) {
-    const userPlayerId = userSubscriptions[0]?.playerId;
+  for (const recipient of recipients.values()) {
+    const { userId, userSubscriptions } = recipient;
+    const userPlayerId = recipient.playerId ?? userSubscriptions[0]?.playerId;
+    const detail = createNotificationDetail(userId, userPlayerId, userSubscriptions);
     const data = await dataService
       .getPlayerOfMatchData(userId, userPlayerId)
       .catch(() => {
         userDataFailed += 1;
+        detail.reasons.push("user-data-failed");
         return null;
       });
 
     if (!data) {
+      details.push(detail);
       continue;
     }
 
@@ -84,10 +114,24 @@ export async function sendOpenPlayerOfMatchNotifications({
         match.votingStatus === "open" &&
         isMatchDateReached(match.date),
     );
+    detail.pendingMatches = pendingMatches.length;
+    detail.matchIds = pendingMatches.map((match) => match.id);
 
     if (pendingMatches.length === 0) {
       skipped += 1;
       skippedNoPendingMatches += 1;
+      detail.skipped += 1;
+      detail.reasons.push("no-pending-matches");
+      details.push(detail);
+      continue;
+    }
+
+    if (userSubscriptions.length === 0) {
+      skipped += 1;
+      skippedNoSubscriptions += 1;
+      detail.skipped += 1;
+      detail.reasons.push("no-active-subscription");
+      details.push(detail);
       continue;
     }
 
@@ -102,6 +146,8 @@ export async function sendOpenPlayerOfMatchNotifications({
       ) {
         skipped += 1;
         skippedAlreadyNotified += 1;
+        detail.skipped += 1;
+        pushUniqueReason(detail, "already-notified");
         continue;
       }
 
@@ -118,8 +164,10 @@ export async function sendOpenPlayerOfMatchNotifications({
           });
           sent += 1;
           matchSent += 1;
+          detail.sent += 1;
         } catch (error) {
           failed += 1;
+          detail.failed += 1;
           await maybeDeactivateExpiredSubscription(
             dataService,
             subscription.endpoint,
@@ -146,6 +194,8 @@ export async function sendOpenPlayerOfMatchNotifications({
         }
       }
     }
+
+    details.push(detail);
   }
 
   await dataService
@@ -158,12 +208,14 @@ export async function sendOpenPlayerOfMatchNotifications({
       metadata: {
         failed,
         ignoreAlreadyNotified,
+        includeDetails,
         matches: pendingMatchIds.size,
         notificationRecordsFailed,
         sent,
         skipped,
         skippedAlreadyNotified,
         skippedNoPendingMatches,
+        skippedNoSubscriptions,
         targetPlayerId: targetPlayerId ?? null,
         targetUserId: targetUserId ?? null,
         trigger,
@@ -174,6 +226,7 @@ export async function sendOpenPlayerOfMatchNotifications({
     .catch(() => undefined);
 
   return {
+    ...(includeDetails ? { details } : {}),
     failed,
     matches: pendingMatchIds.size,
     notificationRecordsFailed,
@@ -181,6 +234,7 @@ export async function sendOpenPlayerOfMatchNotifications({
     skipped,
     skippedAlreadyNotified,
     skippedNoPendingMatches,
+    skippedNoSubscriptions,
     targetPlayerId,
     targetUserId,
     userDataFailed,
@@ -221,6 +275,93 @@ function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
 
     return groups;
   }, new Map<string, PushSubscriptionRecord[]>());
+}
+
+function buildNotificationRecipients({
+  includeConfiguredUsers,
+  subscriptionsByUser,
+  targetPlayerId,
+  targetUserId,
+}: {
+  includeConfiguredUsers: boolean;
+  subscriptionsByUser: Map<string, PushSubscriptionRecord[]>;
+  targetPlayerId?: string;
+  targetUserId?: string;
+}) {
+  const recipients = new Map<
+    string,
+    {
+      playerId?: string;
+      userId: string;
+      userSubscriptions: PushSubscriptionRecord[];
+    }
+  >();
+
+  for (const [userId, userSubscriptions] of subscriptionsByUser) {
+    recipients.set(userId, {
+      playerId: userSubscriptions[0]?.playerId,
+      userId,
+      userSubscriptions,
+    });
+  }
+
+  if (!includeConfiguredUsers) {
+    return recipients;
+  }
+
+  for (const user of getConfiguredPlayerUsers()) {
+    if (targetUserId && user.id !== targetUserId) {
+      continue;
+    }
+
+    if (targetPlayerId && user.playerId !== targetPlayerId) {
+      continue;
+    }
+
+    const current = recipients.get(user.id);
+
+    recipients.set(user.id, {
+      playerId: current?.playerId ?? user.playerId,
+      userId: user.id,
+      userSubscriptions: current?.userSubscriptions ?? [],
+    });
+  }
+
+  return recipients;
+}
+
+function getConfiguredPlayerUsers(): AuthUser[] {
+  try {
+    return getConfiguredAuthUsers().filter(
+      (user) => user.role === "player" && Boolean(user.playerId),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function createNotificationDetail(
+  userId: string,
+  playerId: string | undefined,
+  subscriptions: PushSubscriptionRecord[],
+): PlayerOfMatchNotificationDetail {
+  return {
+    failed: 0,
+    matchIds: [],
+    pendingMatches: 0,
+    playerId,
+    reasons: [],
+    sent: 0,
+    skipped: 0,
+    subscriptionCount: subscriptions.length,
+    userId,
+  };
+}
+
+function pushUniqueReason(detail: PlayerOfMatchNotificationDetail, reason: string) {
+  if (!detail.reasons.includes(reason)) {
+    detail.reasons.push(reason);
+  }
 }
 
 function groupLatestNotificationByReferenceId(notifications: AppNotification[]) {

@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
 
     const result = await sendOpenPlayerOfMatchNotifications({
       actor: systemAuditActor,
+      includeDetails: request.nextUrl.searchParams.get("details") === "1",
       trigger: "cron",
     });
 
@@ -45,23 +46,26 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => ({}))) as {
+    all?: unknown;
+    includeDetails?: unknown;
     ignoreAlreadyNotified?: unknown;
     playerId?: unknown;
     userId?: unknown;
   };
+  const all = body.all === true;
   const playerId = typeof body.playerId === "string" ? body.playerId.trim() : "";
   const userId = typeof body.userId === "string" ? body.userId.trim() : "";
 
-  if (playerId && userId) {
+  if ((playerId && userId) || (all && (playerId || userId))) {
     return NextResponse.json(
-      { message: "Usá playerId o userId, no ambos." },
+      { message: "Usá all, playerId o userId. Solo una opción por vez." },
       { status: 400 },
     );
   }
 
-  if (!playerId && !userId) {
+  if (!all && !playerId && !userId) {
     return NextResponse.json(
-      { message: "Tenes que indicar playerId o userId." },
+      { message: "Tenes que indicar all:true, playerId o userId." },
       { status: 400 },
     );
   }
@@ -71,6 +75,7 @@ export async function POST(request: NextRequest) {
 
     const result = await sendOpenPlayerOfMatchNotifications({
       actor: user ? userToAuditActor(user) : systemAuditActor,
+      includeDetails: body.includeDetails === true,
       ignoreAlreadyNotified: body.ignoreAlreadyNotified === true,
       targetPlayerId: playerId || undefined,
       targetUserId: userId || undefined,
