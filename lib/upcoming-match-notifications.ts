@@ -43,7 +43,7 @@ export async function sendUpcomingMatchReminderNotifications({
     addDaysToDateIso(getArgentinaDateIso(now), days),
   );
   const targetDateSet = new Set(targetDates);
-  const [rawFixture, fixtureScheduleOverrides, subscriptions, premium] =
+  const [rawFixture, fixtureScheduleOverrides, subscriptions, notifications] =
     await Promise.all([
       getLeagueFixtureData(),
       dataService.getFixtureMatchScheduleOverrides().catch(() => []),
@@ -52,7 +52,10 @@ export async function sendUpcomingMatchReminderNotifications({
         : dataService.getPushSubscriptions(),
       ignoreAlreadyNotified
         ? Promise.resolve({ notifications: [] })
-        : dataService.getPremiumData(),
+        : dataService
+            .getNotifications()
+            .then((records) => ({ notifications: records }))
+            .catch(() => ({ notifications: [] })),
     ]);
   const fixture = applyLeagueFixtureScheduleOverrides(
     rawFixture,
@@ -68,7 +71,7 @@ export async function sendUpcomingMatchReminderNotifications({
   const matches = forceNextMatch ? candidateMatches.slice(0, 1) : candidateMatches;
   const subscriptionsByUser = groupPlayerSubscriptionsByUser(subscriptions);
   const alreadyNotified = new Set(
-    premium.notifications
+    notifications.notifications
       .map((notification) => notification.referenceId)
       .filter((referenceId): referenceId is string => Boolean(referenceId)),
   );
@@ -84,10 +87,12 @@ export async function sendUpcomingMatchReminderNotifications({
 
     for (const [userId, userSubscriptions] of subscriptionsByUser) {
       const playerId = userSubscriptions[0]?.playerId;
-      const referenceId = `upcoming-match:${userId}:${match.id}`;
+      const referenceId = getUpcomingMatchReferenceId(userId, match);
+      const legacyReferenceId = getLegacyUpcomingMatchReferenceId(userId, match);
 
       if (
-        (!ignoreAlreadyNotified && alreadyNotified.has(referenceId)) ||
+        (!ignoreAlreadyNotified &&
+          isAlreadyNotified(alreadyNotified, referenceId, legacyReferenceId)) ||
         notifiedThisRun.has(referenceId)
       ) {
         skipped += 1;
@@ -101,7 +106,7 @@ export async function sendUpcomingMatchReminderNotifications({
           await sendPushNotification(subscription, {
             title: "Proximo partido",
             body: message,
-            tag: `upcoming-match-${userId}-${match.id}`,
+            tag: referenceId,
             url: "/fixture",
           });
           sent += 1;
@@ -182,11 +187,44 @@ function groupPlayerSubscriptionsByUser(subscriptions: PushSubscriptionRecord[])
 
     const current = groups.get(subscription.userId) ?? [];
 
-    current.push(subscription);
+    if (!current.some((candidate) => candidate.endpoint === subscription.endpoint)) {
+      current.push(subscription);
+    }
+
     groups.set(subscription.userId, current);
 
     return groups;
   }, new Map<string, PushSubscriptionRecord[]>());
+}
+
+function getUpcomingMatchReferenceId(userId: string, match: LeagueFixtureMatch) {
+  const dateKey = match.dateIso || match.roundDate || "sin-fecha";
+  const rivalKey = normalizeReferenceSegment(getRivalName(match));
+  const competitionKey = normalizeReferenceSegment(match.competitionKind);
+
+  return `upcoming-match:${userId}:${dateKey}:${competitionKey}:${rivalKey}`;
+}
+
+function getLegacyUpcomingMatchReferenceId(userId: string, match: LeagueFixtureMatch) {
+  return `upcoming-match:${userId}:${match.id}`;
+}
+
+function isAlreadyNotified(
+  alreadyNotified: Set<string>,
+  referenceId: string,
+  legacyReferenceId: string,
+) {
+  return alreadyNotified.has(referenceId) || alreadyNotified.has(legacyReferenceId);
+}
+
+function normalizeReferenceSegment(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 async function maybeDeactivateExpiredSubscription(

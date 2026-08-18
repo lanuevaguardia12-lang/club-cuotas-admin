@@ -939,6 +939,7 @@ function PodiumSpot({
             ? "size-14 border-[3px] sm:size-20 sm:border-4"
             : "size-12 border-2 sm:size-16"
         }
+        fit="contain"
         name={result?.playerName ?? "-"}
         photoDataUrl={result?.photoDataUrl}
       />
@@ -956,10 +957,12 @@ function PodiumSpot({
 
 function PlayerAvatar({
   className,
+  fit = "cover",
   name,
   photoDataUrl,
 }: {
   className: string;
+  fit?: "contain" | "cover";
   name: string;
   photoDataUrl?: string;
 }) {
@@ -972,7 +975,10 @@ function PlayerAvatar({
         <img
           src={photoDataUrl}
           alt={`Foto de ${name}`}
-          className="size-full object-cover"
+          className={cn(
+            "size-full",
+            fit === "contain" ? "object-contain p-1" : "object-cover",
+          )}
         />
       ) : (
         <span className="text-lg font-black">{getInitials(name)}</span>
