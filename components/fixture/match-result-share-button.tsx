@@ -300,7 +300,7 @@ function drawScoreboard(
     y: number;
   },
 ) {
-  const cardHeight = compact ? 290 : 360;
+  const cardHeight = compact ? 340 : 440;
 
   context.save();
   const cardGradient = context.createLinearGradient(90, y, width - 90, y + cardHeight);
@@ -320,9 +320,9 @@ function drawScoreboard(
     compact,
     label: "LA NUEVA GUARDIA",
     role: result.teamRole,
-    width,
+    maxWidth: compact ? 270 : 310,
     x: 150,
-    y: y + (compact ? 92 : 112),
+    y: y + (compact ? 76 : 104),
   });
 
   drawTeamSide(context, {
@@ -330,16 +330,16 @@ function drawScoreboard(
     compact,
     label: result.rivalName,
     role: result.rivalRole,
-    width,
+    maxWidth: compact ? 270 : 310,
     x: width - 150,
-    y: y + (compact ? 92 : 112),
+    y: y + (compact ? 76 : 104),
   });
 
   drawCenteredText(
     context,
     `${result.teamScore} - ${result.rivalScore}`,
     width / 2,
-    y + (compact ? 214 : 270),
+    y + (compact ? 282 : 358),
     {
       color: result.teamScore > result.rivalScore ? "#f4ce0f" : "#ffffff",
       font: compact
@@ -357,34 +357,44 @@ function drawTeamSide(
     align,
     compact,
     label,
+    maxWidth,
     role,
-    width,
     x,
     y,
   }: {
     align: "left" | "right";
     compact: boolean;
     label: string;
+    maxWidth: number;
     role: string;
-    width: number;
     x: number;
     y: number;
   },
 ) {
   const textAlign = align === "left" ? "left" : "right";
-  const maxWidth = width * 0.32;
+  const lineHeight = compact ? 34 : 40;
+  const fontSize = compact
+    ? getTeamNameFontSize(label, 30)
+    : getTeamNameFontSize(label, 36);
+  const lines = getClampedLines(
+    context,
+    label.toUpperCase(),
+    maxWidth,
+    compact ? 3 : 3,
+    `900 ${fontSize}px Arial Black, sans-serif`,
+  );
 
   context.save();
   context.textAlign = textAlign;
   context.fillStyle = "#ffffff";
-  context.font = compact
-    ? "900 32px Arial Black, sans-serif"
-    : "900 38px Arial Black, sans-serif";
-  fillMultilineText(context, label.toUpperCase(), x, y, maxWidth, compact ? 38 : 44, 2);
+  context.font = `900 ${fontSize}px Arial Black, sans-serif`;
+  lines.forEach((line, index) => {
+    context.fillText(line, x, y + index * lineHeight, maxWidth);
+  });
 
   context.fillStyle = "rgba(255,255,255,0.72)";
   context.font = compact ? "700 24px Arial, sans-serif" : "700 28px Arial, sans-serif";
-  context.fillText(role, x, y + (compact ? 92 : 110), maxWidth);
+  context.fillText(role, x, y + lineHeight * 3 + (compact ? 18 : 22), maxWidth);
   context.restore();
 }
 
@@ -575,20 +585,65 @@ function drawLetterSpacedText(
   });
 }
 
-function fillMultilineText(
+function getTeamNameFontSize(label: string, baseSize: number) {
+  const length = label.replace(/\s+/g, "").length;
+
+  if (length > 32) {
+    return baseSize - 6;
+  }
+
+  if (length > 24) {
+    return baseSize - 4;
+  }
+
+  return baseSize;
+}
+
+function getClampedLines(
   context: CanvasRenderingContext2D,
   text: string,
-  x: number,
-  y: number,
   maxWidth: number,
-  lineHeight: number,
   maxLines: number,
+  font: string,
 ) {
+  context.save();
+  context.font = font;
   const lines = wrapText(context, text, maxWidth).slice(0, maxLines);
 
-  lines.forEach((line, index) => {
-    context.fillText(line, x, y + index * lineHeight, maxWidth);
-  });
+  if (lines.length === maxLines) {
+    const wrapped = wrapText(context, text, maxWidth);
+
+    if (wrapped.length > maxLines) {
+      lines[maxLines - 1] = fitTextWithEllipsis(context, lines[maxLines - 1], maxWidth);
+    }
+  }
+
+  context.restore();
+
+  return lines;
+}
+
+function fitTextWithEllipsis(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+) {
+  const ellipsis = "...";
+
+  if (context.measureText(text).width <= maxWidth) {
+    return text;
+  }
+
+  let nextText = text;
+
+  while (
+    nextText.length > 0 &&
+    context.measureText(`${nextText}${ellipsis}`).width > maxWidth
+  ) {
+    nextText = nextText.slice(0, -1).trim();
+  }
+
+  return nextText ? `${nextText}${ellipsis}` : ellipsis;
 }
 
 function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
