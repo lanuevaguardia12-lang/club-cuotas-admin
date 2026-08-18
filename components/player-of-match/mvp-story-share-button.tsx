@@ -245,7 +245,8 @@ function drawPodiumPlace(
   const avatarSize = Math.min(baseWidth - 28, featured ? 286 : 242);
   const avatarY = baseTop - avatarSize / 2 - 126;
   const nameY = baseTop - 82;
-  const scoreY = baseTop + (featured ? 134 : 120);
+  const scoreY = baseTop + (featured ? 134 : place === 3 ? 84 : 104);
+  const rankY = baseTop + baseHeight * (featured ? 0.58 : place === 3 ? 0.7 : 0.66);
 
   drawGlassBase(context, baseLeft, baseTop, baseWidth, baseHeight, featured);
   drawCircularAvatar(context, {
@@ -275,7 +276,7 @@ function drawPodiumPlace(
       : "-",
   );
 
-  drawCenteredText(context, `#${place}`, centerX, baseTop + baseHeight * 0.56, {
+  drawCenteredText(context, `#${place}`, centerX, rankY, {
     color: featured ? "#f4ce0f" : "#ffffff",
     font: featured
       ? "900 118px Arial Black, Impact, sans-serif"

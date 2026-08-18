@@ -943,7 +943,7 @@ function PodiumSpot({
             ? "size-14 border-[3px] sm:size-20 sm:border-4"
             : "size-12 border-2 sm:size-16"
         }
-        fit="contain"
+        fit="cover"
         name={result?.playerName ?? "-"}
         photoDataUrl={result?.photoDataUrl}
       />
