@@ -4205,10 +4205,11 @@ function buildPlayerAttendanceSummary(
   const seasonMatches = matches.filter(
     (match) => match.date >= seasonStartDate && match.date <= today,
   );
+  const attendanceMatches = seasonMatches.filter((match) => match.players.length > 0);
   const hasAttendance = (match: MatchRecord) =>
     match.players.some((name) => normalizeClubPlayerName(name) === normalizedPlayerName);
-  const attendedMatches = seasonMatches.filter(hasAttendance);
-  const currentStreak = [...seasonMatches]
+  const attendedMatches = attendanceMatches.filter(hasAttendance);
+  const currentStreak = [...attendanceMatches]
     .sort((left, right) => right.date.localeCompare(left.date))
     .reduce(
       (streak, match) => {
@@ -4224,7 +4225,7 @@ function buildPlayerAttendanceSummary(
       },
       { count: 0, done: false },
     ).count;
-  const bestStreak = [...seasonMatches]
+  const bestStreak = [...attendanceMatches]
     .sort((left, right) => left.date.localeCompare(right.date))
     .reduce(
       (streak, match) => {
@@ -4248,7 +4249,9 @@ function buildPlayerAttendanceSummary(
   return {
     attendedMatches: attendedMatches.length,
     attendanceRate:
-      seasonMatches.length > 0 ? attendedMatches.length / seasonMatches.length : 0,
+      attendanceMatches.length > 0
+        ? attendedMatches.length / attendanceMatches.length
+        : 0,
     bestStreak,
     calculatedAt: new Date().toISOString(),
     currentStreak,
@@ -4256,7 +4259,7 @@ function buildPlayerAttendanceSummary(
     lastAttendanceRival: lastAttendance?.rival ?? "",
     seasonStartDate,
     seasonYear,
-    totalMatches: seasonMatches.length,
+    totalMatches: attendanceMatches.length,
   };
 }
 
