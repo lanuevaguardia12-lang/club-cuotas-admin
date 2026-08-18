@@ -29,6 +29,7 @@ import {
   CompetitionBadge,
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
+import { MvpStoryShareButton } from "@/components/player-of-match/mvp-story-share-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -867,25 +868,28 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
             Todavía no hay votos cargados para este partido.
           </p>
         ) : (
-          <div className="relative z-10 hidden gap-2 rounded-md border border-white/15 bg-white/10 p-3 sm:grid">
-            {match.results.slice(0, 6).map((result, index) => (
-              <div
-                key={result.playerName}
-                style={
-                  {
-                    "--club-list-delay": `${Math.min(index, 6) * 45}ms`,
-                  } as CSSProperties
-                }
-                className="club-animate-list-in flex items-center justify-between gap-3 text-sm"
-              >
-                <span className="truncate">
-                  #{result.rank} {result.playerName}
-                </span>
-                <span className="font-semibold text-[#f4ce0f]">
-                  {formatResultScore(result)}
-                </span>
-              </div>
-            ))}
+          <div className="relative z-10 grid gap-3">
+            <MvpStoryShareButton match={match} />
+            <div className="hidden gap-2 rounded-md border border-white/15 bg-white/10 p-3 sm:grid">
+              {match.results.slice(0, 6).map((result, index) => (
+                <div
+                  key={result.playerName}
+                  style={
+                    {
+                      "--club-list-delay": `${Math.min(index, 6) * 45}ms`,
+                    } as CSSProperties
+                  }
+                  className="club-animate-list-in flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="truncate">
+                    #{result.rank} {result.playerName}
+                  </span>
+                  <span className="font-semibold text-[#f4ce0f]">
+                    {formatResultScore(result)}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
