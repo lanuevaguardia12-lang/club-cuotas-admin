@@ -289,6 +289,7 @@ const DEFAULT_FORM_RESPONSES_CACHE_TTL_SECONDS = 60;
 const DEFAULT_ACCOUNT_PROFILES_RANGE = "CuentasUsuario!A:Z";
 const DEFAULT_PLAYER_ATTENDANCE_SNAPSHOTS_RANGE = "AsistenciasJugadores!A:Z";
 const PLAYER_PROFILE_SEASON_START_DATE = "2026-08-11";
+const PLAYER_OF_MATCH_VOTING_WINDOW_DAYS = 4;
 
 const CLUB_FORM_RESPONSES_RANGE = DEFAULT_FORM_RESPONSES_RANGE;
 const CLUB_FORM_RESPONSE_RANGE = "Respuesta de formulario!A:Z";
@@ -5849,7 +5850,10 @@ function buildPlayerPhotoMap(
 function getPlayerOfMatchVotingWindow(match: MatchRecord) {
   const startsAtDate = parseVotingStartDate(match.loadedAt) ?? new Date();
   const safeStartDate = !Number.isNaN(startsAtDate.getTime()) ? startsAtDate : new Date();
-  const endsAtDate = new Date(safeStartDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const endsAtDate = getArgentinaMidnightAfterDays(
+    safeStartDate,
+    PLAYER_OF_MATCH_VOTING_WINDOW_DAYS,
+  );
   const now = Date.now();
   const hasEnoughPlayers = match.players.length >= 2;
   const status: PlayerOfMatchMatch["votingStatus"] =
@@ -5877,6 +5881,27 @@ function parseVotingStartDate(value: string) {
     : new Date(`${value}T00:00:00-03:00`);
 
   return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function getArgentinaMidnightAfterDays(date: Date, days: number) {
+  const dateIso = getArgentinaDateIso(date);
+  const [year, month, day] = dateIso.split("-").map(Number);
+  const nextDate = new Date(Date.UTC(year, month - 1, day + days, 12));
+  const nextDateIso = getArgentinaDateIso(nextDate);
+
+  return new Date(`${nextDateIso}T00:00:00-03:00`);
+}
+
+function getArgentinaDateIso(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return `${values.get("year")}-${values.get("month")}-${values.get("day")}`;
 }
 
 function isPlayerOfMatchVotingOpen(match: MatchRecord) {
