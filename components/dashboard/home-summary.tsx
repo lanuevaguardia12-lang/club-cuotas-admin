@@ -12,6 +12,7 @@ import {
   CompetitionBadge,
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
+import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -291,6 +292,7 @@ function HomePlayedMatchCard({
         />
       </div>
       <MatchGoalsList match={match} />
+      <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
       <Button asChild size="sm" variant="outline">
         <Link href="/fixture">
           <CalendarDays />

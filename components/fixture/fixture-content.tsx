@@ -13,6 +13,7 @@ import {
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
 import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-schedule-editor";
+import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -397,6 +398,7 @@ function PlayedMatchCard({
         <PositionTeamLine position={visitorPosition} teamName={match.visitorTeam} />
       </div>
       <MatchGoalsList match={match} />
+      <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
     </div>
   );
 }
@@ -757,6 +759,12 @@ function FullMatchRow({
         <div className="text-muted-foreground grid gap-1 text-xs md:col-span-3">
           {match.goals.length > 0 ? <p>Goles: {match.goals.join(", ")}</p> : null}
           {match.cards.length > 0 ? <p>Tarjetas: {match.cards.join(", ")}</p> : null}
+        </div>
+      ) : null}
+
+      {match.isClubMatch && match.status === "played" ? (
+        <div className="md:col-span-3">
+          <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
         </div>
       ) : null}
     </div>
