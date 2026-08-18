@@ -858,9 +858,9 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
         </div>
 
         <div className="relative z-10 grid grid-cols-3 items-end gap-2 sm:gap-3">
-          <PodiumSpot result={podium[1]} place={2} heightClass="h-36 sm:h-44" />
-          <PodiumSpot result={podium[0]} place={1} heightClass="h-44 sm:h-56" featured />
-          <PodiumSpot result={podium[2]} place={3} heightClass="h-36 sm:h-44" />
+          <PodiumSpot result={podium[1]} place={2} heightClass="h-44 sm:h-56" />
+          <PodiumSpot result={podium[0]} place={1} heightClass="h-48 sm:h-60" featured />
+          <PodiumSpot result={podium[2]} place={3} heightClass="h-44 sm:h-56" />
         </div>
 
         {match.results.length === 0 || match.totalVotes === 0 ? (
@@ -938,11 +938,7 @@ function PodiumSpot({
         <p className="text-[0.65rem] font-bold uppercase sm:text-xs">Puesto {place}</p>
       </div>
       <PlayerAvatar
-        className={
-          featured
-            ? "size-14 border-[3px] sm:size-20 sm:border-4"
-            : "size-12 border-2 sm:size-16"
-        }
+        className="size-14 border-[3px] sm:size-20 sm:border-4"
         fit="cover"
         name={result?.playerName ?? "-"}
         photoDataUrl={result?.photoDataUrl}
@@ -972,7 +968,10 @@ function PlayerAvatar({
 }) {
   return (
     <div
-      className={`${className} grid place-items-center overflow-hidden rounded-full border-white/80 bg-white/20 shadow-md`}
+      className={cn(
+        "grid aspect-square shrink-0 place-items-center overflow-hidden rounded-full border-white/80 bg-white/20 shadow-md",
+        className,
+      )}
     >
       {photoDataUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
