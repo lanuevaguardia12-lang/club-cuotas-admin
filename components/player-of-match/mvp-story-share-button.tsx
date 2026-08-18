@@ -174,7 +174,7 @@ async function drawMvpStory(
   drawCenteredText(context, "LA NUEVA GUARDIA", STORY_WIDTH / 2, 1818, {
     color: "rgba(255,255,255,0.72)",
     font: "800 34px Arial, sans-serif",
-    letterSpacing: 8,
+    letterSpacing: 0,
   });
 }
 
@@ -242,10 +242,10 @@ function drawPodiumPlace(
   const baseBottom = 1660;
   const baseTop = baseBottom - baseHeight;
   const baseLeft = centerX - baseWidth / 2;
-  const avatarSize = featured ? 178 : 150;
-  const avatarY = baseTop - avatarSize / 2 - 82;
-  const nameY = avatarY + avatarSize / 2 + 98;
-  const scoreY = nameY + 88;
+  const avatarSize = Math.min(baseWidth - 28, featured ? 286 : 242);
+  const avatarY = baseTop - avatarSize / 2 - 126;
+  const nameY = baseTop - 82;
+  const scoreY = baseTop + (featured ? 134 : 120);
 
   drawGlassBase(context, baseLeft, baseTop, baseWidth, baseHeight, featured);
   drawCircularAvatar(context, {
@@ -259,8 +259,8 @@ function drawPodiumPlace(
 
   drawWrappedCenteredText(context, name ?? "Sin votos", centerX, nameY, baseWidth + 20, {
     color: "#ffffff",
-    font: "900 38px Arial Black, Impact, sans-serif",
-    lineHeight: 40,
+    font: `${featured ? "900 38px" : "900 34px"} Arial Black, Impact, sans-serif`,
+    lineHeight: featured ? 40 : 36,
     maxLines: 2,
     shadowBlur: 9,
     shadowColor: "rgba(0,0,0,0.44)",
