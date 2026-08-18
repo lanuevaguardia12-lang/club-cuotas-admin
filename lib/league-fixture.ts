@@ -106,12 +106,17 @@ export async function getLeagueFixtureData(
     );
     const matches = rounds.flatMap((round) => round.matches);
     const clubMatches = matches.filter((match) => match.isClubMatch);
-    const allClubMatches = await getLeagueClubMatchesForYear(
+    const allCompetitionMatches = await getLeagueCompetitionMatchesForClubYear(
       selectedYear,
       metadata.tournaments,
       { includeDetails: true },
     ).catch(() => []);
+    const allClubMatches = allCompetitionMatches.filter(
+      (match) => match.isClubMatch && !match.involvesBye,
+    );
     const globalClubMatches = allClubMatches.length > 0 ? allClubMatches : clubMatches;
+    const globalCompetitionMatches =
+      allCompetitionMatches.length > 0 ? allCompetitionMatches : matches;
     const nextMatches = buildNextMatches(globalClubMatches);
     const lastMatches = buildLastMatches(globalClubMatches);
     const scorers = buildScorerRows(matches);
@@ -130,6 +135,7 @@ export async function getLeagueFixtureData(
       matches,
       rounds,
       clubStanding: standings.find((row) => row.isClub),
+      allCompetitionMatches: globalCompetitionMatches,
       allClubMatches: globalClubMatches,
       clubMatches,
       nextMatches,
@@ -162,6 +168,7 @@ export async function getLeagueFixtureData(
       standings: [],
       matches: [],
       rounds: [],
+      allCompetitionMatches: [],
       allClubMatches: [],
       clubMatches: [],
       nextMatches: [],
@@ -188,6 +195,20 @@ export async function getLeagueClubMatchesForYear(
   tournaments?: LeagueTournamentOption[],
   options: GetLeagueClubMatchesOptions = {},
 ) {
+  const matches = await getLeagueCompetitionMatchesForClubYear(
+    year,
+    tournaments,
+    options,
+  );
+
+  return matches.filter((match) => match.isClubMatch && !match.involvesBye);
+}
+
+async function getLeagueCompetitionMatchesForClubYear(
+  year = DEFAULT_YEAR,
+  tournaments?: LeagueTournamentOption[],
+  options: GetLeagueClubMatchesOptions = {},
+) {
   const metadata = tournaments ? { tournaments } : await loadLeagueMetadata();
   const targets = getClubCompetitionTargets(metadata.tournaments, year).slice(
     0,
@@ -205,10 +226,12 @@ export async function getLeagueClubMatchesForYear(
             (match) => match.isClubMatch && !match.involvesBye,
           )
         : parseFixtureRounds(html, target);
-
-      return rounds
+      const matches = rounds
         .flatMap((round) => round.matches)
-        .filter((match) => match.isClubMatch && !match.involvesBye);
+        .filter((match) => !match.involvesBye);
+      const hasClubMatch = matches.some((match) => match.isClubMatch);
+
+      return hasClubMatch ? matches : [];
     }),
   );
 
@@ -282,9 +305,15 @@ export function applyLeagueFixtureScheduleOverrides(
       .map(applyOverride)
       .filter((match) => match.isClubMatch && !match.involvesBye),
   );
+  const allCompetitionMatches = dedupeLeagueMatches(
+    (data.allCompetitionMatches.length > 0 ? data.allCompetitionMatches : data.matches)
+      .map(applyOverride)
+      .filter((match) => !match.involvesBye),
+  );
 
   return {
     ...data,
+    allCompetitionMatches,
     allClubMatches,
     clubMatches,
     matches,

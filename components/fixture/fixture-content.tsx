@@ -128,6 +128,8 @@ function SummaryTab({ data }: FixtureContentProps) {
   const lastMatch =
     data.lastMatches[0] ??
     [...data.clubMatches].reverse().find((match) => match.status === "played");
+  const recentFormMatches =
+    data.allCompetitionMatches.length > 0 ? data.allCompetitionMatches : data.matches;
 
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -173,7 +175,7 @@ function SummaryTab({ data }: FixtureContentProps) {
             {nextMatch ? (
               <NextMatchCard
                 match={nextMatch}
-                matches={data.matches}
+                matches={recentFormMatches}
                 rows={data.standings}
               />
             ) : (

@@ -36,6 +36,10 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
   const nextMatch = fixture.nextMatches[0];
   const lastMatch = fixture.lastMatches[0];
   const standingsRows = buildHomeStandingsRows(fixture);
+  const recentFormMatches =
+    fixture.allCompetitionMatches.length > 0
+      ? fixture.allCompetitionMatches
+      : fixture.matches;
 
   return (
     <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -96,7 +100,7 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
           {nextMatch ? (
             <HomeMatchCard
               match={nextMatch}
-              matches={fixture.matches}
+              matches={recentFormMatches}
               rows={fixture.standings}
             />
           ) : (
