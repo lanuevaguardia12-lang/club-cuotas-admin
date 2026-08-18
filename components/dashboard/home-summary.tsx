@@ -499,7 +499,7 @@ function getLastPlayedMatchesForTeam(
 }
 
 function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): MatchOutcome {
-  const isLocal = match.localTeam === teamName;
+  const isLocal = areSameFixtureTeam(match.localTeam, teamName);
   const teamScore = isLocal ? match.localScore : match.visitorScore;
   const rivalScore = isLocal ? match.visitorScore : match.localScore;
   const rival = isLocal ? match.visitorTeam : match.localTeam;
@@ -524,7 +524,24 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
 }
 
 function isTeamInMatch(match: LeagueFixtureMatch, teamName: string) {
-  return match.localTeam === teamName || match.visitorTeam === teamName;
+  return (
+    areSameFixtureTeam(match.localTeam, teamName) ||
+    areSameFixtureTeam(match.visitorTeam, teamName)
+  );
+}
+
+function areSameFixtureTeam(left: string, right: string) {
+  return normalizeFixtureTeamKey(left) === normalizeFixtureTeamKey(right);
+}
+
+function normalizeFixtureTeamKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/^(club|asociacion deportiva|asoc deportiva)\s+/, "");
 }
 
 function getHomeMatchSortValue(match: LeagueFixtureMatch) {

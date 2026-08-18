@@ -83,6 +83,7 @@ interface LeagueCompetitionTarget {
 
 interface GetLeagueClubMatchesOptions {
   includeDetails?: boolean;
+  targetLimit?: number;
 }
 
 export async function getLeagueFixtureData(
@@ -106,7 +107,7 @@ export async function getLeagueFixtureData(
     );
     const matches = rounds.flatMap((round) => round.matches);
     const clubMatches = matches.filter((match) => match.isClubMatch);
-    const allCompetitionMatches = await getLeagueCompetitionMatchesForClubYear(
+    const allCompetitionMatches = await getLeagueCompetitionMatchesForYear(
       selectedYear,
       metadata.tournaments,
       { includeDetails: true },
@@ -195,27 +196,24 @@ export async function getLeagueClubMatchesForYear(
   tournaments?: LeagueTournamentOption[],
   options: GetLeagueClubMatchesOptions = {},
 ) {
-  const matches = await getLeagueCompetitionMatchesForClubYear(
-    year,
-    tournaments,
-    options,
-  );
+  const matches = await getLeagueCompetitionMatchesForYear(year, tournaments, options);
 
   return matches.filter((match) => match.isClubMatch && !match.involvesBye);
 }
 
-async function getLeagueCompetitionMatchesForClubYear(
+async function getLeagueCompetitionMatchesForYear(
   year = DEFAULT_YEAR,
   tournaments?: LeagueTournamentOption[],
   options: GetLeagueClubMatchesOptions = {},
 ) {
   const metadata = tournaments ? { tournaments } : await loadLeagueMetadata();
-  const targets = getClubCompetitionTargets(metadata.tournaments, year).slice(
-    0,
-    MAX_CLUB_COMPETITION_TARGETS,
-  );
+  const targets = getClubCompetitionTargets(metadata.tournaments, year);
+  const selectedTargets =
+    typeof options.targetLimit === "number"
+      ? targets.slice(0, options.targetLimit)
+      : targets;
   const settledResults = await Promise.allSettled(
-    targets.map(async (target) => {
+    selectedTargets.map(async (target) => {
       const html = await fetchLeagueHtml(
         buildFixtureUrl(target.category.id, target.tournament.id),
         { ajax: true },
@@ -229,9 +227,8 @@ async function getLeagueCompetitionMatchesForClubYear(
       const matches = rounds
         .flatMap((round) => round.matches)
         .filter((match) => !match.involvesBye);
-      const hasClubMatch = matches.some((match) => match.isClubMatch);
 
-      return hasClubMatch ? matches : [];
+      return matches;
     }),
   );
 
@@ -442,7 +439,9 @@ async function findLatestClubCompetition(
   const years = requestedYear ? [requestedYear] : getAvailableYears(tournaments);
 
   for (const year of years) {
-    const matches = await getLeagueClubMatchesForYear(year, tournaments).catch(() => []);
+    const matches = await getLeagueClubMatchesForYear(year, tournaments, {
+      targetLimit: MAX_CLUB_COMPETITION_TARGETS,
+    }).catch(() => []);
     const target = selectPreferredClubCompetition(matches, tournaments);
 
     if (target) {
