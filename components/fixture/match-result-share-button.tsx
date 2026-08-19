@@ -48,7 +48,7 @@ export function MatchResultShareButton({
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           files: [file],
-          text: `Resultado final: ${result.teamName} ${result.teamScore}-${result.rivalScore} ${result.rivalName}`,
+          text: `Resultado final: ${result.localName} ${result.localScore}-${result.visitorScore} ${result.visitorName}`,
           title: "Resultado final",
         });
         setMessage("Placa lista para compartir.");
@@ -302,8 +302,8 @@ function drawScoreboard(
 ) {
   const cardHeight = compact ? 340 : 440;
   const hasPenalties =
-    typeof result.teamPenaltyScore === "number" &&
-    typeof result.rivalPenaltyScore === "number";
+    typeof result.localPenaltyScore === "number" &&
+    typeof result.visitorPenaltyScore === "number";
   const mainScoreY = hasPenalties ? y + (compact ? 236 : 304) : y + (compact ? 282 : 358);
   const penaltyScoreY = y + (compact ? 306 : 394);
 
@@ -323,8 +323,8 @@ function drawScoreboard(
   drawTeamSide(context, {
     align: "left",
     compact,
-    label: "LA NUEVA GUARDIA",
-    role: result.teamRole,
+    label: result.localName,
+    role: "Local",
     maxWidth: compact ? 270 : 310,
     x: 150,
     y: y + (compact ? 76 : 104),
@@ -333,8 +333,8 @@ function drawScoreboard(
   drawTeamSide(context, {
     align: "right",
     compact,
-    label: result.rivalName,
-    role: result.rivalRole,
+    label: result.visitorName,
+    role: "Visita",
     maxWidth: compact ? 270 : 310,
     x: width - 150,
     y: y + (compact ? 76 : 104),
@@ -342,11 +342,11 @@ function drawScoreboard(
 
   drawCenteredText(
     context,
-    `${result.teamScore} - ${result.rivalScore}`,
+    `${result.localScore} - ${result.visitorScore}`,
     width / 2,
     mainScoreY,
     {
-      color: result.teamScore > result.rivalScore ? "#f4ce0f" : "#ffffff",
+      color: getAppTeamWonResult(result) ? "#f4ce0f" : "#ffffff",
       font: compact
         ? "900 116px Arial Black, Impact, sans-serif"
         : "900 148px Arial Black, Impact, sans-serif",
@@ -382,7 +382,7 @@ function drawPenaltyScore(
   const leftX = width / 2 - (compact ? 126 : 154);
   const rightX = width / 2 + (compact ? 126 : 154);
 
-  drawCenteredText(context, `(${result.teamPenaltyScore})`, leftX, y, {
+  drawCenteredText(context, `(${result.localPenaltyScore})`, leftX, y, {
     color: "#ffffff",
     font: compact
       ? "900 52px Arial Black, sans-serif"
@@ -399,7 +399,7 @@ function drawPenaltyScore(
     shadowBlur: 12,
     shadowColor: "rgba(244,206,15,0.22)",
   });
-  drawCenteredText(context, `(${result.rivalPenaltyScore})`, rightX, y, {
+  drawCenteredText(context, `(${result.visitorPenaltyScore})`, rightX, y, {
     color: "#ffffff",
     font: compact
       ? "900 52px Arial Black, sans-serif"
@@ -805,37 +805,54 @@ function formatCompetition(kind: LeagueCompetitionKind) {
 }
 
 interface ResultView {
+  isLocalTeam: boolean;
+  localName: string;
+  localPenaltyScore?: number;
+  localScore: number;
   rivalName: string;
-  rivalPenaltyScore?: number;
-  rivalRole: string;
-  rivalScore: number;
-  teamName: string;
-  teamPenaltyScore?: number;
-  teamRole: string;
-  teamScore: number;
+  visitorName: string;
+  visitorPenaltyScore?: number;
+  visitorScore: number;
 }
 
 function getResultView(match: LeagueFixtureMatch, teamName: string): ResultView {
   const isLocalTeam = sameTeam(match.localTeam, teamName);
-  const teamScore = isLocalTeam ? match.localScore : match.visitorScore;
-  const rivalScore = isLocalTeam ? match.visitorScore : match.localScore;
-  const teamPenaltyScore = isLocalTeam
-    ? match.localPenaltyScore
-    : match.visitorPenaltyScore;
-  const rivalPenaltyScore = isLocalTeam
-    ? match.visitorPenaltyScore
-    : match.localPenaltyScore;
 
   return {
+    isLocalTeam,
+    localName: match.localTeam,
+    localPenaltyScore: match.localPenaltyScore,
+    localScore: match.localScore ?? 0,
     rivalName: isLocalTeam ? match.visitorTeam : match.localTeam,
-    rivalPenaltyScore,
-    rivalRole: isLocalTeam ? "Visita" : "Local",
-    rivalScore: rivalScore ?? 0,
-    teamName,
-    teamPenaltyScore,
-    teamRole: isLocalTeam ? "Local" : "Visita",
-    teamScore: teamScore ?? 0,
+    visitorName: match.visitorTeam,
+    visitorPenaltyScore: match.visitorPenaltyScore,
+    visitorScore: match.visitorScore ?? 0,
   };
+}
+
+function getAppTeamWonResult(result: ResultView) {
+  const teamScore = result.isLocalTeam ? result.localScore : result.visitorScore;
+  const rivalScore = result.isLocalTeam ? result.visitorScore : result.localScore;
+  const teamPenaltyScore = result.isLocalTeam
+    ? result.localPenaltyScore
+    : result.visitorPenaltyScore;
+  const rivalPenaltyScore = result.isLocalTeam
+    ? result.visitorPenaltyScore
+    : result.localPenaltyScore;
+
+  if (teamScore !== rivalScore) {
+    return teamScore > rivalScore;
+  }
+
+  if (
+    typeof teamPenaltyScore === "number" &&
+    typeof rivalPenaltyScore === "number" &&
+    teamPenaltyScore !== rivalPenaltyScore
+  ) {
+    return teamPenaltyScore > rivalPenaltyScore;
+  }
+
+  return false;
 }
 
 function getTeamGoalScorers(match: LeagueFixtureMatch, teamName: string) {
