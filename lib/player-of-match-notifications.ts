@@ -285,16 +285,18 @@ export async function sendOpenPlayerOfMatchNotifications({
         notifiedThisRun.add(referenceId);
         pushUniqueId(detail.sentMatchIds, match.id);
         try {
-          await dataService.createNotification({
-            title: notification.title,
-            message: notification.message,
-            type: "info",
-            targetRole: "player",
-            targetUserId: userId,
-            targetPlayerId: userPlayerId,
-            referenceId,
-            url: "/player-of-match",
-          });
+          await createMvpNotificationRecordWithRetry(() =>
+            dataService.createNotification({
+              title: notification.title,
+              message: notification.message,
+              type: "info",
+              targetRole: "player",
+              targetUserId: userId,
+              targetPlayerId: userPlayerId,
+              referenceId,
+              url: "/player-of-match",
+            }),
+          );
           pushUniqueId(detail.notifiedMatchIds, match.id);
         } catch {
           notificationRecordsFailed += 1;
@@ -398,6 +400,30 @@ function buildRecipientNotificationMatches(
       userVote: userMatch?.userVote,
     };
   });
+}
+
+async function createMvpNotificationRecordWithRetry(createRecord: () => Promise<void>) {
+  const retryDelaysMs = [250, 750, 1500];
+  let lastError: unknown;
+
+  for (const delayMs of [0, ...retryDelaysMs]) {
+    if (delayMs > 0) {
+      await wait(delayMs);
+    }
+
+    try {
+      await createRecord();
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
