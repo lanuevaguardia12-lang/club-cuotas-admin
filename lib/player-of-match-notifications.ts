@@ -118,6 +118,11 @@ export async function sendOpenPlayerOfMatchNotifications({
     targetPlayerId,
     targetUserId,
   });
+  const globalData = await dataService
+    .getPlayerOfMatchData("mvp-notification-system")
+    .catch(() => null);
+  const globalEligibleMatches =
+    globalData?.matches.filter(isEligiblePlayerOfMatchReminderMatch) ?? [];
   const subscriptionUsers = countRecipientsWithSubscriptions(recipients);
   const lastNotificationsByReferenceId = groupLatestNotificationByReferenceId(
     premium.notifications,
@@ -156,10 +161,16 @@ export async function sendOpenPlayerOfMatchNotifications({
       continue;
     }
 
-    const eligibleMatches = data.matches.filter(isEligiblePlayerOfMatchReminderMatch);
+    const notificationMatches = buildRecipientNotificationMatches(
+      globalEligibleMatches,
+      data.matches,
+    );
+    const eligibleMatches = notificationMatches.filter(
+      isEligiblePlayerOfMatchReminderMatch,
+    );
     const alreadyVotedMatches = eligibleMatches.filter((match) => match.userVote);
     const pendingMatches = eligibleMatches.filter((match) => !match.userVote);
-    const notifiedMatches = data.matches.filter((match) =>
+    const notifiedMatches = notificationMatches.filter((match) =>
       Boolean(
         findLatestMvpNotificationForMatch(
           premium.notifications,
@@ -169,7 +180,7 @@ export async function sendOpenPlayerOfMatchNotifications({
         ),
       ),
     );
-    const recentNotificationMatches = data.matches.filter((match) =>
+    const recentNotificationMatches = notificationMatches.filter((match) =>
       isRecentMvpReminder(
         findLatestMvpNotificationForMatch(
           premium.notifications,
@@ -196,7 +207,7 @@ export async function sendOpenPlayerOfMatchNotifications({
       skipped += 1;
       skippedNoPendingMatches += 1;
       detail.skipped += 1;
-      detail.reasons.push(...getNoPendingMatchReasons(data.matches));
+      detail.reasons.push(...getNoPendingMatchReasons(notificationMatches));
       details.push(detail);
       continue;
     }
@@ -367,6 +378,26 @@ function isMatchDateReached(value: string) {
   const date = new Date(normalized);
 
   return Number.isNaN(date.getTime()) || date.getTime() <= Date.now();
+}
+
+function buildRecipientNotificationMatches(
+  globalEligibleMatches: PlayerOfMatchMatch[],
+  userMatches: PlayerOfMatchMatch[],
+) {
+  if (globalEligibleMatches.length === 0) {
+    return userMatches;
+  }
+
+  const userMatchesById = new Map(userMatches.map((match) => [match.id, match]));
+
+  return globalEligibleMatches.map((globalMatch) => {
+    const userMatch = userMatchesById.get(globalMatch.id);
+
+    return {
+      ...globalMatch,
+      userVote: userMatch?.userVote,
+    };
+  });
 }
 
 function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
