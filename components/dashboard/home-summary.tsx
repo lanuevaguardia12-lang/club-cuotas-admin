@@ -277,6 +277,7 @@ function HomePlayedMatchCard({
         <TeamLine
           local
           name={match.localTeam}
+          penaltyScore={match.localPenaltyScore}
           position={localPosition}
           score={match.localScore}
           showScore
@@ -286,6 +287,7 @@ function HomePlayedMatchCard({
         </div>
         <TeamLine
           name={match.visitorTeam}
+          penaltyScore={match.visitorPenaltyScore}
           position={visitorPosition}
           score={match.visitorScore}
           showScore
@@ -369,12 +371,14 @@ function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
 function TeamLine({
   local = false,
   name,
+  penaltyScore,
   position,
   score,
   showScore = false,
 }: {
   local?: boolean;
   name: string;
+  penaltyScore?: number;
   position?: string;
   score?: number;
   showScore?: boolean;
@@ -394,10 +398,21 @@ function TeamLine({
           {[local ? "Local" : "Visita", position].filter(Boolean).join(" · ")}
         </span>
       </span>
-      {showScore ? (
-        <span className="shrink-0 text-xl font-bold tracking-normal">{score ?? 0}</span>
-      ) : null}
+      {showScore ? <TeamScore penaltyScore={penaltyScore} score={score} /> : null}
     </div>
+  );
+}
+
+function TeamScore({ penaltyScore, score }: { penaltyScore?: number; score?: number }) {
+  return (
+    <span className="shrink-0 text-xl font-bold tracking-normal">
+      {score ?? 0}
+      {typeof penaltyScore === "number" ? (
+        <span className="ml-1 align-baseline text-sm font-semibold opacity-80">
+          ({penaltyScore})
+        </span>
+      ) : null}
+    </span>
   );
 }
 

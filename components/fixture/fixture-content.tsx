@@ -782,6 +782,7 @@ function MatchTeamsCard({
     <div className={cn("grid min-w-0 gap-2 md:hidden", className)}>
       <MatchTeamLine
         label="Local"
+        penaltyScore={match.localPenaltyScore}
         score={match.localScore}
         showScore={match.status === "played"}
         teamName={match.localTeam}
@@ -791,6 +792,7 @@ function MatchTeamsCard({
       </div>
       <MatchTeamLine
         label="Visita"
+        penaltyScore={match.visitorPenaltyScore}
         score={match.visitorScore}
         showScore={match.status === "played"}
         teamName={match.visitorTeam}
@@ -801,11 +803,13 @@ function MatchTeamsCard({
 
 function MatchTeamLine({
   label,
+  penaltyScore,
   score,
   showScore,
   teamName,
 }: {
   label: string;
+  penaltyScore?: number;
   score?: number;
   showScore: boolean;
   teamName: string;
@@ -826,10 +830,27 @@ function MatchTeamLine({
           <p className="text-xs opacity-75">{label}</p>
         </div>
       </div>
-      {showScore ? (
-        <span className="text-xl font-bold tracking-normal">{score ?? 0}</span>
-      ) : null}
+      {showScore ? <MatchTeamScore penaltyScore={penaltyScore} score={score} /> : null}
     </div>
+  );
+}
+
+function MatchTeamScore({
+  penaltyScore,
+  score,
+}: {
+  penaltyScore?: number;
+  score?: number;
+}) {
+  return (
+    <span className="shrink-0 text-xl font-bold tracking-normal">
+      {score ?? 0}
+      {typeof penaltyScore === "number" ? (
+        <span className="ml-1 align-baseline text-sm font-semibold opacity-80">
+          ({penaltyScore})
+        </span>
+      ) : null}
+    </span>
   );
 }
 

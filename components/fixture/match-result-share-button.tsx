@@ -379,21 +379,8 @@ function drawPenaltyScore(
     y: number;
   },
 ) {
-  const lineWidth = compact ? 95 : 118;
-  const centerGap = compact ? 78 : 96;
   const leftX = width / 2 - (compact ? 126 : 154);
   const rightX = width / 2 + (compact ? 126 : 154);
-
-  context.save();
-  context.strokeStyle = "rgba(255,255,255,0.56)";
-  context.lineWidth = compact ? 4 : 5;
-  context.beginPath();
-  context.moveTo(leftX - lineWidth, y - (compact ? 13 : 16));
-  context.lineTo(leftX - centerGap, y - (compact ? 13 : 16));
-  context.moveTo(rightX + centerGap, y - (compact ? 13 : 16));
-  context.lineTo(rightX + lineWidth, y - (compact ? 13 : 16));
-  context.stroke();
-  context.restore();
 
   drawCenteredText(context, `(${result.teamPenaltyScore})`, leftX, y, {
     color: "#ffffff",
