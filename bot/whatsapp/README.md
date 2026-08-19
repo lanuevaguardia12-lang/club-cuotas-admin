@@ -11,6 +11,9 @@ Este bot corre en tu Mac/PC y consulta la cola creada por el boton
 4. WhatsApp Web manda los mensajes uno por uno.
 5. El bot marca cada recordatorio como `sent` o `failed`.
 
+La cola solo toma jugadores no pagados del mes elegido en la app, con cuota del
+calculador definida y monto final mayor a cero.
+
 La sesion de WhatsApp queda guardada en `.wwebjs_auth`. Si cambias de PC, esa PC
 va a pedir QR propio.
 
@@ -23,7 +26,8 @@ npm install
 npm start
 ```
 
-La primera vez aparece un QR en la terminal. Escanealo desde WhatsApp:
+La primera vez se abre una ventana de WhatsApp Web con el QR. Escanealo desde
+WhatsApp:
 
 ```text
 WhatsApp > Dispositivos vinculados > Vincular un dispositivo
@@ -36,8 +40,8 @@ WhatsApp > Dispositivos vinculados > Vincular un dispositivo
 - `WHATSAPP_BOT_RUNNER_SECRET`: mismo valor cargado en Vercel.
 - `WHATSAPP_BOT_DEFAULT_COUNTRY_CODE`: `549` para Argentina.
 - `WHATSAPP_BOT_DRY_RUN`: `true` para probar sin mandar mensajes.
-- `WHATSAPP_BOT_HEADLESS`: `false` abre WhatsApp Web visible; `true` lo deja
-  en segundo plano.
+- `WHATSAPP_BOT_HEADLESS`: `false` abre WhatsApp Web visible para escanear el QR;
+  `true` lo deja en segundo plano y muestra el QR en la terminal.
 
 ## Importante
 

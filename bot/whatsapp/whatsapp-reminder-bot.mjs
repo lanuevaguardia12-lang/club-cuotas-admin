@@ -37,6 +37,13 @@ const client = new Client({
 });
 
 client.on("qr", (qr) => {
+  if (!headless) {
+    console.log(
+      "WhatsApp Web esta abierto. Escanea el QR desde esa ventana para iniciar sesion.",
+    );
+    return;
+  }
+
   console.log("Escanea este QR con WhatsApp para iniciar sesion:");
   qrcode.generate(qr, { small: true });
 });

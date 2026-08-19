@@ -8,6 +8,8 @@ import {
   isWhatsAppBotReminder,
 } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
+import type { PlayerTableRow } from "@/types/dashboard";
+import type { FeePlayerCalculation } from "@/types/fee-calculator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,12 +65,22 @@ async function runWhatsAppReminderBot(request: NextRequest) {
       ? body.period
       : getCurrentPeriod();
   const dataService = getDataService();
-  const [dashboard, settingsData, reminders] = await Promise.all([
+  const [dashboard, feeCalculatorData, settingsData, reminders] = await Promise.all([
     dataService.getDashboardData(period),
+    dataService.getFeeCalculatorData(period),
     dataService.getAppSettings(),
     dataService.getReminderJobs(),
   ]);
+  const calculationsByPlayer = buildCalculationLookup(
+    feeCalculatorData.playerCalculations,
+  );
+  const quotaIsDefined = feeCalculatorData.summary.quotaStatus === "defined";
   const pendingPlayers = dashboard.players.filter((player) => player.status !== "paid");
+  const pendingPlayersWithDefinedFee = pendingPlayers.filter((player) => {
+    const calculation = getPlayerCalculation(calculationsByPlayer, player);
+
+    return quotaIsDefined && Boolean(calculation) && (calculation?.finalQuota ?? 0) > 0;
+  });
   const alreadyQueuedPlayerIds = new Set(
     reminders
       .filter(
@@ -83,8 +95,18 @@ async function runWhatsAppReminderBot(request: NextRequest) {
   const messages: WhatsAppBotPayloadMessage[] = [];
   let skippedAlreadyQueued = 0;
   let skippedNoPhone = 0;
+  let skippedUndefinedFee = pendingPlayers.length - pendingPlayersWithDefinedFee.length;
 
-  for (const player of pendingPlayers) {
+  for (const player of pendingPlayersWithDefinedFee) {
+    const calculation = getPlayerCalculation(calculationsByPlayer, player);
+    const amount = calculation?.finalQuota ?? 0;
+    const fee = formatCurrency(amount);
+
+    if (!calculation || amount <= 0) {
+      skippedUndefinedFee += 1;
+      continue;
+    }
+
     if (alreadyQueuedPlayerIds.has(player.id)) {
       skippedAlreadyQueued += 1;
       continue;
@@ -98,12 +120,12 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     }
 
     messages.push({
-      amount: player.feeAmount,
-      fee: player.fee,
+      amount,
+      fee,
       message: buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
         clubName: settingsData.settings.clubName,
         currentMonth: periodLabel,
-        feeAmount: player.fee,
+        feeAmount: fee,
         playerName: player.name,
       }),
       paymentStatus: player.status,
@@ -127,7 +149,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
           period,
           skippedAlreadyQueued,
           skippedNoPhone,
-          totalPending: pendingPlayers.length,
+          skippedUndefinedFee,
+          totalCandidates: pendingPlayers.length,
+          totalPending: pendingPlayersWithDefinedFee.length,
         },
       })
       .catch(() => undefined);
@@ -139,7 +163,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
       queued: 0,
       skippedAlreadyQueued,
       skippedNoPhone,
-      totalPending: pendingPlayers.length,
+      skippedUndefinedFee,
+      totalCandidates: pendingPlayers.length,
+      totalPending: pendingPlayersWithDefinedFee.length,
       webhookStatus: "not-called",
     });
   }
@@ -159,7 +185,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
       name: user.name,
       role: user.role,
     },
-    totalPending: pendingPlayers.length,
+    totalPending: pendingPlayersWithDefinedFee.length,
   };
   const webhookResponse = webhookUrl
     ? await postToWhatsAppBot(webhookUrl, payload)
@@ -177,6 +203,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
           period,
           queued: messages.length,
           skippedAlreadyQueued,
+          skippedUndefinedFee,
           status: webhookResponse.status,
         },
       })
@@ -190,7 +217,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         queued: messages.length,
         skippedAlreadyQueued,
         skippedNoPhone,
-        totalPending: pendingPlayers.length,
+        skippedUndefinedFee,
+        totalCandidates: pendingPlayers.length,
+        totalPending: pendingPlayersWithDefinedFee.length,
       },
       { status: 502 },
     );
@@ -226,7 +255,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         reminderRecordsFailed,
         skippedAlreadyQueued,
         skippedNoPhone,
-        totalPending: pendingPlayers.length,
+        skippedUndefinedFee,
+        totalCandidates: pendingPlayers.length,
+        totalPending: pendingPlayersWithDefinedFee.length,
       },
       { status: 500 },
     );
@@ -257,7 +288,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         reminderRecordsFailed,
         skippedAlreadyQueued,
         skippedNoPhone,
-        totalPending: pendingPlayers.length,
+        skippedUndefinedFee,
+        totalCandidates: pendingPlayers.length,
+        totalPending: pendingPlayersWithDefinedFee.length,
       },
     })
     .catch(() => undefined);
@@ -271,7 +304,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     reminderRecordsFailed,
     skippedAlreadyQueued,
     skippedNoPhone,
-    totalPending: pendingPlayers.length,
+    skippedUndefinedFee,
+    totalCandidates: pendingPlayers.length,
+    totalPending: pendingPlayersWithDefinedFee.length,
     webhookStatus: webhookResponse.status,
   });
 }
@@ -342,6 +377,58 @@ function formatPeriod(period: string) {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
   }).format(date);
+}
+
+type CalculationLookup = Map<string, FeePlayerCalculation>;
+
+function buildCalculationLookup(calculations: FeePlayerCalculation[]) {
+  const lookup: CalculationLookup = new Map();
+
+  for (const calculation of calculations) {
+    for (const key of buildPlayerLookupKeys(
+      calculation.playerId,
+      calculation.playerName,
+    )) {
+      if (!lookup.has(key)) {
+        lookup.set(key, calculation);
+      }
+    }
+  }
+
+  return lookup;
+}
+
+function getPlayerCalculation(lookup: CalculationLookup, player: PlayerTableRow) {
+  for (const key of buildPlayerLookupKeys(player.id, player.name)) {
+    const calculation = lookup.get(key);
+
+    if (calculation) {
+      return calculation;
+    }
+  }
+
+  return null;
+}
+
+function buildPlayerLookupKeys(...values: string[]) {
+  return values.map(normalizeLookupValue).filter(Boolean);
+}
+
+function normalizeLookupValue(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("es-AR", {
+    currency: "ARS",
+    maximumFractionDigits: 0,
+    style: "currency",
+  }).format(amount);
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

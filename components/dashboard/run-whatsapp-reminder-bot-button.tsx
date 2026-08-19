@@ -1,7 +1,6 @@
 "use client";
 
 import { Bot } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,27 +18,24 @@ interface RunWhatsAppReminderBotResponse {
   reminderRecordsFailed?: number;
   skippedAlreadyQueued?: number;
   skippedNoPhone: number;
+  skippedUndefinedFee?: number;
   totalPending: number;
 }
 
 export function RunWhatsAppReminderBotButton({
   period,
 }: RunWhatsAppReminderBotButtonProps) {
-  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const selectedPeriod = getSelectedPeriod(searchParams.get("period"), period);
-  const selectedPeriodLabel = formatPeriodLabel(selectedPeriod);
+  const selectedPeriodLabel = formatPeriodLabel(period);
 
   async function runBot() {
-    const periodToSend = getVisibleMonthInputPeriod(selectedPeriod);
-
     setLoading(true);
     setMessage("");
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
-        body: JSON.stringify({ period: periodToSend }),
+        body: JSON.stringify({ period }),
         headers: {
           "content-type": "application/json",
         },
@@ -60,7 +56,7 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? formatPeriodLabel(periodToSend)}. Pendientes ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
+        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
       );
     } catch (error) {
       setMessage(
@@ -92,21 +88,6 @@ export function RunWhatsAppReminderBotButton({
       ) : null}
     </div>
   );
-}
-
-function getSelectedPeriod(urlPeriod: string | null, fallback: string) {
-  return urlPeriod && /^\d{4}-\d{2}$/.test(urlPeriod) ? urlPeriod : fallback;
-}
-
-function getVisibleMonthInputPeriod(fallback: string) {
-  if (typeof document === "undefined") {
-    return fallback;
-  }
-
-  const visiblePeriod =
-    document.querySelector<HTMLInputElement>('input[type="month"]')?.value;
-
-  return getSelectedPeriod(visiblePeriod ?? null, fallback);
 }
 
 function formatPeriodLabel(period: string) {
