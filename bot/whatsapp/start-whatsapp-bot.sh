@@ -21,14 +21,18 @@ if pgrep -f "$SCRIPT_DIR/whatsapp-reminder-bot.mjs" >/dev/null 2>&1; then
   exit 0
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "$(date '+%Y-%m-%d %H:%M:%S') npm no encontrado" >> "$LAUNCHER_LOG_FILE"
-  notify "No encontre npm. Abrime Codex y lo revisamos."
+NODE_BIN="$(command -v node || true)"
+
+if [ -z "$NODE_BIN" ]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S') node no encontrado" >> "$LAUNCHER_LOG_FILE"
+  notify "No encontre Node. Abrime Codex y lo revisamos."
   exit 1
 fi
 
 cd "$SCRIPT_DIR"
 open -a "Google Chrome" "https://web.whatsapp.com/" >/dev/null 2>&1 || true
-nohup npm start >> "$LOG_FILE" 2>&1 &
+: > "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') iniciando bot con delay ${WHATSAPP_BOT_SEND_DELAY_MS}ms" >> "$LOG_FILE"
+nohup "$NODE_BIN" "$SCRIPT_DIR/whatsapp-reminder-bot.mjs" >> "$LOG_FILE" 2>&1 &
 echo "$(date '+%Y-%m-%d %H:%M:%S') bot lanzado pid $!" >> "$LAUNCHER_LOG_FILE"
 notify "Bot iniciado. Se va a abrir Chrome con WhatsApp Web."

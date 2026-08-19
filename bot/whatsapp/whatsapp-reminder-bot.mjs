@@ -69,6 +69,7 @@ client.on("disconnected", (reason) => {
   console.error("WhatsApp se desconecto:", reason);
 });
 
+console.log("Inicializando WhatsApp Web...");
 client.initialize();
 
 async function pollQueue() {
