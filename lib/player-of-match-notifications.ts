@@ -100,19 +100,20 @@ export async function sendOpenPlayerOfMatchNotifications({
   trigger: "cron" | "match-update" | "manual" | "webhook";
 }): Promise<SendOpenPlayerOfMatchNotificationsResult> {
   const dataService = getDataService();
+  const hasTarget = Boolean(targetPlayerId || targetUserId);
   const [subscriptions, premium] = await Promise.all([
     targetPlayerId
       ? dataService.getPushSubscriptionsForPlayer(targetPlayerId)
       : targetUserId
         ? dataService.getPushSubscriptionsForUser(targetUserId)
-        : Promise.resolve([]),
+        : dataService.getPushSubscriptions(),
     ignoreAlreadyNotified && !includeDetails
       ? Promise.resolve({ notifications: [] })
       : dataService.getPremiumData(),
   ]);
   const recipients = await buildNotificationRecipients({
     dataService,
-    includeConfiguredUsers: includeDetails || (!targetPlayerId && !targetUserId),
+    includeConfiguredUsers: includeDetails || !hasTarget,
     subscriptions,
     targetPlayerId,
     targetUserId,
@@ -376,7 +377,10 @@ function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
 
     const current = groups.get(subscription.userId) ?? [];
 
-    current.push(subscription);
+    if (!current.some((candidate) => candidate.endpoint === subscription.endpoint)) {
+      current.push(subscription);
+    }
+
     groups.set(subscription.userId, current);
 
     return groups;
