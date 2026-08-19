@@ -40,6 +40,8 @@ yarn-error.log*
 bot/whatsapp/node_modules
 bot/whatsapp/.wwebjs_auth
 bot/whatsapp/.wwebjs_cache
+bot/whatsapp/*.app
+bot/whatsapp/whatsapp-bot.log
 
 # vercel
 .vercel

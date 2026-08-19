@@ -952,14 +952,20 @@ CLUB_APP_URL="https://club-cuotas-admin.vercel.app"
 WHATSAPP_BOT_RUNNER_SECRET="mismo_valor_que_en_vercel"
 WHATSAPP_BOT_POLL_INTERVAL_MS=10000
 WHATSAPP_BOT_BATCH_LIMIT=5
-WHATSAPP_BOT_SEND_DELAY_MS=4000
+WHATSAPP_BOT_SEND_DELAY_MS=60000
 WHATSAPP_BOT_DEFAULT_COUNTRY_CODE=549
 WHATSAPP_BOT_DRY_RUN=false
+WHATSAPP_BOT_HEADLESS=false
+WHATSAPP_BOT_BROWSER_PATH=""
 WHATSAPP_SESSION_PATH="./.wwebjs_auth"
 ```
 
 En Vercel tambien debe existir `WHATSAPP_BOT_RUNNER_SECRET` con el mismo valor.
 La ruta del bot local valida `Authorization: Bearer <WHATSAPP_BOT_RUNNER_SECRET>`.
+
+En macOS se puede iniciar sin escribir comandos abriendo
+`bot/whatsapp/Iniciar Bot WhatsApp.app`. Ese lanzador abre Google Chrome con
+WhatsApp Web visible y deja 1 minuto entre chat y chat.
 
 Payload enviado al bot:
 

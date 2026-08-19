@@ -26,6 +26,13 @@ npm install
 npm start
 ```
 
+En macOS tambien podes iniciar el bot sin escribir en la terminal:
+
+1. Abrí `bot/whatsapp/Iniciar Bot WhatsApp.app`.
+2. Se abre Google Chrome con WhatsApp Web.
+3. Si aparece QR, escanealo desde WhatsApp.
+4. El bot queda consultando la cola en segundo plano.
+
 La primera vez se abre una ventana de WhatsApp Web con el QR. Escanealo desde
 WhatsApp:
 
@@ -40,8 +47,11 @@ WhatsApp > Dispositivos vinculados > Vincular un dispositivo
 - `WHATSAPP_BOT_RUNNER_SECRET`: mismo valor cargado en Vercel.
 - `WHATSAPP_BOT_DEFAULT_COUNTRY_CODE`: `549` para Argentina.
 - `WHATSAPP_BOT_DRY_RUN`: `true` para probar sin mandar mensajes.
+- `WHATSAPP_BOT_SEND_DELAY_MS`: `60000` deja 1 minuto entre chat y chat.
 - `WHATSAPP_BOT_HEADLESS`: `false` abre WhatsApp Web visible para escanear el QR;
   `true` lo deja en segundo plano y muestra el QR en la terminal.
+- `WHATSAPP_BOT_BROWSER_PATH`: ruta opcional del navegador. En macOS detecta
+  Google Chrome automaticamente si esta instalado.
 
 ## Importante
 

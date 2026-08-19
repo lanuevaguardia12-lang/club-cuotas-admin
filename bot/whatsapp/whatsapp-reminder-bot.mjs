@@ -15,10 +15,11 @@ const appUrl = requiredEnv("CLUB_APP_URL").replace(/\/$/, "");
 const runnerSecret = requiredEnv("WHATSAPP_BOT_RUNNER_SECRET");
 const pollIntervalMs = readPositiveNumber("WHATSAPP_BOT_POLL_INTERVAL_MS", 10_000);
 const batchLimit = readPositiveNumber("WHATSAPP_BOT_BATCH_LIMIT", 5);
-const sendDelayMs = readPositiveNumber("WHATSAPP_BOT_SEND_DELAY_MS", 4_000);
+const sendDelayMs = readPositiveNumber("WHATSAPP_BOT_SEND_DELAY_MS", 60_000);
 const defaultCountryCode = process.env.WHATSAPP_BOT_DEFAULT_COUNTRY_CODE ?? "549";
 const dryRun = parseBoolean(process.env.WHATSAPP_BOT_DRY_RUN);
 const headless = parseBoolean(process.env.WHATSAPP_BOT_HEADLESS);
+const browserExecutablePath = getBrowserExecutablePath();
 const sessionPath = path.resolve(
   __dirname,
   process.env.WHATSAPP_SESSION_PATH ?? "./.wwebjs_auth",
@@ -31,7 +32,9 @@ const client = new Client({
     dataPath: sessionPath,
   }),
   puppeteer: {
-    args: ["--disable-dev-shm-usage", "--no-sandbox"],
+    ...(browserExecutablePath ? { executablePath: browserExecutablePath } : {}),
+    args: ["--disable-dev-shm-usage", "--no-sandbox", "--start-maximized"],
+    defaultViewport: null,
     headless,
   },
 });
@@ -201,6 +204,26 @@ function parseBoolean(value) {
       .trim()
       .toLowerCase(),
   );
+}
+
+function getBrowserExecutablePath() {
+  const configuredPath = process.env.WHATSAPP_BOT_BROWSER_PATH?.trim();
+
+  if (configuredPath) {
+    return configuredPath;
+  }
+
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  return [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    path.join(
+      process.env.HOME ?? "",
+      "Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ),
+  ].find((candidate) => fs.existsSync(candidate));
 }
 
 function loadLocalEnv() {
