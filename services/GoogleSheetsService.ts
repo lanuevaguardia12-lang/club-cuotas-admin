@@ -4959,101 +4959,137 @@ function mapRowsToRefundPolicy(rows: unknown[][]): FeeRefundPolicyRule[] {
 }
 
 function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
-  const seenIds = new Set<string>();
+  const matchesByKey = new Map<string, MatchRecord>();
 
-  return rowsToRecords(rows)
-    .map<MatchRecord | null>((record) => {
-      const date = parseClubDateTime(
+  for (const record of rowsToRecords(rows)) {
+    const date = parseClubDateTime(
+      pick(record, [
+        "fecha",
+        "fecha_partido",
+        "fecha_del_partido",
+        "fecha_y_hora",
+        "fecha_hora",
+        "date",
+        "dia",
+        "dia_partido",
+        "dia_del_partido",
+      ]),
+    );
+    const loadedAt =
+      parseClubDateTime(
         pick(record, [
-          "fecha",
-          "fecha_partido",
-          "fecha_del_partido",
-          "fecha_y_hora",
-          "fecha_hora",
-          "date",
-          "dia",
-          "dia_partido",
-          "dia_del_partido",
+          "marca_temporal",
+          "timestamp",
+          "created_at",
+          "creado_en",
+          "fecha_carga",
         ]),
-      );
-      const loadedAt =
-        parseClubDateTime(
-          pick(record, [
-            "marca_temporal",
-            "timestamp",
-            "created_at",
-            "creado_en",
-            "fecha_carga",
-          ]),
-        ) ?? date;
-      const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
-      const sourceType = parsePlayerOfMatchCompetition(
-        pick(record, [
-          "competencia",
-          "competition",
-          "tipo_competencia",
-          "tipo_de_competencia",
-          "torneo_copa_amistoso",
-          "tipo",
-        ]),
-      );
-      const venue = pick(record, [
-        "local_visitante",
-        "local_o_visitante",
-        "condicion",
-        "sede",
-        "venue",
-      ]);
-      const coachAttended = parseLooseBoolean(
-        pick(record, [
-          "asistio_joaco",
-          "asistio_joaco_",
-          "asistencia_joaco",
-          "joaco",
-          "dt",
-        ]),
-      );
-      const rawPlayers = pick(record, [
-        "jugadores_que_ingresaron",
-        "jugadores_que_jugaron",
-        "jugadores_que_jugaron_el_partido",
-        "jugadores_que_asistieron",
-        "jugadores_presentes",
-        "jugadores_del_partido",
-        "jugadores",
-        "presentes",
-        "players",
-        "ingresaron",
-        "jugaron",
-        "asistieron",
-      ]);
-      const players = splitPlayerNames(rawPlayers);
+      ) ?? date;
+    const rival = pick(record, ["rival", "oponente", "contrario"]) || "Rival";
+    const sourceType = parsePlayerOfMatchCompetition(
+      pick(record, [
+        "competencia",
+        "competition",
+        "tipo_competencia",
+        "tipo_de_competencia",
+        "torneo_copa_amistoso",
+        "tipo",
+      ]),
+    );
+    const venue = pick(record, [
+      "local_visitante",
+      "local_o_visitante",
+      "condicion",
+      "sede",
+      "venue",
+    ]);
+    const coachAttended = parseLooseBoolean(
+      pick(record, [
+        "asistio_joaco",
+        "asistio_joaco_",
+        "asistencia_joaco",
+        "joaco",
+        "dt",
+      ]),
+    );
+    const rawPlayers = pick(record, [
+      "jugadores_que_ingresaron",
+      "jugadores_que_jugaron",
+      "jugadores_que_jugaron_el_partido",
+      "jugadores_que_asistieron",
+      "jugadores_presentes",
+      "jugadores_del_partido",
+      "jugadores",
+      "presentes",
+      "players",
+      "ingresaron",
+      "jugaron",
+      "asistieron",
+    ]);
+    const players = splitPlayerNames(rawPlayers);
 
-      if (!date || players.length === 0) {
-        return null;
-      }
+    if (!date || players.length === 0) {
+      continue;
+    }
 
-      const rawId = pick(record, ["id", "partido_id", "match_id"]);
+    const rawId = pick(record, ["id", "partido_id", "match_id"]);
+    const match: MatchRecord = {
+      id: rawId || createMatchId(date, rival),
+      date,
+      period: getPeriodFromDate(date) ?? getCurrentPeriod(),
+      rival,
+      players: uniquePlayerNames(players),
+      venue,
+      coachAttended,
+      loadedAt: loadedAt ?? date,
+    };
 
-      const match: MatchRecord = {
-        id: createUniqueMatchId(rawId || createMatchId(date, rival), seenIds),
-        date,
-        period: getPeriodFromDate(date) ?? getCurrentPeriod(),
-        rival,
-        players,
-        venue,
-        coachAttended,
-        loadedAt: loadedAt ?? date,
-      };
+    if (sourceType) {
+      match.sourceType = sourceType;
+    }
 
-      if (sourceType) {
-        match.sourceType = sourceType;
-      }
+    const key = createMatchMergeKey(match);
+    const existing = matchesByKey.get(key);
 
-      return match;
-    })
-    .filter((match): match is MatchRecord => Boolean(match))
-    .sort((left, right) => left.date.localeCompare(right.date));
+    matchesByKey.set(key, existing ? mergeMatchRecords(existing, match) : match);
+  }
+
+  return [...matchesByKey.values()].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+}
+
+function createMatchMergeKey(match: MatchRecord) {
+  return [
+    match.date,
+    normalizeClubPlayerName(match.rival),
+    match.sourceType ?? "sin-competencia",
+  ].join("|");
+}
+
+function mergeMatchRecords(left: MatchRecord, right: MatchRecord): MatchRecord {
+  return {
+    ...left,
+    coachAttended: left.coachAttended || right.coachAttended,
+    loadedAt: getEarliestMatchTimestamp(left.loadedAt, right.loadedAt),
+    players: uniquePlayerNames([...left.players, ...right.players]),
+    venue: left.venue || right.venue,
+  };
+}
+
+function getEarliestMatchTimestamp(left: string, right: string) {
+  const leftTime = new Date(left).getTime();
+  const rightTime = new Date(right).getTime();
+
+  if (Number.isNaN(leftTime)) {
+    return right;
+  }
+
+  if (Number.isNaN(rightTime)) {
+    return left;
+  }
+
+  return leftTime <= rightTime ? left : right;
 }
 
 function mergePlayerOfMatchMatches(
@@ -6119,19 +6155,6 @@ function createMatchId(date: string, rival: string) {
   const rivalId = createClubPlayerId(rival) || "rival";
 
   return `match-${date}-${rivalId}`;
-}
-
-function createUniqueMatchId(baseId: string, seenIds: Set<string>) {
-  let id = baseId;
-  let suffix = 2;
-
-  while (seenIds.has(id)) {
-    id = `${baseId}-${suffix}`;
-    suffix += 1;
-  }
-
-  seenIds.add(id);
-  return id;
 }
 
 function mapClubExpenseRowsToPlayerCredits(rows: unknown[][]): PlayerExpenseCredit[] {
