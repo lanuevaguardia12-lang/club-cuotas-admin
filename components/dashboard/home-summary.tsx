@@ -484,7 +484,11 @@ function formatOrdinal(value: number) {
 
 function formatMatchScore(match: LeagueFixtureMatch) {
   if (typeof match.localScore === "number" && typeof match.visitorScore === "number") {
-    return `${match.localScore}-${match.visitorScore}`;
+    const score = `${match.localScore}-${match.visitorScore}`;
+
+    return hasPenaltyScore(match)
+      ? `${score} (${match.localPenaltyScore}-${match.visitorPenaltyScore} pen)`
+      : score;
   }
 
   return "S/R";
@@ -519,6 +523,8 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
   const isLocal = areSameFixtureTeam(match.localTeam, teamName);
   const teamScore = isLocal ? match.localScore : match.visitorScore;
   const rivalScore = isLocal ? match.visitorScore : match.localScore;
+  const teamPenaltyScore = isLocal ? match.localPenaltyScore : match.visitorPenaltyScore;
+  const rivalPenaltyScore = isLocal ? match.visitorPenaltyScore : match.localPenaltyScore;
   const rival = isLocal ? match.visitorTeam : match.localTeam;
 
   if (
@@ -533,11 +539,34 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
     };
   }
 
+  const hasPenalties =
+    typeof teamPenaltyScore === "number" && typeof rivalPenaltyScore === "number";
+  const kind =
+    teamScore > rivalScore
+      ? "win"
+      : teamScore < rivalScore
+        ? "loss"
+        : hasPenalties && teamPenaltyScore !== rivalPenaltyScore
+          ? teamPenaltyScore > rivalPenaltyScore
+            ? "win"
+            : "loss"
+          : "draw";
+  const label = hasPenalties
+    ? `${teamScore}-${rivalScore} (${teamPenaltyScore}-${rivalPenaltyScore} pen)`
+    : `${teamScore}-${rivalScore}`;
+
   return {
-    kind: teamScore > rivalScore ? "win" : teamScore === rivalScore ? "draw" : "loss",
-    label: `${teamScore}-${rivalScore}`,
+    kind,
+    label,
     rival,
   };
+}
+
+function hasPenaltyScore(match: LeagueFixtureMatch) {
+  return (
+    typeof match.localPenaltyScore === "number" &&
+    typeof match.visitorPenaltyScore === "number"
+  );
 }
 
 function isTeamInMatch(match: LeagueFixtureMatch, teamName: string) {

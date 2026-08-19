@@ -724,7 +724,7 @@ function FullMatchRow({
 
       <MatchTeamsCard match={match} />
 
-      <div className="hidden grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)] items-center gap-2 md:grid">
+      <div className="hidden grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1fr)] items-center gap-2 md:grid">
         <TeamName name={match.localTeam} align="right" />
         <MatchScore match={match} />
         <TeamName name={match.visitorTeam} />
@@ -855,19 +855,12 @@ function MatchTeamScore({
 }
 
 function MatchScore({ match }: { match: LeagueFixtureMatch }) {
-  const label =
-    match.status === "played" &&
-    typeof match.localScore === "number" &&
-    typeof match.visitorScore === "number"
-      ? `${match.localScore}-${match.visitorScore}`
-      : match.status === "without-result"
-        ? "S/R"
-        : "vs";
+  const label = formatMatchScore(match);
 
   return (
     <span
       className={cn(
-        "bg-muted text-muted-foreground inline-flex h-9 items-center justify-center rounded-md px-2 text-sm font-bold",
+        "bg-muted text-muted-foreground inline-flex h-9 items-center justify-center rounded-md px-2 text-sm font-bold whitespace-nowrap",
         match.status === "played" && "bg-primary text-primary-foreground",
         match.status === "without-result" && "bg-accent text-accent-foreground",
       )}
@@ -875,6 +868,22 @@ function MatchScore({ match }: { match: LeagueFixtureMatch }) {
       {label}
     </span>
   );
+}
+
+function formatMatchScore(match: LeagueFixtureMatch) {
+  if (
+    match.status === "played" &&
+    typeof match.localScore === "number" &&
+    typeof match.visitorScore === "number"
+  ) {
+    const score = `${match.localScore}-${match.visitorScore}`;
+
+    return hasPenaltyScore(match)
+      ? `${score} (${match.localPenaltyScore}-${match.visitorPenaltyScore} pen)`
+      : score;
+  }
+
+  return match.status === "without-result" ? "S/R" : "vs";
 }
 
 function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
@@ -1013,6 +1022,8 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
   const isLocal = areSameFixtureTeam(match.localTeam, teamName);
   const teamScore = isLocal ? match.localScore : match.visitorScore;
   const rivalScore = isLocal ? match.visitorScore : match.localScore;
+  const teamPenaltyScore = isLocal ? match.localPenaltyScore : match.visitorPenaltyScore;
+  const rivalPenaltyScore = isLocal ? match.visitorPenaltyScore : match.localPenaltyScore;
   const rival = isLocal ? match.visitorTeam : match.localTeam;
 
   if (
@@ -1027,11 +1038,34 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
     };
   }
 
+  const hasPenalties =
+    typeof teamPenaltyScore === "number" && typeof rivalPenaltyScore === "number";
+  const kind =
+    teamScore > rivalScore
+      ? "win"
+      : teamScore < rivalScore
+        ? "loss"
+        : hasPenalties && teamPenaltyScore !== rivalPenaltyScore
+          ? teamPenaltyScore > rivalPenaltyScore
+            ? "win"
+            : "loss"
+          : "draw";
+  const label = hasPenalties
+    ? `${teamScore}-${rivalScore} (${teamPenaltyScore}-${rivalPenaltyScore} pen)`
+    : `${teamScore}-${rivalScore}`;
+
   return {
-    kind: teamScore > rivalScore ? "win" : teamScore === rivalScore ? "draw" : "loss",
-    label: `${teamScore}-${rivalScore}`,
+    kind,
+    label,
     rival,
   };
+}
+
+function hasPenaltyScore(match: LeagueFixtureMatch) {
+  return (
+    typeof match.localPenaltyScore === "number" &&
+    typeof match.visitorPenaltyScore === "number"
+  );
 }
 
 function getOutcomeClassName(kind: OutcomeKind) {
