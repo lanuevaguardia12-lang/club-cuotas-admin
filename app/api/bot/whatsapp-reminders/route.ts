@@ -59,7 +59,10 @@ async function runWhatsAppReminderBot(request: NextRequest) {
 
   const webhookUrl = process.env.WHATSAPP_BOT_WEBHOOK_URL?.trim();
 
-  const body = (await request.json().catch(() => ({}))) as { period?: unknown };
+  const body = (await request.json().catch(() => ({}))) as {
+    messageTemplate?: unknown;
+    period?: unknown;
+  };
   const period =
     typeof body.period === "string" && /^\d{4}-\d{2}$/.test(body.period)
       ? body.period
@@ -71,6 +74,10 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     dataService.getAppSettings(),
     dataService.getReminderJobs(),
   ]);
+  const messageTemplate = normalizeMessageTemplate(
+    body.messageTemplate,
+    settingsData.settings.whatsAppMessageTemplate,
+  );
   const calculationsByPlayer = buildCalculationLookup(
     feeCalculatorData.playerCalculations,
   );
@@ -122,7 +129,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     messages.push({
       amount,
       fee,
-      message: buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
+      message: buildReminderMessage(messageTemplate, {
         clubName: settingsData.settings.clubName,
         currentMonth: periodLabel,
         feeAmount: fee,
@@ -429,6 +436,20 @@ function formatCurrency(amount: number) {
     maximumFractionDigits: 0,
     style: "currency",
   }).format(amount);
+}
+
+function normalizeMessageTemplate(value: unknown, fallback: string) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const template = value.trim();
+
+  if (!template) {
+    return fallback;
+  }
+
+  return template.slice(0, 1200);
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

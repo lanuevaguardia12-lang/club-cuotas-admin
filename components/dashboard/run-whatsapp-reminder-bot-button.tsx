@@ -1,8 +1,9 @@
 "use client";
 
 import { Bot } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 
@@ -25,9 +26,17 @@ interface RunWhatsAppReminderBotResponse {
 export function RunWhatsAppReminderBotButton({
   period,
 }: RunWhatsAppReminderBotButtonProps) {
+  const { settings } = useAppSettings();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTemplate, setMessageTemplate] = useState(
+    settings.whatsAppMessageTemplate,
+  );
   const selectedPeriodLabel = formatPeriodLabel(period);
+
+  useEffect(() => {
+    setMessageTemplate(settings.whatsAppMessageTemplate);
+  }, [settings.whatsAppMessageTemplate]);
 
   async function runBot() {
     setLoading(true);
@@ -35,7 +44,7 @@ export function RunWhatsAppReminderBotButton({
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
-        body: JSON.stringify({ period }),
+        body: JSON.stringify({ messageTemplate, period }),
         headers: {
           "content-type": "application/json",
         },
@@ -70,12 +79,25 @@ export function RunWhatsAppReminderBotButton({
   }
 
   return (
-    <div className="flex flex-col gap-2 sm:items-end">
+    <div className="flex flex-col gap-3 sm:items-end">
       <LoadingModal
         open={loading}
         title="Corriendo bot"
         description="Preparando pendientes del mes y dejandolos listos para el bot..."
       />
+      <label className="grid w-full max-w-md gap-2 sm:text-right">
+        <span className="text-sm font-medium">Mensaje de esta corrida</span>
+        <textarea
+          value={messageTemplate}
+          onChange={(event) => setMessageTemplate(event.target.value)}
+          rows={5}
+          maxLength={1200}
+          className="border-input bg-background focus:ring-ring min-h-32 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 sm:text-left"
+        />
+        <span className="text-muted-foreground text-xs">
+          Variables: {"{nombre}"}, {"{mes}"}, {"{monto}"}.
+        </span>
+      </label>
       <Button type="button" variant="outline" onClick={runBot} disabled={loading}>
         <Bot />
         Correr bot recordatorios
