@@ -266,6 +266,9 @@ export function applyLeagueFixtureScheduleOverrides(
     const hasManualScore =
       typeof override.localScore === "number" &&
       typeof override.visitorScore === "number";
+    const hasManualPenalties =
+      typeof override.localPenaltyScore === "number" &&
+      typeof override.visitorPenaltyScore === "number";
     const manualGoalEvents = buildManualGoalEvents(override.goalScorers);
 
     return {
@@ -275,9 +278,12 @@ export function applyLeagueFixtureScheduleOverrides(
       goals: [...match.goals, ...formatManualGoalLabels(override.goalScorers)],
       localScore:
         !hasOfficialScore && hasManualScore ? override.localScore : match.localScore,
+      localPenaltyScore: hasManualPenalties
+        ? override.localPenaltyScore
+        : match.localPenaltyScore,
       manualGoalScorers: override.goalScorers,
       resultOverrideUpdatedAt:
-        hasManualScore || override.goalScorers.length > 0
+        hasManualScore || hasManualPenalties || override.goalScorers.length > 0
           ? override.updatedAt
           : undefined,
       roundDate: dateIso ? formatFixtureRoundDate(dateIso) : match.roundDate,
@@ -289,6 +295,9 @@ export function applyLeagueFixtureScheduleOverrides(
       time: time ?? match.time,
       visitorScore:
         !hasOfficialScore && hasManualScore ? override.visitorScore : match.visitorScore,
+      visitorPenaltyScore: hasManualPenalties
+        ? override.visitorPenaltyScore
+        : match.visitorPenaltyScore,
     };
   };
   const rounds = data.rounds.map((round) => ({

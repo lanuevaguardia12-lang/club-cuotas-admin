@@ -499,6 +499,8 @@ const fixtureOverrideHeaders = [
   "fecha_hora",
   "goles_local",
   "goles_visitante",
+  "penales_local",
+  "penales_visitante",
   "goleadores_lng",
   "actualizado_por_user_id",
   "actualizado_por",
@@ -2161,10 +2163,12 @@ export class GoogleSheetsService implements IDataService {
       dateTime: input.dateTime,
       goalScorers: input.goalScorers ?? [],
       localScore: input.localScore,
+      localPenaltyScore: input.localPenaltyScore,
       matchId: input.matchId,
       updatedAt: new Date().toISOString(),
       updatedByName: input.updatedByName,
       updatedByUserId: input.updatedByUserId,
+      visitorPenaltyScore: input.visitorPenaltyScore,
       visitorScore: input.visitorScore,
     };
     const row = buildFixtureOverrideWritableRow(headers, override);
@@ -5311,6 +5315,22 @@ function mapRowsToFixtureMatchScheduleOverrides(
       const visitorScore = parseOptionalScore(
         pick(record, ["goles_visitante", "visitor_score", "resultado_visitante"]),
       );
+      const localPenaltyScore = parseOptionalScore(
+        pick(record, [
+          "penales_local",
+          "local_penalty_score",
+          "local_penalties",
+          "penales_lng",
+        ]),
+      );
+      const visitorPenaltyScore = parseOptionalScore(
+        pick(record, [
+          "penales_visitante",
+          "visitor_penalty_score",
+          "visitor_penalties",
+          "penales_rival",
+        ]),
+      );
 
       if (!matchId || !dateTime) {
         return null;
@@ -5322,6 +5342,7 @@ function mapRowsToFixtureMatchScheduleOverrides(
           pick(record, ["goleadores_lng", "goleadores", "goal_scorers"]),
         ),
         localScore,
+        localPenaltyScore,
         matchId,
         updatedAt:
           parseDateTime(pick(record, ["actualizado_en", "updated_at", "timestamp"])) ??
@@ -5332,6 +5353,7 @@ function mapRowsToFixtureMatchScheduleOverrides(
           "updated_by_user_id",
           "user_id",
         ]),
+        visitorPenaltyScore,
         visitorScore,
       };
     })
@@ -5394,6 +5416,9 @@ function applyFixtureMatchScheduleOverrides(
     const hasManualScore =
       typeof override.localScore === "number" &&
       typeof override.visitorScore === "number";
+    const hasManualPenalties =
+      typeof override.localPenaltyScore === "number" &&
+      typeof override.visitorPenaltyScore === "number";
     const manualGoalEvents = buildManualGoalEvents(override.goalScorers);
 
     return {
@@ -5403,9 +5428,12 @@ function applyFixtureMatchScheduleOverrides(
       goals: [...match.goals, ...formatManualGoalLabels(override.goalScorers)],
       localScore:
         !hasOfficialScore && hasManualScore ? override.localScore : match.localScore,
+      localPenaltyScore: hasManualPenalties
+        ? override.localPenaltyScore
+        : match.localPenaltyScore,
       manualGoalScorers: override.goalScorers,
       resultOverrideUpdatedAt:
-        hasManualScore || override.goalScorers.length > 0
+        hasManualScore || hasManualPenalties || override.goalScorers.length > 0
           ? override.updatedAt
           : undefined,
       roundDate: dateIso ? formatFixtureRoundDate(dateIso) : match.roundDate,
@@ -5417,6 +5445,9 @@ function applyFixtureMatchScheduleOverrides(
       time: time ?? match.time,
       visitorScore:
         !hasOfficialScore && hasManualScore ? override.visitorScore : match.visitorScore,
+      visitorPenaltyScore: hasManualPenalties
+        ? override.visitorPenaltyScore
+        : match.visitorPenaltyScore,
     };
   });
 }
@@ -5981,9 +6012,15 @@ function buildFixtureOverrideWritableRow(
     goleadores: goalScorersText,
     goleadores_lng: goalScorersText,
     id: override.matchId,
+    local_penalties: formatOptionalScore(override.localPenaltyScore),
+    local_penalty_score: formatOptionalScore(override.localPenaltyScore),
     local_score: formatOptionalScore(override.localScore),
     match_id: override.matchId,
     partido_id: override.matchId,
+    penales_lng: formatOptionalScore(override.localPenaltyScore),
+    penales_local: formatOptionalScore(override.localPenaltyScore),
+    penales_rival: formatOptionalScore(override.visitorPenaltyScore),
+    penales_visitante: formatOptionalScore(override.visitorPenaltyScore),
     resultado_local: formatOptionalScore(override.localScore),
     resultado_visitante: formatOptionalScore(override.visitorScore),
     timestamp: override.updatedAt,
@@ -5992,6 +6029,8 @@ function buildFixtureOverrideWritableRow(
     updated_by_user_id: override.updatedByUserId,
     user_id: override.updatedByUserId,
     usuario: override.updatedByName,
+    visitor_penalties: formatOptionalScore(override.visitorPenaltyScore),
+    visitor_penalty_score: formatOptionalScore(override.visitorPenaltyScore),
     visitor_score: formatOptionalScore(override.visitorScore),
   };
 

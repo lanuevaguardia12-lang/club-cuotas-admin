@@ -24,10 +24,18 @@ export function FixtureMatchScheduleEditor({
   const [isPending, startTransition] = useTransition();
   const defaultDateTime = useMemo(() => toDateTimeLocalValue(match), [match]);
   const defaultScores = useMemo(() => getDefaultScores(match), [match]);
+  const defaultPenalties = useMemo(() => getDefaultPenalties(match), [match]);
   const defaultGoalScorers = useMemo(() => match.manualGoalScorers ?? [], [match]);
   const [dateTime, setDateTime] = useState(defaultDateTime);
   const [localScore, setLocalScore] = useState(defaultScores.localScore);
   const [visitorScore, setVisitorScore] = useState(defaultScores.visitorScore);
+  const [penaltiesEnabled, setPenaltiesEnabled] = useState(defaultPenalties.enabled);
+  const [localPenaltyScore, setLocalPenaltyScore] = useState(
+    defaultPenalties.localPenaltyScore,
+  );
+  const [visitorPenaltyScore, setVisitorPenaltyScore] = useState(
+    defaultPenalties.visitorPenaltyScore,
+  );
   const [goalScorers, setGoalScorers] = useState<string[]>(defaultGoalScorers);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
@@ -38,6 +46,12 @@ export function FixtureMatchScheduleEditor({
     setSuccess(false);
     const parsedLocalScore = parseScoreInput(localScore);
     const parsedVisitorScore = parseScoreInput(visitorScore);
+    const parsedLocalPenaltyScore = penaltiesEnabled
+      ? parseScoreInput(localPenaltyScore)
+      : undefined;
+    const parsedVisitorPenaltyScore = penaltiesEnabled
+      ? parseScoreInput(visitorPenaltyScore)
+      : undefined;
 
     if (
       (localScore.trim() && typeof parsedLocalScore !== "number") ||
@@ -55,12 +69,32 @@ export function FixtureMatchScheduleEditor({
       return;
     }
 
+    if (
+      penaltiesEnabled &&
+      ((localPenaltyScore.trim() && typeof parsedLocalPenaltyScore !== "number") ||
+        (visitorPenaltyScore.trim() && typeof parsedVisitorPenaltyScore !== "number"))
+    ) {
+      setMessage("Los penales tienen que ser números enteros.");
+      return;
+    }
+
+    if (
+      penaltiesEnabled &&
+      (typeof parsedLocalPenaltyScore !== "number" ||
+        typeof parsedVisitorPenaltyScore !== "number")
+    ) {
+      setMessage("Cargá los penales de ambos equipos.");
+      return;
+    }
+
     startTransition(async () => {
       const result = await updateFixtureMatchSchedule({
         dateTime,
         goalScorers: goalScorers.map((scorer) => scorer.trim()).filter(Boolean),
+        localPenaltyScore: parsedLocalPenaltyScore,
         localScore: parsedLocalScore,
         matchId: match.id,
+        visitorPenaltyScore: parsedVisitorPenaltyScore,
         visitorScore: parsedVisitorScore,
       });
 
@@ -90,6 +124,9 @@ export function FixtureMatchScheduleEditor({
             setDateTime(defaultDateTime);
             setLocalScore(defaultScores.localScore);
             setVisitorScore(defaultScores.visitorScore);
+            setPenaltiesEnabled(defaultPenalties.enabled);
+            setLocalPenaltyScore(defaultPenalties.localPenaltyScore);
+            setVisitorPenaltyScore(defaultPenalties.visitorPenaltyScore);
             setGoalScorers(defaultGoalScorers);
             setMessage("");
             setSuccess(false);
@@ -142,6 +179,57 @@ export function FixtureMatchScheduleEditor({
               onChange={(event) => setVisitorScore(event.target.value)}
             />
           </label>
+
+          <div className="border-border bg-muted/30 grid gap-3 rounded-md border p-3 sm:col-span-2">
+            <label className="flex items-center gap-3 text-sm font-medium">
+              <input
+                checked={penaltiesEnabled}
+                className="border-input text-primary focus-visible:ring-ring size-4 rounded border"
+                type="checkbox"
+                onChange={(event) => {
+                  const checked = event.target.checked;
+
+                  setPenaltiesEnabled(checked);
+
+                  if (!checked) {
+                    setLocalPenaltyScore("");
+                    setVisitorPenaltyScore("");
+                  }
+                }}
+              />
+              Penales
+            </label>
+
+            {penaltiesEnabled ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm">
+                  <span className="font-medium">Penales {match.localTeam}</span>
+                  <input
+                    className="border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
+                    inputMode="numeric"
+                    min={0}
+                    step={1}
+                    type="number"
+                    value={localPenaltyScore}
+                    onChange={(event) => setLocalPenaltyScore(event.target.value)}
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm">
+                  <span className="font-medium">Penales {match.visitorTeam}</span>
+                  <input
+                    className="border-input bg-background focus-visible:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
+                    inputMode="numeric"
+                    min={0}
+                    step={1}
+                    type="number"
+                    value={visitorPenaltyScore}
+                    onChange={(event) => setVisitorPenaltyScore(event.target.value)}
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
 
           <div className="grid gap-2 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -237,6 +325,18 @@ function getDefaultScores(match: LeagueFixtureMatch) {
     localScore: typeof match.localScore === "number" ? String(match.localScore) : "",
     visitorScore:
       typeof match.visitorScore === "number" ? String(match.visitorScore) : "",
+  };
+}
+
+function getDefaultPenalties(match: LeagueFixtureMatch) {
+  const hasPenalties =
+    typeof match.localPenaltyScore === "number" &&
+    typeof match.visitorPenaltyScore === "number";
+
+  return {
+    enabled: hasPenalties,
+    localPenaltyScore: hasPenalties ? String(match.localPenaltyScore) : "",
+    visitorPenaltyScore: hasPenalties ? String(match.visitorPenaltyScore) : "",
   };
 }
 

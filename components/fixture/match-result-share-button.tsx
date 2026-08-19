@@ -301,6 +301,11 @@ function drawScoreboard(
   },
 ) {
   const cardHeight = compact ? 340 : 440;
+  const hasPenalties =
+    typeof result.teamPenaltyScore === "number" &&
+    typeof result.rivalPenaltyScore === "number";
+  const mainScoreY = hasPenalties ? y + (compact ? 236 : 304) : y + (compact ? 282 : 358);
+  const penaltyScoreY = y + (compact ? 306 : 394);
 
   context.save();
   const cardGradient = context.createLinearGradient(90, y, width - 90, y + cardHeight);
@@ -339,7 +344,7 @@ function drawScoreboard(
     context,
     `${result.teamScore} - ${result.rivalScore}`,
     width / 2,
-    y + (compact ? 282 : 358),
+    mainScoreY,
     {
       color: result.teamScore > result.rivalScore ? "#f4ce0f" : "#ffffff",
       font: compact
@@ -349,6 +354,72 @@ function drawScoreboard(
       shadowColor: "rgba(244,206,15,0.2)",
     },
   );
+
+  if (hasPenalties) {
+    drawPenaltyScore(context, {
+      compact,
+      result,
+      width,
+      y: penaltyScoreY,
+    });
+  }
+}
+
+function drawPenaltyScore(
+  context: CanvasRenderingContext2D,
+  {
+    compact,
+    result,
+    width,
+    y,
+  }: {
+    compact: boolean;
+    result: ResultView;
+    width: number;
+    y: number;
+  },
+) {
+  const lineWidth = compact ? 95 : 118;
+  const centerGap = compact ? 78 : 96;
+  const leftX = width / 2 - (compact ? 126 : 154);
+  const rightX = width / 2 + (compact ? 126 : 154);
+
+  context.save();
+  context.strokeStyle = "rgba(255,255,255,0.56)";
+  context.lineWidth = compact ? 4 : 5;
+  context.beginPath();
+  context.moveTo(leftX - lineWidth, y - (compact ? 13 : 16));
+  context.lineTo(leftX - centerGap, y - (compact ? 13 : 16));
+  context.moveTo(rightX + centerGap, y - (compact ? 13 : 16));
+  context.lineTo(rightX + lineWidth, y - (compact ? 13 : 16));
+  context.stroke();
+  context.restore();
+
+  drawCenteredText(context, `(${result.teamPenaltyScore})`, leftX, y, {
+    color: "#ffffff",
+    font: compact
+      ? "900 52px Arial Black, sans-serif"
+      : "900 64px Arial Black, sans-serif",
+    shadowBlur: 16,
+    shadowColor: "rgba(0,0,0,0.3)",
+  });
+  drawCenteredText(context, "PEN", width / 2, y - (compact ? 6 : 8), {
+    color: "#f4ce0f",
+    font: compact
+      ? "900 28px Arial Black, sans-serif"
+      : "900 34px Arial Black, sans-serif",
+    letterSpacing: 4,
+    shadowBlur: 12,
+    shadowColor: "rgba(244,206,15,0.22)",
+  });
+  drawCenteredText(context, `(${result.rivalPenaltyScore})`, rightX, y, {
+    color: "#ffffff",
+    font: compact
+      ? "900 52px Arial Black, sans-serif"
+      : "900 64px Arial Black, sans-serif",
+    shadowBlur: 16,
+    shadowColor: "rgba(0,0,0,0.3)",
+  });
 }
 
 function drawTeamSide(
@@ -748,9 +819,11 @@ function formatCompetition(kind: LeagueCompetitionKind) {
 
 interface ResultView {
   rivalName: string;
+  rivalPenaltyScore?: number;
   rivalRole: string;
   rivalScore: number;
   teamName: string;
+  teamPenaltyScore?: number;
   teamRole: string;
   teamScore: number;
 }
@@ -759,12 +832,20 @@ function getResultView(match: LeagueFixtureMatch, teamName: string): ResultView 
   const isLocalTeam = sameTeam(match.localTeam, teamName);
   const teamScore = isLocalTeam ? match.localScore : match.visitorScore;
   const rivalScore = isLocalTeam ? match.visitorScore : match.localScore;
+  const teamPenaltyScore = isLocalTeam
+    ? match.localPenaltyScore
+    : match.visitorPenaltyScore;
+  const rivalPenaltyScore = isLocalTeam
+    ? match.visitorPenaltyScore
+    : match.localPenaltyScore;
 
   return {
     rivalName: isLocalTeam ? match.visitorTeam : match.localTeam,
+    rivalPenaltyScore,
     rivalRole: isLocalTeam ? "Visita" : "Local",
     rivalScore: rivalScore ?? 0,
     teamName,
+    teamPenaltyScore,
     teamRole: isLocalTeam ? "Local" : "Visita",
     teamScore: teamScore ?? 0,
   };

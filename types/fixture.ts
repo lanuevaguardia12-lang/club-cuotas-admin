@@ -55,6 +55,8 @@ export interface LeagueFixtureMatch {
   status: LeagueMatchStatus;
   localScore?: number;
   visitorScore?: number;
+  localPenaltyScore?: number;
+  visitorPenaltyScore?: number;
   detailUrl?: string;
   goalEvents: LeagueGoalEvent[];
   goals: string[];
@@ -101,21 +103,25 @@ export interface LeagueFixtureData {
 export interface FixtureMatchScheduleOverride {
   goalScorers: string[];
   localScore?: number;
+  localPenaltyScore?: number;
   matchId: string;
   dateTime: string;
   updatedAt: string;
   updatedByName: string;
   updatedByUserId: string;
+  visitorPenaltyScore?: number;
   visitorScore?: number;
 }
 
 export interface UpdateFixtureMatchScheduleInput {
   goalScorers?: string[];
   localScore?: number;
+  localPenaltyScore?: number;
   matchId: string;
   dateTime: string;
   updatedByName: string;
   updatedByUserId: string;
+  visitorPenaltyScore?: number;
   visitorScore?: number;
 }
 
