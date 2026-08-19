@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
     const result = await sendOpenPlayerOfMatchNotifications({
       actor: systemAuditActor,
       includeDetails: request.nextUrl.searchParams.get("details") === "1",
+      notificationStage: parseNotificationStage(
+        request.nextUrl.searchParams.get("stage"),
+      ),
       trigger: "cron",
     });
 
@@ -50,6 +53,7 @@ export async function POST(request: NextRequest) {
     includeDetails?: unknown;
     ignoreAlreadyNotified?: unknown;
     playerId?: unknown;
+    stage?: unknown;
     userId?: unknown;
   };
   const all = body.all === true;
@@ -77,6 +81,8 @@ export async function POST(request: NextRequest) {
       actor: user ? userToAuditActor(user) : systemAuditActor,
       includeDetails: body.includeDetails === true,
       ignoreAlreadyNotified: body.ignoreAlreadyNotified === true,
+      notificationStage:
+        typeof body.stage === "string" ? parseNotificationStage(body.stage) : undefined,
       targetPlayerId: playerId || undefined,
       targetUserId: userId || undefined,
       trigger: "manual",
@@ -93,6 +99,15 @@ function isCronAuthorized(request: NextRequest) {
   const authorization = request.headers.get("authorization");
 
   return Boolean(expected && authorization === `Bearer ${expected}`);
+}
+
+function parseNotificationStage(value: string | null | undefined) {
+  return value === "opening" ||
+    value === "midpoint" ||
+    value === "closing" ||
+    value === "auto"
+    ? value
+    : undefined;
 }
 
 function buildCronErrorResponse(error: unknown) {

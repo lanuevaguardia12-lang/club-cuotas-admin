@@ -894,7 +894,7 @@ Los cron jobs se configuran en `vercel.json`:
   },
   {
     "path": "/api/cron/player-of-match-reminders",
-    "schedule": "0 2 * * *"
+    "schedule": "0 1 * * *"
   },
   {
     "path": "/api/cron/upcoming-match-reminders",
@@ -990,15 +990,14 @@ como memoria para no repetir el aviso automatico antes de 4 dias por jugador y
 periodo. El envio manual desde el dashboard sigue disponible para pruebas
 administrativas.
 
-El cron `/api/cron/player-of-match-reminders` corre una vez por dia a las 02:00
-UTC (23:00 de Argentina), avisa a usuarios suscriptos cuando hay partidos listos
-para votar MVP y reenvia el aviso cada 2 dias a quienes todavia no votaron. Usa
-`reference_id` en `Notificaciones` para controlar el intervalo por usuario y
-partido. La votacion MVP se abre automaticamente
-cuando el partido tiene al menos dos jugadores cargados, sin depender de que la
-liga publique el resultado. Si los jugadores se cargan desde la app, el envio se
-intenta inmediatamente; si entran por Google Sheets/Form, el cron lo detecta en
-la siguiente corrida.
+El cron `/api/cron/player-of-match-reminders` corre una vez por dia a las 01:00
+UTC (22:00 de Argentina). La votacion MVP se abre automaticamente cuando el
+partido tiene al menos dos jugadores cargados, sin depender de que la liga
+publique el resultado. Si los jugadores se cargan desde la app o desde el webhook
+de Google Forms, el envio inicial se intenta inmediatamente. El cron queda como
+respaldo y tambien envia los avisos de mitad de votacion y cierre. Usa
+`reference_id` en `Notificaciones` para mandar una sola notificacion por
+usuario, partido y etapa.
 
 El cron `/api/cron/upcoming-match-reminders` corre todos los dias a las 22:00
 UTC (19:00 de Argentina). Si hay un partido programado para manana o pasado
@@ -1050,7 +1049,8 @@ Rutas principales:
 - `GET /api/notifications`: historial de la campana del usuario logueado.
 - `PATCH /api/notifications`: marca una notificacion visible como leida.
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
-- `GET /api/cron/player-of-match-reminders`: envia push de MVP listo para votar.
+- `GET /api/cron/player-of-match-reminders`: envia push de apertura, mitad o
+  cierre de votacion MVP.
 - `POST /api/cron/player-of-match-reminders`: prueba manual de push MVP para un
   `playerId` o `userId`.
 - `GET /api/cron/upcoming-match-reminders`: envia push si hay partido en los proximos dos dias.
@@ -1095,7 +1095,7 @@ function onFormSubmit() {
 La respuesta del formulario escribe en Google Sheets. El webhook expira el cache
 de MVP y busca partidos con al menos dos jugadores cargados para enviar:
 
-`Ya podes votar al MVP del partido vs Rival.`
+`Ya podés votar al MVP del partido vs Rival. Hacé clic y votá.`
 
 Para probar sin esperar al cron diario:
 
@@ -1103,7 +1103,7 @@ Para probar sin esperar al cron diario:
 curl -X POST "https://TU_URL_DE_VERCEL/api/cron/player-of-match-reminders" \
   -H "Authorization: Bearer TU_CRON_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"playerId":"id-del-jugador","ignoreAlreadyNotified":true}'
+  -d '{"playerId":"id-del-jugador","stage":"opening","ignoreAlreadyNotified":true}'
 ```
 
 La respuesta incluye `users`, `matches`, `sent`, `failed`,
@@ -1390,7 +1390,7 @@ Path: /api/cron/player-fee-reminders
 Schedule: 0 18 */4 * *
 
 Path: /api/cron/player-of-match-reminders
-Schedule: 0 2 * * *
+Schedule: 0 1 * * *
 ```
 
 ## Calidad

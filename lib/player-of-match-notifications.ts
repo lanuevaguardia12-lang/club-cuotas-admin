@@ -13,7 +13,11 @@ import type {
   PushSubscriptionRecord,
 } from "@/types/premium";
 
-const MVP_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
+type PlayerOfMatchNotificationStage = "closing" | "midpoint" | "opening";
+type PlayerOfMatchNotificationStageInput = PlayerOfMatchNotificationStage | "auto";
+
+const CLOSING_REMINDER_WINDOW_MS = 2 * 60 * 60 * 1000;
+const RECENT_NOTIFICATION_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
 
 export interface PlayerOfMatchNotificationDetail {
   alreadyVotedMatchIds: string[];
@@ -82,6 +86,7 @@ export async function sendOpenPlayerOfMatchNotifications({
   actor,
   includeDetails = false,
   ignoreAlreadyNotified = false,
+  notificationStage,
   targetPlayerId,
   targetUserId,
   trigger,
@@ -89,6 +94,7 @@ export async function sendOpenPlayerOfMatchNotifications({
   actor: AuditActor;
   includeDetails?: boolean;
   ignoreAlreadyNotified?: boolean;
+  notificationStage?: PlayerOfMatchNotificationStageInput;
   targetPlayerId?: string;
   targetUserId?: string;
   trigger: "cron" | "match-update" | "manual" | "webhook";
@@ -204,8 +210,17 @@ export async function sendOpenPlayerOfMatchNotifications({
     }
 
     for (const match of pendingMatches) {
+      const stage = resolveNotificationStage(match, trigger, notificationStage);
+
+      if (!stage) {
+        skipped += 1;
+        detail.skipped += 1;
+        pushUniqueReason(detail, "reminder-stage-not-due");
+        continue;
+      }
+
       pendingMatchIds.add(match.id);
-      const referenceId = getMvpReferenceId(userId, match.id);
+      const referenceId = getMvpReferenceId(userId, match.id, stage);
       const lastNotification =
         lastNotificationsByReferenceId.get(referenceId) ??
         findLatestMvpNotificationForMatch(
@@ -213,10 +228,11 @@ export async function sendOpenPlayerOfMatchNotifications({
           userId,
           userPlayerId,
           match,
+          stage,
         );
 
       if (
-        (!ignoreAlreadyNotified && isRecentMvpReminder(lastNotification)) ||
+        (!ignoreAlreadyNotified && lastNotification) ||
         notifiedThisRun.has(referenceId)
       ) {
         skipped += 1;
@@ -227,15 +243,15 @@ export async function sendOpenPlayerOfMatchNotifications({
         continue;
       }
 
-      const message = `Aún no votaste al MVP del partido vs ${match.rival}. Hacé clic y votá.`;
+      const notification = buildMvpNotificationContent(match, stage);
       let matchSent = 0;
 
       for (const subscription of userSubscriptions) {
         try {
           await sendPushNotification(subscription, {
-            title: "MVP listo para votar",
-            body: message,
-            tag: `mvp-${userId}-${match.id}`,
+            title: notification.title,
+            body: notification.message,
+            tag: `mvp-${stage}-${userId}-${match.id}`,
             url: "/player-of-match",
           });
           sent += 1;
@@ -258,8 +274,8 @@ export async function sendOpenPlayerOfMatchNotifications({
         pushUniqueId(detail.sentMatchIds, match.id);
         try {
           await dataService.createNotification({
-            title: "MVP listo para votar",
-            message,
+            title: notification.title,
+            message: notification.message,
             type: "info",
             targetRole: "player",
             targetUserId: userId,
@@ -292,6 +308,7 @@ export async function sendOpenPlayerOfMatchNotifications({
         ignoreAlreadyNotified,
         includeDetails,
         matches: pendingMatchIds.size,
+        notificationStage: notificationStage ?? null,
         notificationRecordsFailed,
         reportSummary: report
           ? JSON.stringify(summarizeNotificationReport(report))
@@ -509,6 +526,100 @@ function isEligiblePlayerOfMatchReminderMatch(match: PlayerOfMatchMatch) {
   );
 }
 
+function resolveNotificationStage(
+  match: PlayerOfMatchMatch,
+  trigger: "cron" | "match-update" | "manual" | "webhook",
+  requestedStage?: PlayerOfMatchNotificationStageInput,
+): PlayerOfMatchNotificationStage | undefined {
+  if (requestedStage && requestedStage !== "auto") {
+    return isNotificationStageDue(match, requestedStage) ? requestedStage : undefined;
+  }
+
+  if (trigger === "webhook" || trigger === "match-update") {
+    return "opening";
+  }
+
+  if (trigger === "manual" && requestedStage !== "auto") {
+    return "opening";
+  }
+
+  return getAutomaticNotificationStage(match);
+}
+
+function getAutomaticNotificationStage(
+  match: PlayerOfMatchMatch,
+): PlayerOfMatchNotificationStage | undefined {
+  if (isNotificationStageDue(match, "closing")) {
+    return "closing";
+  }
+
+  if (isNotificationStageDue(match, "midpoint")) {
+    return "midpoint";
+  }
+
+  if (isNotificationStageDue(match, "opening")) {
+    return "opening";
+  }
+
+  return undefined;
+}
+
+function isNotificationStageDue(
+  match: PlayerOfMatchMatch,
+  stage: PlayerOfMatchNotificationStage,
+) {
+  const now = Date.now();
+  const startsAt = getTimestamp(match.votingStartsAt);
+  const endsAt = getTimestamp(match.votingEndsAt);
+
+  if (
+    match.votingStatus !== "open" ||
+    startsAt <= 0 ||
+    endsAt <= 0 ||
+    now < startsAt ||
+    now > endsAt
+  ) {
+    return false;
+  }
+
+  const closingStartsAt = endsAt - CLOSING_REMINDER_WINDOW_MS;
+  const midpointAt = startsAt + (endsAt - startsAt) / 2;
+
+  if (stage === "closing") {
+    return now >= closingStartsAt;
+  }
+
+  if (stage === "midpoint") {
+    return now >= midpointAt && now < closingStartsAt;
+  }
+
+  return now < midpointAt;
+}
+
+function buildMvpNotificationContent(
+  match: PlayerOfMatchMatch,
+  stage: PlayerOfMatchNotificationStage,
+) {
+  if (stage === "closing") {
+    return {
+      title: "Últimas 2 horas para votar",
+      message: `En 2 horas cierra la votación del MVP vs ${match.rival}. Hacé clic y votá.`,
+    };
+  }
+
+  if (stage === "midpoint") {
+    return {
+      title: "Aún no votaste al MVP",
+      message: `Aún no votaste al MVP del partido vs ${match.rival}. Hacé clic y votá.`,
+    };
+  }
+
+  return {
+    title: "Ya podés votar al MVP",
+    message: `Ya podés votar al MVP del partido vs ${match.rival}. Hacé clic y votá.`,
+  };
+}
+
 function getNoPendingMatchReasons(matches: PlayerOfMatchMatch[]) {
   const reasons = new Set<string>();
   const eligibleMatches = matches.filter(isEligiblePlayerOfMatchReminderMatch);
@@ -656,7 +767,15 @@ function summarizeNotificationReport(report: PlayerOfMatchNotificationReport) {
   );
 }
 
-function getMvpReferenceId(userId: string, matchId: string) {
+function getMvpReferenceId(
+  userId: string,
+  matchId: string,
+  stage: PlayerOfMatchNotificationStage,
+) {
+  return `mvp:${stage}:${userId}:${matchId}`;
+}
+
+function getLegacyMvpReferenceId(userId: string, matchId: string) {
   return `mvp:${userId}:${matchId}`;
 }
 
@@ -665,9 +784,10 @@ function findLatestMvpNotificationForMatch(
   userId: string,
   playerId: string | undefined,
   match: PlayerOfMatchMatch,
+  stage?: PlayerOfMatchNotificationStage,
 ) {
   const candidates = notifications.filter((notification) =>
-    isMvpNotificationForMatch(notification, userId, playerId, match),
+    isMvpNotificationForMatch(notification, userId, playerId, match, stage),
   );
 
   return candidates.sort(
@@ -680,9 +800,21 @@ function isMvpNotificationForMatch(
   userId: string,
   playerId: string | undefined,
   match: PlayerOfMatchMatch,
+  stage?: PlayerOfMatchNotificationStage,
 ) {
-  if (notification.referenceId === getMvpReferenceId(userId, match.id)) {
+  if (stage && notification.referenceId === getMvpReferenceId(userId, match.id, stage)) {
     return true;
+  }
+
+  if (
+    stage === "opening" &&
+    notification.referenceId === getLegacyMvpReferenceId(userId, match.id)
+  ) {
+    return true;
+  }
+
+  if (stage) {
+    return false;
   }
 
   if (!isNotificationTargetedToPlayer(notification, userId, playerId)) {
@@ -773,6 +905,12 @@ function groupLatestNotificationByReferenceId(notifications: AppNotification[]) 
   return latestByReferenceId;
 }
 
+function getTimestamp(value: string) {
+  const timestamp = new Date(value).getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 function isRecentMvpReminder(notification?: AppNotification) {
   if (!notification) {
     return false;
@@ -780,13 +918,7 @@ function isRecentMvpReminder(notification?: AppNotification) {
 
   const timestamp = getTimestamp(notification.createdAt);
 
-  return timestamp > 0 && Date.now() - timestamp < MVP_REMINDER_INTERVAL_MS;
-}
-
-function getTimestamp(value: string) {
-  const timestamp = new Date(value).getTime();
-
-  return Number.isNaN(timestamp) ? 0 : timestamp;
+  return timestamp > 0 && Date.now() - timestamp < RECENT_NOTIFICATION_WINDOW_MS;
 }
 
 async function maybeDeactivateExpiredSubscription(
