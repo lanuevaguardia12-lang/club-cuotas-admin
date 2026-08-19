@@ -2614,17 +2614,31 @@ export class GoogleSheetsService implements IDataService {
     const values = await this.readValuesFromSpreadsheet(
       spreadsheetId,
       this.config.notificationsRange,
-    ).catch(() => []);
+    );
     const isEmptySheet = values.length === 0;
     const [headerRow = []] = values;
     let headers = normalizeWritableHeaders(headerRow, notificationHeaders);
+    const sheets = this.createSheetsClient();
 
-    headers = await this.ensureWritableHeaders(
-      spreadsheetId,
-      sheetPrefix,
-      headers,
-      notificationHeaders,
-    );
+    if (isEmptySheet) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A1:${toColumnName(headers.length - 1)}1`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [headers],
+        },
+      });
+    }
+
+    headers = isEmptySheet
+      ? headers
+      : await this.ensureWritableHeaders(
+          spreadsheetId,
+          sheetPrefix,
+          headers,
+          notificationHeaders,
+        );
 
     const row = buildNotificationWritableRow(headers, {
       id: createId("notification"),
@@ -2632,13 +2646,13 @@ export class GoogleSheetsService implements IDataService {
       input,
     });
 
-    await this.createSheetsClient().spreadsheets.values.append({
+    await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: this.config.notificationsRange,
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: isEmptySheet ? [headers, row] : [row],
+        values: [row],
       },
     });
     invalidatePremiumCache();
@@ -6770,26 +6784,48 @@ function mapRowsToLogs(rows: unknown[][]): AppLogEntry[] {
 
 function mapRowsToNotifications(rows: unknown[][]): AppNotification[] {
   return rowsToRecords(rows)
-    .map((record, index) => ({
-      id: pick(record, ["id", "notification_id"]) || `notification-${index + 1}`,
-      createdAt:
-        parseDateTime(pick(record, ["created_at", "fecha", "timestamp"])) ??
-        new Date().toISOString(),
-      title: pick(record, ["title", "titulo"]) || "Notificacion",
-      message: pick(record, ["message", "mensaje", "description"]) || "-",
-      type: normalizeNotificationType(pick(record, ["type", "tipo"])),
-      status: normalizeNotificationStatus(pick(record, ["status", "estado"])),
-      targetRole: normalizeTargetRole(pick(record, ["target_role", "rol", "audience"])),
-      targetUserId:
-        pick(record, ["target_user_id", "user_id", "usuario_id"]) || undefined,
-      targetPlayerId:
-        pick(record, ["target_player_id", "player_id", "jugador_id"]) || undefined,
-      referenceId:
-        pick(record, ["reference_id", "referencia_id", "entity_id"]) || undefined,
-      url: pick(record, ["url", "href", "link"]) || undefined,
-      readAt: parseDateTime(pick(record, ["read_at", "leido_el"])),
-    }))
+    .flatMap((record, index): AppNotification[] => {
+      if (isNotificationHeaderRecord(record)) {
+        return [];
+      }
+
+      return [
+        {
+          id: pick(record, ["id", "notification_id"]) || `notification-${index + 1}`,
+          createdAt:
+            parseDateTime(pick(record, ["created_at", "fecha", "timestamp"])) ??
+            new Date().toISOString(),
+          title: pick(record, ["title", "titulo"]) || "Notificacion",
+          message: pick(record, ["message", "mensaje", "description"]) || "-",
+          type: normalizeNotificationType(pick(record, ["type", "tipo"])),
+          status: normalizeNotificationStatus(pick(record, ["status", "estado"])),
+          targetRole: normalizeTargetRole(
+            pick(record, ["target_role", "rol", "audience"]),
+          ),
+          targetUserId:
+            pick(record, ["target_user_id", "user_id", "usuario_id"]) || undefined,
+          targetPlayerId:
+            pick(record, ["target_player_id", "player_id", "jugador_id"]) || undefined,
+          referenceId:
+            pick(record, ["reference_id", "referencia_id", "entity_id"]) || undefined,
+          url: pick(record, ["url", "href", "link"]) || undefined,
+          readAt: parseDateTime(pick(record, ["read_at", "leido_el"])),
+        },
+      ];
+    })
     .sort(compareByCreatedAtDesc);
+}
+
+function isNotificationHeaderRecord(record: SheetRecord) {
+  const id = normalizeHeader(pick(record, ["id", "notification_id"]));
+  const createdAt = normalizeHeader(pick(record, ["created_at", "fecha", "timestamp"]));
+  const title = normalizeHeader(pick(record, ["title", "titulo"]));
+  const message = normalizeHeader(pick(record, ["message", "mensaje", "description"]));
+
+  return (
+    id === "id" &&
+    (createdAt === "created_at" || title === "title" || message === "message")
+  );
 }
 
 function buildNotificationWritableRow(
