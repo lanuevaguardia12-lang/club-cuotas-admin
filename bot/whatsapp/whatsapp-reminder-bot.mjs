@@ -129,6 +129,7 @@ async function processJob(job) {
   try {
     if (dryRun) {
       console.log("[DRY_RUN]", phone, job.playerName, job.message);
+      return;
     } else {
       await client.sendMessage(`${phone}@c.us`, job.message);
     }

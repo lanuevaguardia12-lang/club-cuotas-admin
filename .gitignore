@@ -42,6 +42,7 @@ bot/whatsapp/.wwebjs_auth
 bot/whatsapp/.wwebjs_cache
 bot/whatsapp/*.app
 bot/whatsapp/whatsapp-bot.log
+bot/whatsapp/whatsapp-launcher.log
 
 # vercel
 .vercel
