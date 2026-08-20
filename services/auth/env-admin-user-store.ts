@@ -29,7 +29,30 @@ export class EnvAdminUserStore implements UserStore {
     );
 
     if (!user) {
-      return null;
+      const account = await getDataService()
+        .getAccountAuthByUsername(credentials.username)
+        .catch(() => null);
+
+      if (!account?.passwordHash || !account.role) {
+        return null;
+      }
+
+      const accountPasswordMatches = verifyPassword(
+        credentials.password,
+        account.passwordHash,
+      );
+
+      if (!accountPasswordMatches) {
+        return null;
+      }
+
+      return {
+        id: account.userId,
+        username: account.username,
+        name: account.name || account.username,
+        role: account.role,
+        playerId: account.playerId,
+      };
     }
 
     const override = await getDataService()
@@ -120,7 +143,13 @@ function parseAuthUsersJson() {
 }
 
 function normalizeRole(role: unknown): AuthRole | null {
-  if (role === "admin" || role === "treasurer" || role === "coach" || role === "player") {
+  if (
+    role === "admin" ||
+    role === "treasurer" ||
+    role === "coach" ||
+    role === "player" ||
+    role === "fan"
+  ) {
     return role;
   }
 

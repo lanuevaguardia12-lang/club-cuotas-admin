@@ -7,6 +7,7 @@ export interface AccountProfile {
   role: AuthRole;
   playerId?: string;
   name: string;
+  birthDate: string;
   email: string;
   phone: string;
   profilePhotoDataUrl: string;
@@ -50,7 +51,32 @@ export interface AccountAuthOverride {
   userId: string;
   username: string;
   name?: string;
+  role?: AuthRole;
+  playerId?: string;
   passwordHash?: string;
+}
+
+export interface AccountUser {
+  userId: string;
+  username: string;
+  role: AuthRole;
+  playerId?: string;
+  name: string;
+  birthDate: string;
+  email: string;
+  phone: string;
+  hasPassword: boolean;
+  passwordUpdatedAt: string;
+  updatedAt: string;
+  source: "env" | "sheet" | "env+sheet";
+}
+
+export interface CreateFanAccountInput {
+  userId: string;
+  username: string;
+  name: string;
+  birthDate: string;
+  passwordHash: string;
 }
 
 export interface UpdateAccountProfileInput {

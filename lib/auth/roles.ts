@@ -25,6 +25,7 @@ export type Permission =
 export const roleLabels: Record<AuthRole, string> = {
   admin: "Administrador",
   coach: "Profesor",
+  fan: "Fan",
   player: "Jugador",
   treasurer: "Tesorero",
 };
@@ -32,6 +33,7 @@ export const roleLabels: Record<AuthRole, string> = {
 export const roleDescriptions: Record<AuthRole, string> = {
   admin: "Acceso total al sistema, configuracion, usuarios, auditoria e integraciones.",
   coach: "Acceso operativo a jugadores, fichas, cuotas y recordatorios.",
+  fan: "Acceso social para hinchas y comunidad del club.",
   player: "Acceso personal al estado de sus cuotas y notificaciones.",
   treasurer: "Acceso financiero a cuotas, cash flow, pagos, reportes y auditoria.",
 };
@@ -67,6 +69,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "fixture:read",
     "player-of-match:vote",
   ],
+  fan: ["account:manage"],
   player: [
     "dashboard:read",
     "account:manage",

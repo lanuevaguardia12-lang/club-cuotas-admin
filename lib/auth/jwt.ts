@@ -77,7 +77,11 @@ function toAuthUser(payload: unknown): AuthUser | null {
     typeof id !== "string" ||
     typeof username !== "string" ||
     typeof name !== "string" ||
-    (role !== "admin" && role !== "treasurer" && role !== "coach" && role !== "player")
+    (role !== "admin" &&
+      role !== "treasurer" &&
+      role !== "coach" &&
+      role !== "player" &&
+      role !== "fan")
   ) {
     return null;
   }

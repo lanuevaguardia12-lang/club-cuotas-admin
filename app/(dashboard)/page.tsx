@@ -17,6 +17,7 @@ import { HomeSummary } from "@/components/dashboard/home-summary";
 import { RunWhatsAppReminderBotButton } from "@/components/dashboard/run-whatsapp-reminder-bot-button";
 import { SendPendingNotificationsButton } from "@/components/dashboard/send-pending-notifications-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   applyLeagueFixtureScheduleOverrides,
@@ -61,6 +62,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
   const dataService = getDataService();
   const fixturePromise = getFixtureDataWithOverrides();
+
+  if (!hasPermission(user, "dashboard:read")) {
+    redirect("/account");
+  }
 
   if (user.role === "player") {
     const [fixture, playerProfile] = await Promise.all([

@@ -1,6 +1,8 @@
 import type {
   AccountAuthOverride,
+  AccountUser,
   AccountProfileData,
+  CreateFanAccountInput,
   UpdateAccountPasswordInput,
   UpdateAccountProfileInput,
 } from "@/types/account";
@@ -50,10 +52,13 @@ export interface IDataService {
   getAccountProfile(user: AuthUser): Promise<AccountProfileData>;
   updateAccountProfile(input: UpdateAccountProfileInput): Promise<void>;
   updateAccountPassword(input: UpdateAccountPasswordInput): Promise<void>;
+  createFanAccount(input: CreateFanAccountInput): Promise<void>;
+  getAccountUsers(): Promise<AccountUser[]>;
   getAccountAuthOverride(
     userId: string,
     username: string,
   ): Promise<AccountAuthOverride | null>;
+  getAccountAuthByUsername(username: string): Promise<AccountAuthOverride | null>;
   getDashboardData(period?: string): Promise<DashboardData>;
   getCashFlowData(period?: string): Promise<CashFlowData>;
   upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;

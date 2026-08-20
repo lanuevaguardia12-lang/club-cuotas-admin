@@ -75,7 +75,7 @@ export function AccountContent({ profile }: AccountContentProps) {
     watch,
   } = useForm<ProfileFormValues>({
     defaultValues: {
-      birthDate: profile.player?.birthDate ?? "",
+      birthDate: profile.player?.birthDate || profile.birthDate,
       dni: profile.player?.dni ?? "",
       email: profile.email,
       name: profile.name,
@@ -102,6 +102,7 @@ export function AccountContent({ profile }: AccountContentProps) {
   const photoDataUrl = watch("profilePhotoDataUrl");
   const player = profile.player;
   const attendance = player?.attendance;
+  const birthDate = player?.birthDate || profile.birthDate;
   const positions = [player?.position, player?.secondPosition].filter(
     (position): position is string => Boolean(position),
   );
@@ -196,10 +197,10 @@ export function AccountContent({ profile }: AccountContentProps) {
                   DNI {player.dni}
                 </span>
               ) : null}
-              {player?.birthDate ? (
+              {birthDate ? (
                 <span className="inline-flex items-center gap-1">
                   <Cake className="size-4" aria-hidden="true" />
-                  {formatDate(player.birthDate)}
+                  {formatDate(birthDate)}
                 </span>
               ) : null}
             </div>
@@ -210,7 +211,7 @@ export function AccountContent({ profile }: AccountContentProps) {
                 ))
               ) : (
                 <span className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium text-white">
-                  Sin posición cargada
+                  {profile.role === "fan" ? "Fan LNG" : "Sin posición cargada"}
                 </span>
               )}
             </div>
@@ -226,67 +227,69 @@ export function AccountContent({ profile }: AccountContentProps) {
         onChange={handlePhotoChange}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="text-primary size-5" />
-            Resumen del jugador
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          <div className="border-accent bg-accent/15 grid gap-3 rounded-md border p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
-            <div className="bg-accent text-accent-foreground grid size-12 place-items-center rounded-md">
-              <Flame className="size-6" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">Racha activa</p>
-              <p className="mt-1 text-base font-semibold">
-                {attendance && attendance.currentStreak > 0
-                  ? `Llevás ${attendance.currentStreak} partidos consecutivos yendo a jugar`
-                  : "Todavía no empezaste una racha"}
-              </p>
-              {attendance?.lastAttendanceRival ? (
-                <p className="text-muted-foreground mt-1 text-sm">
-                  Última asistencia: vs {attendance.lastAttendanceRival}
+      {player ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="text-primary size-5" />
+              Resumen del jugador
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="border-accent bg-accent/15 grid gap-3 rounded-md border p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+              <div className="bg-accent text-accent-foreground grid size-12 place-items-center rounded-md">
+                <Flame className="size-6" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Racha activa</p>
+                <p className="mt-1 text-base font-semibold">
+                  {attendance && attendance.currentStreak > 0
+                    ? `Llevás ${attendance.currentStreak} partidos consecutivos yendo a jugar`
+                    : "Todavía no empezaste una racha"}
                 </p>
-              ) : null}
-              <p className="text-muted-foreground mt-1 text-sm">
-                Mejor racha histórica: {attendance?.bestStreak ?? 0} partidos.
-              </p>
+                {attendance?.lastAttendanceRival ? (
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    Última asistencia: vs {attendance.lastAttendanceRival}
+                  </p>
+                ) : null}
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Mejor racha histórica: {attendance?.bestStreak ?? 0} partidos.
+                </p>
+              </div>
+              <div className="bg-primary text-primary-foreground grid size-14 place-items-center rounded-md text-2xl font-semibold">
+                {attendance?.currentStreak ?? 0}
+              </div>
             </div>
-            <div className="bg-primary text-primary-foreground grid size-14 place-items-center rounded-md text-2xl font-semibold">
-              {attendance?.currentStreak ?? 0}
-            </div>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-4">
-            <MetricCard
-              icon={Trophy}
-              label="MVP ganados"
-              value={String(player?.mvpWins ?? 0)}
-              detail="Votaciones cerradas"
-            />
-            <MetricCard
-              icon={Flame}
-              label="Mejor racha"
-              value={String(attendance?.bestStreak ?? 0)}
-              detail="Récord histórico"
-            />
-            <MetricCard
-              icon={Percent}
-              label="Asistencia"
-              value={formatPercent(attendance?.attendanceRate ?? 0)}
-              detail={`${attendance?.attendedMatches ?? 0}/${attendance?.totalMatches ?? 0} partidos`}
-            />
-            <MetricCard
-              icon={CircleDot}
-              label="Temporada"
-              value={String(attendance?.seasonYear ?? 2026)}
-              detail={`Desde ${formatDate(attendance?.seasonStartDate ?? "2026-08-11")}`}
-            />
-          </div>
-        </CardContent>
-      </Card>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <MetricCard
+                icon={Trophy}
+                label="MVP ganados"
+                value={String(player.mvpWins)}
+                detail="Votaciones cerradas"
+              />
+              <MetricCard
+                icon={Flame}
+                label="Mejor racha"
+                value={String(attendance?.bestStreak ?? 0)}
+                detail="Récord histórico"
+              />
+              <MetricCard
+                icon={Percent}
+                label="Asistencia"
+                value={formatPercent(attendance?.attendanceRate ?? 0)}
+                detail={`${attendance?.attendedMatches ?? 0}/${attendance?.totalMatches ?? 0} partidos`}
+              />
+              <MetricCard
+                icon={CircleDot}
+                label="Temporada"
+                value={String(attendance?.seasonYear ?? 2026)}
+                detail={`Desde ${formatDate(attendance?.seasonStartDate ?? "2026-08-11")}`}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -311,15 +314,8 @@ export function AccountContent({ profile }: AccountContentProps) {
                   className={inputClassName}
                 />
               </Field>
-              {player ? (
+              {player || profile.role === "fan" ? (
                 <>
-                  <Field label="DNI" error={profileErrors.dni?.message}>
-                    <input
-                      {...registerProfile("dni")}
-                      inputMode="numeric"
-                      className={inputClassName}
-                    />
-                  </Field>
                   <Field
                     label="Fecha de nacimiento"
                     error={profileErrors.birthDate?.message}
@@ -330,18 +326,32 @@ export function AccountContent({ profile }: AccountContentProps) {
                       className={inputClassName}
                     />
                   </Field>
-                  <Field label="Posición" error={profileErrors.position?.message}>
-                    <input {...registerProfile("position")} className={inputClassName} />
-                  </Field>
-                  <Field
-                    label="Segunda posición"
-                    error={profileErrors.secondPosition?.message}
-                  >
-                    <input
-                      {...registerProfile("secondPosition")}
-                      className={inputClassName}
-                    />
-                  </Field>
+                  {player ? (
+                    <>
+                      <Field label="DNI" error={profileErrors.dni?.message}>
+                        <input
+                          {...registerProfile("dni")}
+                          inputMode="numeric"
+                          className={inputClassName}
+                        />
+                      </Field>
+                      <Field label="Posición" error={profileErrors.position?.message}>
+                        <input
+                          {...registerProfile("position")}
+                          className={inputClassName}
+                        />
+                      </Field>
+                      <Field
+                        label="Segunda posición"
+                        error={profileErrors.secondPosition?.message}
+                      >
+                        <input
+                          {...registerProfile("secondPosition")}
+                          className={inputClassName}
+                        />
+                      </Field>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <Field label="Usuario">

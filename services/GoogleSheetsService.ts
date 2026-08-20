@@ -16,6 +16,8 @@ import type { IDataService } from "@/services/IDataService";
 import type {
   AccountAuthOverride,
   AccountProfile,
+  AccountUser,
+  CreateFanAccountInput,
   PlayerAttendanceSummary,
   UpdateAccountPasswordInput,
   UpdateAccountProfileInput,
@@ -469,6 +471,7 @@ const accountProfileHeaders = [
   "username",
   "rol",
   "nombre",
+  "fecha_nacimiento",
   "email",
   "telefono",
   "foto_perfil",
@@ -812,6 +815,7 @@ export class GoogleSheetsService implements IDataService {
       username: input.username,
       role: existing?.role ?? input.role,
       name: existing?.name || input.name,
+      birthDate: existing?.birthDate ?? "",
       email: existing?.email ?? "",
       phone: existing?.phone ?? "",
       profilePhotoDataUrl: existing?.profilePhotoDataUrl ?? "",
@@ -820,6 +824,59 @@ export class GoogleSheetsService implements IDataService {
       updatedAt: existing?.updatedAt || now,
     });
     invalidateAccountCache();
+  }
+
+  async createFanAccount(input: CreateFanAccountInput): Promise<void> {
+    this.assertConfigured();
+
+    const existing = await this.findAccountProfile(input.userId, input.username).catch(
+      () => null,
+    );
+
+    if (existing) {
+      throw new DataServiceError(
+        "Ya existe una cuenta con ese usuario.",
+        "GOOGLE_SHEETS_ERROR",
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    await this.upsertAccountProfile({
+      userId: input.userId,
+      username: input.username,
+      role: "fan",
+      name: input.name,
+      birthDate: input.birthDate,
+      email: "",
+      phone: "",
+      profilePhotoDataUrl: "",
+      passwordHash: input.passwordHash,
+      passwordUpdatedAt: now,
+      updatedAt: now,
+    });
+    invalidateAccountCache();
+  }
+
+  async getAccountUsers(): Promise<AccountUser[]> {
+    this.assertConfigured();
+
+    const profiles = await this.readAccountProfiles();
+
+    return profiles.map((profile) => ({
+      userId: profile.userId,
+      username: profile.username,
+      role: profile.role,
+      playerId: profile.playerId,
+      name: profile.name,
+      birthDate: profile.birthDate,
+      email: profile.email,
+      phone: profile.phone,
+      hasPassword: Boolean(profile.passwordHash),
+      passwordUpdatedAt: profile.passwordUpdatedAt,
+      updatedAt: profile.updatedAt,
+      source: "sheet",
+    }));
   }
 
   async getAccountAuthOverride(
@@ -838,6 +895,31 @@ export class GoogleSheetsService implements IDataService {
       userId: account.userId,
       username: account.username,
       name: account.name || undefined,
+      role: account.role,
+      playerId: account.playerId,
+      passwordHash: account.passwordHash || undefined,
+    };
+  }
+
+  async getAccountAuthByUsername(username: string): Promise<AccountAuthOverride | null> {
+    this.assertConfigured();
+
+    const normalizedUsername = username.trim().toLowerCase();
+    const profiles = await this.readAccountProfiles();
+    const account = profiles.find(
+      (profile) => profile.username.toLowerCase() === normalizedUsername,
+    );
+
+    if (!account) {
+      return null;
+    }
+
+    return {
+      userId: account.userId,
+      username: account.username,
+      name: account.name || undefined,
+      role: account.role,
+      playerId: account.playerId,
       passwordHash: account.passwordHash || undefined,
     };
   }
@@ -3173,9 +3255,12 @@ export class GoogleSheetsService implements IDataService {
 
   private async findAccountProfile(userId: string, username: string) {
     const profiles = await this.readAccountProfiles();
+    const normalizedUsername = username.toLowerCase();
 
     return profiles.find(
-      (profile) => profile.userId === userId || profile.username === username,
+      (profile) =>
+        profile.userId === userId ||
+        profile.username.toLowerCase() === normalizedUsername,
     );
   }
 
@@ -4076,20 +4161,23 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
 }
 
 function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
-  return rowsToRecords(rows)
-    .map((record) => {
-      const userId = pick(record, ["user_id", "usuario_id"]);
-      const username = pick(record, ["username", "usuario"]);
+  return rowsToRecords(rows).flatMap((record): AccountProfileRecord[] => {
+    const userId = pick(record, ["user_id", "usuario_id"]);
+    const username = pick(record, ["username", "usuario"]);
 
-      if (!userId || !username) {
-        return null;
-      }
+    if (!userId || !username) {
+      return [];
+    }
 
-      return {
+    return [
+      {
         userId,
         username,
         role: normalizeRoleValue(pick(record, ["rol", "role"])),
+        playerId: pick(record, ["player_id", "jugador_id"]),
         name: pick(record, ["nombre", "name"]),
+        birthDate:
+          parseDate(pick(record, ["fecha_nacimiento", "birth_date", "nacimiento"])) ?? "",
         email: pick(record, ["email", "correo", "mail"]),
         phone: pick(record, ["telefono", "phone", "whatsapp", "celular"]),
         profilePhotoDataUrl: pick(record, [
@@ -4103,9 +4191,9 @@ function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
             pick(record, ["password_actualizado_en", "password_updated_at"]),
           ) ?? "",
         updatedAt: parseDateTime(pick(record, ["actualizado_en", "updated_at"])) ?? "",
-      } satisfies AccountProfileRecord;
-    })
-    .filter((profile): profile is AccountProfileRecord => Boolean(profile));
+      },
+    ];
+  });
 }
 
 function mapRowsToPlayerAttendanceSnapshots(
@@ -4173,6 +4261,7 @@ function buildAccountProfile(
     username: user.username,
     role: user.role,
     name: account?.name || player?.name || user.name,
+    birthDate: account?.birthDate || player?.birthDate || "",
     email: account?.email ?? "",
     phone: account?.phone || player?.phone || "",
     profilePhotoDataUrl: account?.profilePhotoDataUrl ?? "",
@@ -4203,7 +4292,9 @@ function buildAccountProfileFromInput(
     userId: input.userId,
     username: input.username,
     role: input.role,
+    playerId: input.playerId,
     name: input.name.trim(),
+    birthDate: input.birthDate?.trim() ?? existing?.birthDate ?? "",
     email: input.email?.trim() ?? "",
     phone: input.phone?.trim() ?? "",
     profilePhotoDataUrl: input.profilePhotoDataUrl?.trim() ?? "",
@@ -4380,11 +4471,14 @@ function buildAccountProfileWritableRow(
 ) {
   const values: Record<string, string> = {
     actualizado_en: profile.updatedAt,
+    birth_date: profile.birthDate,
     email: profile.email,
+    fecha_nacimiento: profile.birthDate,
     foto_perfil: profile.profilePhotoDataUrl,
     nombre: profile.name,
     password_actualizado_en: profile.passwordUpdatedAt,
     password_hash: profile.passwordHash,
+    player_id: profile.playerId ?? "",
     phone: profile.phone,
     profile_photo: profile.profilePhotoDataUrl,
     profile_photo_data_url: profile.profilePhotoDataUrl,
@@ -4405,7 +4499,8 @@ function normalizeRoleValue(value: string): AuthUser["role"] {
   return value === "admin" ||
     value === "treasurer" ||
     value === "coach" ||
-    value === "player"
+    value === "player" ||
+    value === "fan"
     ? value
     : "player";
 }
@@ -10364,7 +10459,13 @@ function normalizeAuditEntityType(value: string): AuditEntityType {
 function normalizeAuditActorRole(value: string): AuditActor["role"] {
   const role = normalizeText(value);
 
-  if (role === "admin" || role === "treasurer" || role === "coach" || role === "player") {
+  if (
+    role === "admin" ||
+    role === "treasurer" ||
+    role === "coach" ||
+    role === "player" ||
+    role === "fan"
+  ) {
     return role;
   }
 
@@ -10412,7 +10513,13 @@ function normalizeNotificationStatus(value: string): NotificationStatus {
 function normalizeTargetRole(value: string): AppNotification["targetRole"] {
   const role = normalizeText(value);
 
-  if (role === "admin" || role === "treasurer" || role === "coach" || role === "player") {
+  if (
+    role === "admin" ||
+    role === "treasurer" ||
+    role === "coach" ||
+    role === "player" ||
+    role === "fan"
+  ) {
     return role;
   }
 

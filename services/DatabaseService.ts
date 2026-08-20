@@ -40,6 +40,7 @@ export class DatabaseService implements IDataService {
         username: user.username,
         role: user.role,
         name: user.name,
+        birthDate: "",
         email: "",
         phone: "",
         profilePhotoDataUrl: "",
@@ -70,7 +71,22 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async createFanAccount(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async getAccountUsers() {
+    return [];
+  }
+
   async getAccountAuthOverride() {
+    return null;
+  }
+
+  async getAccountAuthByUsername() {
     return null;
   }
 
