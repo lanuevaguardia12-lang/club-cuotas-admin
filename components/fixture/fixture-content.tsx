@@ -15,6 +15,7 @@ import {
 import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-schedule-editor";
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
+import { NextMatchShareButton } from "@/components/fixture/next-match-share-button";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -278,6 +279,7 @@ function NextMatchCard({
         />
       </div>
       <MatchGoalsList match={match} />
+      <NextMatchShareButton match={match} teamName={APP_TEAM_NAME} />
     </div>
   );
 }
@@ -774,6 +776,12 @@ function FullMatchRow({
       {match.isClubMatch && match.status === "played" ? (
         <div className="md:col-span-3">
           <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+        </div>
+      ) : null}
+
+      {match.isClubMatch && match.status === "pending" ? (
+        <div className="md:col-span-3">
+          <NextMatchShareButton match={match} teamName={APP_TEAM_NAME} />
         </div>
       ) : null}
 
