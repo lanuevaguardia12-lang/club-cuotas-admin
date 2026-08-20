@@ -67,11 +67,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     redirect("/account");
   }
 
-  if (user.role === "player") {
+  if (user.role === "player" || user.role === "fan") {
     const [fixture, playerProfile] = await Promise.all([
       fixturePromise,
-      findPlayerProfileForUser(user),
+      user.role === "player" ? findPlayerProfileForUser(user) : null,
     ]);
+    const isFan = user.role === "fan";
 
     return (
       <main className="grid min-w-0 gap-6 overflow-hidden">
@@ -81,11 +82,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             Hola, {user.name}
           </h1>
           <p className="text-muted-foreground max-w-full text-sm break-words sm:max-w-2xl">
-            Tu cuota, el proximo partido y la tabla del torneo en una vista rapida.
+            {isFan
+              ? "El proximo partido, el ultimo resultado y la tabla del torneo en una vista rapida."
+              : "Tu cuota, el proximo partido y la tabla del torneo en una vista rapida."}
           </p>
         </header>
 
-        <HomeSummary fixture={fixture} playerProfile={playerProfile} />
+        <HomeSummary
+          canUploadMedia={isFan}
+          fixture={fixture}
+          playerProfile={playerProfile}
+        />
       </main>
     );
   }

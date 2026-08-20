@@ -1,5 +1,6 @@
 import type { DataSourceState } from "@/types/dashboard";
 import type { LeagueCompetitionKind } from "@/types/fixture";
+import type { AuthRole } from "@/types/auth";
 
 export interface PlayerOfMatchVote {
   id: string;
@@ -8,6 +9,7 @@ export interface PlayerOfMatchVote {
   rival: string;
   voterUserId: string;
   voterPlayerId?: string;
+  voterRole?: AuthRole;
   voterName: string;
   firstVotePlayerName: string;
   secondVotePlayerName: string;
@@ -116,6 +118,7 @@ export interface SubmitPlayerOfMatchVoteInput {
   matchId: string;
   voterUserId: string;
   voterPlayerId?: string;
+  voterRole?: AuthRole;
   voterName: string;
   firstVotePlayerName: string;
   secondVotePlayerName: string;

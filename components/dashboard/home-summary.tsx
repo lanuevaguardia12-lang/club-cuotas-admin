@@ -12,6 +12,7 @@ import {
   CompetitionBadge,
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
+import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import type { PlayerMonthPaymentStatus, PlayerProfile } from "@/types/dashboard"
 import type { LeagueFixtureData, LeagueFixtureMatch } from "@/types/fixture";
 
 interface HomeSummaryProps {
+  canUploadMedia?: boolean;
   fixture: LeagueFixtureData;
   playerProfile?: PlayerProfile | null;
 }
@@ -32,7 +34,11 @@ const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
   unpaid: "Pendiente",
 };
 
-export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
+export function HomeSummary({
+  canUploadMedia = false,
+  fixture,
+  playerProfile,
+}: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
   const nextMatch = fixture.nextMatches[0];
   const lastMatch = fixture.lastMatches[0];
@@ -100,6 +106,7 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         <CardContent>
           {nextMatch ? (
             <HomeMatchCard
+              canUploadMedia={canUploadMedia}
               match={nextMatch}
               matches={recentFormMatches}
               rows={fixture.standings}
@@ -126,7 +133,11 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
         </CardHeader>
         <CardContent>
           {lastMatch ? (
-            <HomePlayedMatchCard match={lastMatch} rows={fixture.standings} />
+            <HomePlayedMatchCard
+              canUploadMedia={canUploadMedia}
+              match={lastMatch}
+              rows={fixture.standings}
+            />
           ) : (
             <p className="text-muted-foreground text-sm">
               No hay partido anterior publicado para {APP_TEAM_NAME}.
@@ -183,10 +194,12 @@ export function HomeSummary({ fixture, playerProfile }: HomeSummaryProps) {
 }
 
 function HomeMatchCard({
+  canUploadMedia,
   match,
   matches,
   rows,
 }: {
+  canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   rows: LeagueFixtureData["standings"];
@@ -238,14 +251,23 @@ function HomeMatchCard({
           Ver fixture
         </Link>
       </Button>
+      {canUploadMedia ? (
+        <MatchMediaUploadButton
+          matchDate={match.roundDate}
+          matchId={match.id}
+          rival={getMatchRival(match)}
+        />
+      ) : null}
     </div>
   );
 }
 
 function HomePlayedMatchCard({
+  canUploadMedia,
   match,
   rows,
 }: {
+  canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   rows: LeagueFixtureData["standings"];
 }) {
@@ -295,6 +317,13 @@ function HomePlayedMatchCard({
       </div>
       <MatchGoalsList match={match} />
       <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+      {canUploadMedia ? (
+        <MatchMediaUploadButton
+          matchDate={match.roundDate}
+          matchId={match.id}
+          rival={getMatchRival(match)}
+        />
+      ) : null}
       <Button asChild size="sm" variant="outline">
         <Link href="/fixture">
           <CalendarDays />
@@ -464,6 +493,10 @@ function getTeamPositionLabel(rows: LeagueFixtureData["standings"], teamName: st
   const row = rows.find((item) => item.teamName === teamName);
 
   return row ? `${formatOrdinal(row.position)} puesto` : "Sin posición";
+}
+
+function getMatchRival(match: LeagueFixtureMatch) {
+  return match.localTeam === APP_TEAM_NAME ? match.visitorTeam : match.localTeam;
 }
 
 function formatOrdinal(value: number) {

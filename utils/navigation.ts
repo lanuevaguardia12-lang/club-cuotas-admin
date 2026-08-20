@@ -34,6 +34,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "fixture:read",
   },
   {
+    label: "Plantel",
+    href: "/squad",
+    icon: "players",
+    permission: "squad:read",
+  },
+  {
     label: "Jugadores",
     href: "/players",
     icon: "players",

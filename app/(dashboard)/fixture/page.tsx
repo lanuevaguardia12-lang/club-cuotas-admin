@@ -57,6 +57,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
     .catch(() => []);
   const data = applyLeagueFixtureScheduleOverrides(rawData, fixtureScheduleOverrides);
   const canManageFixture = user.role === "admin";
+  const canUploadMedia = user.role === "fan";
   const playerOptions = canManageFixture
     ? (await dataService.getPlayersData().catch(() => ({ players: [] }))).players
         .filter((player) => player.status === "active")
@@ -93,6 +94,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
       <FixtureContent
         activeTab={params.tab}
         canManage={canManageFixture}
+        canUploadMedia={canUploadMedia}
         data={data}
         playerOptions={playerOptions}
         selectedRoundKeys={toArray(params.round)}

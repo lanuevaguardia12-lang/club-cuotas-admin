@@ -53,6 +53,7 @@ interface PlayerOfMatchContentProps {
   canManage: boolean;
   canVote: boolean;
   data: PlayerOfMatchData;
+  voteMode?: "fan" | "player";
 }
 
 type PlayerOfMatchTab = "mvp" | "ranking" | "rachas";
@@ -61,6 +62,7 @@ export function PlayerOfMatchContent({
   canManage,
   canVote,
   data,
+  voteMode = "player",
 }: PlayerOfMatchContentProps) {
   const [activeTab, setActiveTab] = useState<PlayerOfMatchTab>("mvp");
   const currentMatches = data.matches.filter(isCurrentPlayerOfMatch);
@@ -117,9 +119,12 @@ export function PlayerOfMatchContent({
         <MvpTab
           canManage={canManage}
           canVote={canVote}
-          currentPlayerName={data.rankings.currentPlayer?.playerName}
+          currentPlayerName={
+            voteMode === "player" ? data.rankings.currentPlayer?.playerName : undefined
+          }
           currentMatches={currentMatches}
           historyMatches={historyMatches}
+          voteMode={voteMode}
         />
       ) : null}
       {activeTab === "ranking" ? <RankingTab data={data} /> : null}
@@ -134,12 +139,14 @@ function MvpTab({
   currentPlayerName,
   currentMatches,
   historyMatches,
+  voteMode,
 }: {
   canManage: boolean;
   canVote: boolean;
   currentPlayerName?: string;
   currentMatches: PlayerOfMatchMatch[];
   historyMatches: PlayerOfMatchMatch[];
+  voteMode: "fan" | "player";
 }) {
   return (
     <section className="grid gap-6">
@@ -159,6 +166,7 @@ function MvpTab({
                 currentPlayerName={currentPlayerName}
                 key={match.id}
                 match={match}
+                voteMode={voteMode}
               />
             ))}
           </div>
@@ -192,6 +200,7 @@ function MvpTab({
                   currentPlayerName={currentPlayerName}
                   key={match.id}
                   match={match}
+                  voteMode={voteMode}
                 />
               ))}
             </div>
@@ -552,11 +561,13 @@ function MatchVoteCard({
   canVote: canUserVote,
   currentPlayerName,
   match,
+  voteMode,
 }: {
   canManage: boolean;
   canVote: boolean;
   currentPlayerName?: string;
   match: PlayerOfMatchMatch;
+  voteMode: "fan" | "player";
 }) {
   const [showResults, setShowResults] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
@@ -675,7 +686,7 @@ function MatchVoteCard({
             />
           </div>
         ) : canVote ? (
-          <PlayerVoteForm match={match} players={voteablePlayers} />
+          <PlayerVoteForm match={match} players={voteablePlayers} voteMode={voteMode} />
         ) : votingScheduled ? (
           <p className="text-muted-foreground text-sm">
             La votación se habilita automáticamente cuando el partido tiene jugadores
@@ -687,7 +698,7 @@ function MatchVoteCard({
           </p>
         ) : !canUserVote ? (
           <p className="text-muted-foreground text-sm">
-            La votación está disponible solo para usuarios jugadores.
+            La votación está disponible solo para usuarios habilitados.
           </p>
         ) : !hasEnoughVoteablePlayers ? (
           <p className="text-muted-foreground text-sm">
@@ -993,9 +1004,11 @@ function PlayerAvatar({
 function PlayerVoteForm({
   match,
   players,
+  voteMode,
 }: {
   match: PlayerOfMatchMatch;
   players: string[];
+  voteMode: "fan" | "player";
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -1043,8 +1056,9 @@ function PlayerVoteForm({
       <div className="border-border bg-primary/5 text-primary rounded-md border p-3 text-sm">
         <p className="font-semibold">Cómo suma tu voto</p>
         <p className="mt-1 text-xs leading-relaxed">
-          Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros
-          del partido; tu propio nombre no participa de tus opciones.
+          {voteMode === "fan"
+            ? "Como fan, cada voto suma 1 punto. Elegí dos jugadores que hayan participado en el partido."
+            : "Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros del partido; tu propio nombre no participa de tus opciones."}
         </p>
       </div>
       <VoteSelect

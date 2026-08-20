@@ -41,7 +41,12 @@ export default async function PlayerOfMatchPage() {
         </Badge>
       </header>
 
-      <PlayerOfMatchContent canManage={canManage} canVote={canVote} data={data} />
+      <PlayerOfMatchContent
+        canManage={canManage}
+        canVote={canVote}
+        data={data}
+        voteMode={user.role === "fan" ? "fan" : "player"}
+      />
     </main>
   );
 }

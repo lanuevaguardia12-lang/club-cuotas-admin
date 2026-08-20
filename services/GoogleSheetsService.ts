@@ -375,6 +375,7 @@ const playerOfMatchVoteHeaders = [
   "rival",
   "votante_user_id",
   "votante_player_id",
+  "votante_rol",
   "votante_nombre",
   "primer_voto_jugador",
   "segundo_voto_jugador",
@@ -2461,10 +2462,12 @@ export class GoogleSheetsService implements IDataService {
 
     const firstVoteLookupKeys = buildPlayerLookupKeys(firstVotePlayerName);
     const secondVoteLookupKeys = buildPlayerLookupKeys(secondVotePlayerName);
+    const shouldBlockSelfVote = (input.voterRole ?? "player") === "player";
 
     if (
-      lookupSetsIntersect(voterLookupKeys, firstVoteLookupKeys) ||
-      lookupSetsIntersect(voterLookupKeys, secondVoteLookupKeys)
+      shouldBlockSelfVote &&
+      (lookupSetsIntersect(voterLookupKeys, firstVoteLookupKeys) ||
+        lookupSetsIntersect(voterLookupKeys, secondVoteLookupKeys))
     ) {
       throw new DataServiceError("No podés votarte a vos mismo.", "CONFIGURATION_ERROR");
     }
@@ -2482,6 +2485,7 @@ export class GoogleSheetsService implements IDataService {
         rival: match.rival,
         voterUserId: input.voterUserId,
         voterPlayerId: input.voterPlayerId,
+        voterRole: input.voterRole,
         voterName: input.voterName,
         firstVotePlayerName,
         secondVotePlayerName,
@@ -5628,6 +5632,9 @@ function mapRowsToPlayerOfMatchVotes(rows: unknown[][]): PlayerOfMatchVote[] {
           "votante_jugador_id",
           "player_id",
         ]),
+        voterRole: normalizeRoleValue(
+          pick(record, ["votante_rol", "voter_role", "role", "rol"]),
+        ),
         voterName: pick(record, ["votante_nombre", "votante", "user_name"]),
         firstVotePlayerName,
         secondVotePlayerName,
@@ -5693,7 +5700,11 @@ function buildPlayerOfMatchData({
         resultLabel: match.resultLabel ?? "Pendiente",
         players: match.players,
         results: buildPlayerOfMatchResults(match, matchVotes, playerPhotoMap),
-        totalVotes: matchVotes.length * 2,
+        totalVotes: matchVotes.reduce((total, vote) => {
+          const points = getPlayerOfMatchVotePoints(vote);
+
+          return total + points.first + points.second;
+        }, 0),
         totalVoters: matchVotes.length,
         canEdit: isEditablePlayerOfMatchRecord(match),
         userVote: votesByMatchId.get(match.id),
@@ -5921,6 +5932,20 @@ function buildPlayerOfMatchRankings({
   };
 }
 
+function getPlayerOfMatchVotePoints(vote: PlayerOfMatchVote) {
+  if (vote.voterRole === "fan") {
+    return {
+      first: 1,
+      second: 1,
+    };
+  }
+
+  return {
+    first: 2,
+    second: 1,
+  };
+}
+
 function buildPlayerOfMatchResults(
   match: MatchRecord,
   votes: PlayerOfMatchVote[],
@@ -5939,9 +5964,11 @@ function buildPlayerOfMatchResults(
   });
 
   votes.forEach((vote) => {
+    const votePoints = getPlayerOfMatchVotePoints(vote);
+
     [
-      { playerName: vote.firstVotePlayerName, points: 2 },
-      { playerName: vote.secondVotePlayerName, points: 1 },
+      { playerName: vote.firstVotePlayerName, points: votePoints.first },
+      { playerName: vote.secondVotePlayerName, points: votePoints.second },
     ].forEach(({ playerName, points }) => {
       const key = normalizeClubPlayerName(playerName);
 
@@ -6099,11 +6126,15 @@ function buildPlayerOfMatchVoteWritableRow(headers: string[], vote: PlayerOfMatc
     segundo_voto_jugador: vote.secondVotePlayerName,
     user_id: vote.voterUserId,
     user_name: vote.voterName,
+    role: vote.voterRole ?? "player",
+    rol: vote.voterRole ?? "player",
     votante: vote.voterName,
     votante_jugador_id: vote.voterPlayerId ?? "",
     votante_nombre: vote.voterName,
     votante_player_id: vote.voterPlayerId ?? "",
+    votante_rol: vote.voterRole ?? "player",
     votante_user_id: vote.voterUserId,
+    voter_role: vote.voterRole ?? "player",
   };
 
   return headers.map((header) => values[normalizeHeader(header)] ?? "");

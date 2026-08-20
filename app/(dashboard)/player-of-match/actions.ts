@@ -33,7 +33,7 @@ export async function submitPlayerOfMatchVote(
   if (user.role === "admin") {
     return {
       ok: false,
-      message: "La votación está disponible solo para usuarios jugadores.",
+      message: "La votación está disponible solo para usuarios habilitados.",
     };
   }
 
@@ -51,6 +51,7 @@ export async function submitPlayerOfMatchVote(
       ...parsed.data,
       voterName: user.name,
       voterPlayerId: user.playerId,
+      voterRole: user.role,
       voterUserId: user.id,
     });
     revalidatePath("/player-of-match");

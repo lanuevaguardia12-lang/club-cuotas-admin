@@ -13,6 +13,7 @@ import {
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
 import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-schedule-editor";
+import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ import type {
 interface FixtureContentProps {
   activeTab?: string;
   canManage?: boolean;
+  canUploadMedia?: boolean;
   data: LeagueFixtureData;
   playerOptions?: FixturePlayerOption[];
   selectedRoundKeys?: string[];
@@ -44,6 +46,7 @@ type FixtureTab = "resumen" | "posiciones" | "goleadores" | "fixture";
 export function FixtureContent({
   activeTab,
   canManage = false,
+  canUploadMedia = false,
   data,
   playerOptions = [],
   selectedRoundKeys = [],
@@ -78,6 +81,7 @@ export function FixtureContent({
       {tab === "fixture" ? (
         <FixtureRounds
           canManage={canManage}
+          canUploadMedia={canUploadMedia}
           data={data}
           playerOptions={playerOptions}
           rounds={data.rounds}
@@ -577,12 +581,14 @@ function StandingsLegend() {
 
 function FixtureRounds({
   canManage,
+  canUploadMedia,
   data,
   playerOptions,
   rounds,
   selectedRoundKeys,
 }: {
   canManage: boolean;
+  canUploadMedia: boolean;
   data: LeagueFixtureData;
   playerOptions: FixturePlayerOption[];
   rounds: LeagueFixtureRound[];
@@ -668,6 +674,7 @@ function FixtureRounds({
                   <FullMatchRow
                     key={match.id}
                     canManage={canManage}
+                    canUploadMedia={canUploadMedia}
                     match={match}
                     playerOptions={playerOptions}
                   />
@@ -699,10 +706,12 @@ function FixtureRounds({
 
 function FullMatchRow({
   canManage,
+  canUploadMedia,
   match,
   playerOptions,
 }: {
   canManage: boolean;
+  canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   playerOptions: FixturePlayerOption[];
 }) {
@@ -765,6 +774,16 @@ function FullMatchRow({
       {match.isClubMatch && match.status === "played" ? (
         <div className="md:col-span-3">
           <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+        </div>
+      ) : null}
+
+      {canUploadMedia && match.isClubMatch ? (
+        <div className="md:col-span-3">
+          <MatchMediaUploadButton
+            matchDate={match.roundDate}
+            matchId={match.id}
+            rival={getMatchRival(match)}
+          />
         </div>
       ) : null}
     </div>
@@ -833,6 +852,10 @@ function MatchTeamLine({
       {showScore ? <MatchTeamScore penaltyScore={penaltyScore} score={score} /> : null}
     </div>
   );
+}
+
+function getMatchRival(match: LeagueFixtureMatch) {
+  return match.localTeam === APP_TEAM_NAME ? match.visitorTeam : match.localTeam;
 }
 
 function MatchTeamScore({
