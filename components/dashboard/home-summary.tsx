@@ -246,7 +246,12 @@ function HomeMatchCard({
           teamName={match.visitorTeam}
         />
       </div>
-      <NextMatchShareButton match={match} teamName={APP_TEAM_NAME} />
+      <NextMatchShareButton
+        match={match}
+        matches={matches}
+        standings={rows}
+        teamName={APP_TEAM_NAME}
+      />
       <Button asChild size="sm" variant="outline">
         <Link href="/fixture">
           <CalendarDays />

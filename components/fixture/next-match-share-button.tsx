@@ -6,7 +6,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { cn } from "@/lib/utils";
-import type { LeagueCompetitionKind, LeagueFixtureMatch } from "@/types/fixture";
+import type {
+  LeagueCompetitionKind,
+  LeagueFixtureMatch,
+  LeagueStandingRow,
+} from "@/types/fixture";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -19,12 +23,16 @@ type NextMatchShareFormat = "story" | "post";
 interface NextMatchShareButtonProps {
   className?: string;
   match: LeagueFixtureMatch;
+  matches?: LeagueFixtureMatch[];
+  standings?: LeagueStandingRow[];
   teamName: string;
 }
 
 export function NextMatchShareButton({
   className,
   match,
+  matches = [],
+  standings = [],
   teamName,
 }: NextMatchShareButtonProps) {
   const [pendingFormat, setPendingFormat] = useState<NextMatchShareFormat | null>(null);
@@ -36,7 +44,7 @@ export function NextMatchShareButton({
     setMessage("");
 
     try {
-      const blob = await createNextMatchBlob(match, format);
+      const blob = await createNextMatchBlob(match, format, matches, standings);
       const formatLabel = format === "story" ? "story" : "publicacion";
       const fileName = `proximo-partido-${formatLabel}-${slugify(getMatchRival(match, teamName))}.png`;
       const file = new File([blob], fileName, { type: "image/png" });
@@ -107,6 +115,8 @@ export function NextMatchShareButton({
 async function createNextMatchBlob(
   match: LeagueFixtureMatch,
   format: NextMatchShareFormat,
+  matches: LeagueFixtureMatch[],
+  standings: LeagueStandingRow[],
 ) {
   const canvas = document.createElement("canvas");
 
@@ -119,7 +129,7 @@ async function createNextMatchBlob(
     throw new Error("Tu navegador no pudo preparar la imagen.");
   }
 
-  await drawNextMatchPlate(context, match, format);
+  await drawNextMatchPlate(context, match, format, matches, standings);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -136,11 +146,27 @@ async function drawNextMatchPlate(
   context: CanvasRenderingContext2D,
   match: LeagueFixtureMatch,
   format: NextMatchShareFormat,
+  matches: LeagueFixtureMatch[],
+  standings: LeagueStandingRow[],
 ) {
   const width = format === "story" ? STORY_WIDTH : POST_WIDTH;
   const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
   const compact = format === "post";
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
+  const localRecentMatches = getLastPlayedMatchesForTeam(
+    matches,
+    match.localTeam,
+    match,
+  )
+    .slice(0, 3)
+    .map((recentMatch) => getTeamMatchOutcome(recentMatch, match.localTeam));
+  const visitorRecentMatches = getLastPlayedMatchesForTeam(
+    matches,
+    match.visitorTeam,
+    match,
+  )
+    .slice(0, 3)
+    .map((recentMatch) => getTeamMatchOutcome(recentMatch, match.visitorTeam));
 
   drawBackground(context, width, height);
 
@@ -188,7 +214,11 @@ async function drawNextMatchPlate(
 
   drawMatchup(context, {
     compact,
+    localPosition: getTeamPositionLabel(standings, match.localTeam),
+    localRecentMatches,
     localTeam: match.localTeam,
+    visitorPosition: getTeamPositionLabel(standings, match.visitorTeam),
+    visitorRecentMatches,
     visitorTeam: match.visitorTeam,
     width,
     y: compact ? 580 : 790,
@@ -296,13 +326,21 @@ function drawMatchup(
   context: CanvasRenderingContext2D,
   {
     compact,
+    localPosition,
+    localRecentMatches,
     localTeam,
+    visitorPosition,
+    visitorRecentMatches,
     visitorTeam,
     width,
     y,
   }: {
     compact: boolean;
+    localPosition: string;
+    localRecentMatches: MatchOutcome[];
     localTeam: string;
+    visitorPosition: string;
+    visitorRecentMatches: MatchOutcome[];
     visitorTeam: string;
     width: number;
     y: number;
@@ -330,7 +368,7 @@ function drawMatchup(
     align: "left",
     compact,
     label: localTeam,
-    role: "Local",
+    role: `Local · ${localPosition}`,
     x: cardX + (compact ? 58 : 68),
     y: y + (compact ? 112 : 148),
   });
@@ -339,7 +377,7 @@ function drawMatchup(
     align: "right",
     compact,
     label: visitorTeam,
-    role: "Visita",
+    role: `Visita · ${visitorPosition}`,
     x: cardX + cardWidth - (compact ? 58 : 68),
     y: y + (compact ? 112 : 148),
   });
@@ -351,6 +389,22 @@ function drawMatchup(
       : "900 142px Arial Black, Impact, sans-serif",
     shadowBlur: 28,
     shadowColor: "rgba(244,206,15,0.22)",
+  });
+
+  drawRecentForm(context, {
+    align: "left",
+    compact,
+    outcomes: localRecentMatches,
+    x: cardX + (compact ? 58 : 68),
+    y: y + (compact ? 332 : 420),
+  });
+
+  drawRecentForm(context, {
+    align: "right",
+    compact,
+    outcomes: visitorRecentMatches,
+    x: cardX + cardWidth - (compact ? 58 : 68),
+    y: y + (compact ? 332 : 420),
   });
 }
 
@@ -397,6 +451,74 @@ function drawTeamBlock(
   context.font = compact ? "800 28px Arial, sans-serif" : "800 32px Arial, sans-serif";
   context.fillText(role, x, y + lineHeight * 3 + (compact ? 42 : 52), maxWidth);
   context.restore();
+}
+
+function drawRecentForm(
+  context: CanvasRenderingContext2D,
+  {
+    align,
+    compact,
+    outcomes,
+    x,
+    y,
+  }: {
+    align: "left" | "right";
+    compact: boolean;
+    outcomes: MatchOutcome[];
+    x: number;
+    y: number;
+  },
+) {
+  const chipWidth = compact ? 330 : 360;
+  const chipHeight = compact ? 40 : 46;
+  const chipGap = compact ? 8 : 10;
+  const left = align === "left" ? x : x - chipWidth;
+
+  context.save();
+  context.textAlign = align;
+  context.fillStyle = "rgba(255,255,255,0.72)";
+  context.font = compact ? "800 20px Arial, sans-serif" : "800 24px Arial, sans-serif";
+  context.fillText("ULTIMOS PARTIDOS", x, y - (compact ? 14 : 18), chipWidth);
+  context.restore();
+
+  const safeOutcomes = outcomes.length > 0 ? outcomes : [getEmptyOutcome()];
+
+  safeOutcomes.slice(0, 3).forEach((outcome, index) => {
+    const top = y + index * (chipHeight + chipGap);
+    const color = getOutcomeColor(outcome.kind);
+
+    context.save();
+    context.fillStyle = color.background;
+    context.strokeStyle = color.border;
+    context.lineWidth = 2;
+    roundedRect(context, left, top, chipWidth, chipHeight, 14);
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = color.dot;
+    context.beginPath();
+    context.arc(
+      align === "left" ? left + 24 : left + chipWidth - 24,
+      top + chipHeight / 2,
+      compact ? 7 : 8,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+
+    context.fillStyle = "#ffffff";
+    context.font = compact
+      ? "800 19px Arial, sans-serif"
+      : "800 22px Arial, sans-serif";
+    context.textAlign = align;
+
+    const textX = align === "left" ? left + 44 : left + chipWidth - 44;
+    const maxWidth = chipWidth - 58;
+    const label = `${outcome.label} vs ${outcome.rival ?? "-"}`;
+
+    context.fillText(fitTextWithEllipsis(context, label, maxWidth), textX, top + (compact ? 27 : 31), maxWidth);
+    context.restore();
+  });
 }
 
 function drawFallbackLogo(
@@ -659,8 +781,165 @@ function formatCompetition(kind: LeagueCompetitionKind) {
   return labels[kind] ?? "Partido";
 }
 
+type OutcomeKind = "draw" | "loss" | "none" | "win";
+
+interface MatchOutcome {
+  kind: OutcomeKind;
+  label: string;
+  rival?: string;
+}
+
+function getTeamPositionLabel(rows: LeagueStandingRow[], teamName: string) {
+  const row = rows.find((item) => areSameFixtureTeam(item.teamName, teamName));
+
+  return row ? `${formatOrdinal(row.position)} puesto` : "Sin posicion";
+}
+
+function formatOrdinal(value: number) {
+  if (value === 1) {
+    return "1er";
+  }
+
+  if (value === 2) {
+    return "2do";
+  }
+
+  if (value === 3) {
+    return "3er";
+  }
+
+  return `${value}to`;
+}
+
+function getLastPlayedMatchesForTeam(
+  matches: LeagueFixtureMatch[],
+  teamName: string,
+  beforeMatch: LeagueFixtureMatch,
+) {
+  const beforeValue = getFixtureMatchSortValue(beforeMatch);
+
+  return [...matches]
+    .filter(
+      (match) =>
+        match.status === "played" &&
+        isTeamInMatch(match, teamName) &&
+        getFixtureMatchSortValue(match) < beforeValue,
+    )
+    .sort(
+      (left, right) => getFixtureMatchSortValue(right) - getFixtureMatchSortValue(left),
+    );
+}
+
+function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): MatchOutcome {
+  const isLocal = areSameFixtureTeam(match.localTeam, teamName);
+  const teamScore = isLocal ? match.localScore : match.visitorScore;
+  const rivalScore = isLocal ? match.visitorScore : match.localScore;
+  const teamPenaltyScore = isLocal ? match.localPenaltyScore : match.visitorPenaltyScore;
+  const rivalPenaltyScore = isLocal ? match.visitorPenaltyScore : match.localPenaltyScore;
+  const rival = isLocal ? match.visitorTeam : match.localTeam;
+
+  if (
+    match.status !== "played" ||
+    typeof teamScore !== "number" ||
+    typeof rivalScore !== "number"
+  ) {
+    return {
+      kind: "none",
+      label: "S/R",
+      rival,
+    };
+  }
+
+  const hasPenalties =
+    typeof teamPenaltyScore === "number" && typeof rivalPenaltyScore === "number";
+  const kind =
+    teamScore > rivalScore
+      ? "win"
+      : teamScore < rivalScore
+        ? "loss"
+        : hasPenalties && teamPenaltyScore !== rivalPenaltyScore
+          ? teamPenaltyScore > rivalPenaltyScore
+            ? "win"
+            : "loss"
+          : "draw";
+  const label = hasPenalties
+    ? `${teamScore}-${rivalScore} (${teamPenaltyScore}-${rivalPenaltyScore} pen)`
+    : `${teamScore}-${rivalScore}`;
+
+  return {
+    kind,
+    label,
+    rival,
+  };
+}
+
+function getEmptyOutcome(): MatchOutcome {
+  return {
+    kind: "none",
+    label: "Sin partidos",
+    rival: "-",
+  };
+}
+
+function getOutcomeColor(kind: OutcomeKind) {
+  return {
+    draw: {
+      background: "rgba(244,206,15,0.18)",
+      border: "rgba(244,206,15,0.5)",
+      dot: "#f4ce0f",
+    },
+    loss: {
+      background: "rgba(193,2,2,0.24)",
+      border: "rgba(255,120,120,0.5)",
+      dot: "#ff4b4b",
+    },
+    none: {
+      background: "rgba(255,255,255,0.1)",
+      border: "rgba(255,255,255,0.22)",
+      dot: "rgba(255,255,255,0.5)",
+    },
+    win: {
+      background: "rgba(16,185,129,0.24)",
+      border: "rgba(52,211,153,0.52)",
+      dot: "#34d399",
+    },
+  }[kind];
+}
+
+function isTeamInMatch(match: LeagueFixtureMatch, teamName: string) {
+  return (
+    areSameFixtureTeam(match.localTeam, teamName) ||
+    areSameFixtureTeam(match.visitorTeam, teamName)
+  );
+}
+
+function areSameFixtureTeam(left: string, right: string) {
+  return normalizeFixtureTeamKey(left) === normalizeFixtureTeamKey(right);
+}
+
+function normalizeFixtureTeamKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/^(club|asociacion deportiva|asoc deportiva)\s+/, "");
+}
+
+function getFixtureMatchSortValue(match: LeagueFixtureMatch) {
+  const time = /^(\d{1,2}):(\d{2})/.exec(match.time);
+  const hour = time ? Number(time[1]) : 23;
+  const minute = time ? Number(time[2]) : 59;
+  const value = new Date(
+    `${match.dateIso ?? ""}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00-03:00`,
+  ).getTime();
+
+  return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+}
+
 function getMatchRival(match: LeagueFixtureMatch, teamName: string) {
-  return match.localTeam === teamName ? match.visitorTeam : match.localTeam;
+  return areSameFixtureTeam(match.localTeam, teamName) ? match.visitorTeam : match.localTeam;
 }
 
 function isShareAbort(error: unknown) {

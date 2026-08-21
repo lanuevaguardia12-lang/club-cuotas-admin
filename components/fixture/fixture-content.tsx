@@ -279,7 +279,12 @@ function NextMatchCard({
         />
       </div>
       <MatchGoalsList match={match} />
-      <NextMatchShareButton match={match} teamName={APP_TEAM_NAME} />
+      <NextMatchShareButton
+        match={match}
+        matches={matches}
+        standings={rows}
+        teamName={APP_TEAM_NAME}
+      />
     </div>
   );
 }
@@ -678,7 +683,13 @@ function FixtureRounds({
                     canManage={canManage}
                     canUploadMedia={canUploadMedia}
                     match={match}
+                    matches={
+                      data.allCompetitionMatches.length > 0
+                        ? data.allCompetitionMatches
+                        : data.matches
+                    }
                     playerOptions={playerOptions}
+                    standings={data.standings}
                   />
                 ))}
               </div>
@@ -710,12 +721,16 @@ function FullMatchRow({
   canManage,
   canUploadMedia,
   match,
+  matches,
   playerOptions,
+  standings,
 }: {
   canManage: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
+  matches: LeagueFixtureMatch[];
   playerOptions: FixturePlayerOption[];
+  standings: LeagueStandingRow[];
 }) {
   const canEditSchedule = canManage && match.isClubMatch;
 
@@ -781,7 +796,12 @@ function FullMatchRow({
 
       {match.isClubMatch && match.status === "pending" ? (
         <div className="md:col-span-3">
-          <NextMatchShareButton match={match} teamName={APP_TEAM_NAME} />
+          <NextMatchShareButton
+            match={match}
+            matches={matches}
+            standings={standings}
+            teamName={APP_TEAM_NAME}
+          />
         </div>
       ) : null}
 
