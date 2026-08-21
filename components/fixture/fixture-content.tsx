@@ -22,6 +22,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NavigationLink } from "@/components/ui/navigation-link";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
+import {
+  MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
+  buildMatchRegistrationFormUrl,
+  getMatchRegistrationPeriod,
+} from "@/lib/match-registration-form";
 import { cn } from "@/lib/utils";
 import type {
   FixturePlayerOption,
@@ -36,9 +41,11 @@ import type {
 interface FixtureContentProps {
   activeTab?: string;
   canManage?: boolean;
+  canRegisterPlayers?: boolean;
   canUploadMedia?: boolean;
   data: LeagueFixtureData;
   playerOptions?: FixturePlayerOption[];
+  registrationPlayerNamesByPeriod?: Record<string, string[]>;
   selectedRoundKeys?: string[];
 }
 
@@ -47,9 +54,11 @@ type FixtureTab = "resumen" | "posiciones" | "goleadores" | "fixture";
 export function FixtureContent({
   activeTab,
   canManage = false,
+  canRegisterPlayers = false,
   canUploadMedia = false,
   data,
   playerOptions = [],
+  registrationPlayerNamesByPeriod = {},
   selectedRoundKeys = [],
 }: FixtureContentProps) {
   const tab = normalizeFixtureTab(activeTab);
@@ -82,9 +91,11 @@ export function FixtureContent({
       {tab === "fixture" ? (
         <FixtureRounds
           canManage={canManage}
+          canRegisterPlayers={canRegisterPlayers}
           canUploadMedia={canUploadMedia}
           data={data}
           playerOptions={playerOptions}
+          registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
           rounds={data.rounds}
           selectedRoundKeys={selectedRoundKeys}
         />
@@ -588,16 +599,20 @@ function StandingsLegend() {
 
 function FixtureRounds({
   canManage,
+  canRegisterPlayers,
   canUploadMedia,
   data,
   playerOptions,
+  registrationPlayerNamesByPeriod,
   rounds,
   selectedRoundKeys,
 }: {
   canManage: boolean;
+  canRegisterPlayers: boolean;
   canUploadMedia: boolean;
   data: LeagueFixtureData;
   playerOptions: FixturePlayerOption[];
+  registrationPlayerNamesByPeriod: Record<string, string[]>;
   rounds: LeagueFixtureRound[];
   selectedRoundKeys: string[];
 }) {
@@ -681,6 +696,7 @@ function FixtureRounds({
                   <FullMatchRow
                     key={match.id}
                     canManage={canManage}
+                    canRegisterPlayers={canRegisterPlayers}
                     canUploadMedia={canUploadMedia}
                     match={match}
                     matches={
@@ -689,6 +705,7 @@ function FixtureRounds({
                         : data.matches
                     }
                     playerOptions={playerOptions}
+                    registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
                     standings={data.standings}
                   />
                 ))}
@@ -719,20 +736,28 @@ function FixtureRounds({
 
 function FullMatchRow({
   canManage,
+  canRegisterPlayers,
   canUploadMedia,
   match,
   matches,
   playerOptions,
+  registrationPlayerNamesByPeriod,
   standings,
 }: {
   canManage: boolean;
+  canRegisterPlayers: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   playerOptions: FixturePlayerOption[];
+  registrationPlayerNamesByPeriod: Record<string, string[]>;
   standings: LeagueStandingRow[];
 }) {
   const canEditSchedule = canManage && match.isClubMatch;
+  const registrationPlayerNames =
+    registrationPlayerNamesByPeriod[getMatchRegistrationPeriod(match)] ??
+    registrationPlayerNamesByPeriod[MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY] ??
+    [];
 
   return (
     <div
@@ -770,6 +795,21 @@ function FullMatchRow({
             <a href={match.detailUrl} rel="noreferrer" target="_blank">
               <ExternalLink />
               Detalle
+            </a>
+          </Button>
+        ) : null}
+        {canRegisterPlayers && match.isClubMatch ? (
+          <Button asChild size="sm" variant="secondary">
+            <a
+              href={buildMatchRegistrationFormUrl({
+                match,
+                playerNames: registrationPlayerNames,
+              })}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <ExternalLink />
+              Registrar jugadores
             </a>
           </Button>
         ) : null}

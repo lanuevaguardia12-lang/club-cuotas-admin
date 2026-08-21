@@ -231,6 +231,14 @@ GOOGLE_SHEETS_REFUND_POLICY_RANGE="Politica devoluciones!A:C"
 # Sheet externo del formulario de partidos jugados.
 GOOGLE_SHEETS_MATCHES_SPREADSHEET_ID="replace-with-matches-spreadsheet-id"
 GOOGLE_SHEETS_MATCHES_RANGE="Partidos jugados formulario!A:Z"
+GOOGLE_FORMS_MATCH_REGISTRATION_URL="https://docs.google.com/forms/d/1q32Y_k_lVAGg833M-oBHMUc9dmExtl1fjWzKZV9pZPA/viewform"
+GOOGLE_FORMS_MATCH_RIVAL_ENTRY="replace-with-entry-id"
+GOOGLE_FORMS_MATCH_DATE_ENTRY="replace-with-entry-id"
+GOOGLE_FORMS_MATCH_COMPETITION_ENTRY="replace-with-entry-id"
+GOOGLE_FORMS_MATCH_HOME_AWAY_ENTRY="replace-with-entry-id"
+GOOGLE_FORMS_MATCH_PLAYERS_ENTRY="replace-with-entry-id"
+GOOGLE_FORMS_MATCH_COACH_ATTENDED_ENTRY="replace-with-entry-id"
+GOOGLE_FORMS_MATCH_COACH_ATTENDED_VALUE="Si"
 GOOGLE_SHEETS_FORM_RESPONSES_RANGE="Respuestas de formulario!A:Z"
 GOOGLE_SHEETS_EXPENSES_RANGE="Gastos nueva guardia!A:Z"
 GOOGLE_SHEETS_CACHE_TTL_SECONDS=300
@@ -680,6 +688,13 @@ app cuenta partidos por mes, por jugador, y permite desplegar los rivales desde
 la tabla de cálculo. En el calculador se muestra un panel de asistencia mensual
 con partidos del mes, partidos asistidos, porcentaje de asistencia y porcentaje
 de devolucion aplicado.
+
+El usuario con rol `coach` ve el boton `Registrar jugadores` en cada card de
+partido de La Nueva Guardia. Ese boton abre el Google Form definido en
+`GOOGLE_FORMS_MATCH_REGISTRATION_URL` y lo precompleta con rival, fecha,
+competencia, local/visitante, jugadores activos del mes y `Asistio joaco = Si`.
+Para que el prellenado funcione, cargar en Vercel los IDs internos `entry.*` de
+cada campo del formulario.
 
 Estados de cuota soportados:
 
