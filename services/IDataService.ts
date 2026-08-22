@@ -2,6 +2,7 @@ import type {
   AccountAuthOverride,
   AccountUser,
   AccountProfileData,
+  CreateAccountUserInput,
   CreateFanAccountInput,
   UpdateAccountPasswordInput,
   UpdateAccountProfileInput,
@@ -52,6 +53,7 @@ export interface IDataService {
   getAccountProfile(user: AuthUser): Promise<AccountProfileData>;
   updateAccountProfile(input: UpdateAccountProfileInput): Promise<void>;
   updateAccountPassword(input: UpdateAccountPasswordInput): Promise<void>;
+  createAccountUser(input: CreateAccountUserInput): Promise<void>;
   createFanAccount(input: CreateFanAccountInput): Promise<void>;
   getAccountUsers(): Promise<AccountUser[]>;
   getAccountAuthOverride(

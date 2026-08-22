@@ -25,7 +25,7 @@ export type Permission =
 
 export const roleLabels: Record<AuthRole, string> = {
   admin: "Administrador",
-  coach: "Profesor",
+  coach: "Director técnico",
   fan: "Fan",
   player: "Jugador",
   treasurer: "Tesorero",

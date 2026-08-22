@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { ShieldCheck, UserCog, UsersRound } from "lucide-react";
 
 import { EmptySection } from "@/components/layout/empty-section";
+import { UserCreateForm } from "@/components/users/user-create-form";
 import { UserPasswordForm } from "@/components/users/user-password-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +53,15 @@ export default async function UsersPage() {
           en el código.
         </p>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Crear usuario</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <UserCreateForm />
+        </CardContent>
+      </Card>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {roles.map((role) => (

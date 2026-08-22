@@ -79,6 +79,18 @@ export interface CreateFanAccountInput {
   passwordHash: string;
 }
 
+export interface CreateAccountUserInput {
+  userId: string;
+  username: string;
+  role: AuthRole;
+  playerId?: string;
+  name: string;
+  birthDate?: string;
+  email?: string;
+  phone?: string;
+  passwordHash: string;
+}
+
 export interface UpdateAccountProfileInput {
   userId: string;
   username: string;

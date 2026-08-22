@@ -17,6 +17,7 @@ import type {
   AccountAuthOverride,
   AccountProfile,
   AccountUser,
+  CreateAccountUserInput,
   CreateFanAccountInput,
   PlayerAttendanceSummary,
   UpdateAccountPasswordInput,
@@ -823,6 +824,39 @@ export class GoogleSheetsService implements IDataService {
       passwordHash: input.passwordHash,
       passwordUpdatedAt: now,
       updatedAt: existing?.updatedAt || now,
+    });
+    invalidateAccountCache();
+  }
+
+  async createAccountUser(input: CreateAccountUserInput): Promise<void> {
+    this.assertConfigured();
+
+    const existing = await this.findAccountProfile(input.userId, input.username).catch(
+      () => null,
+    );
+
+    if (existing) {
+      throw new DataServiceError(
+        "Ya existe una cuenta con ese usuario.",
+        "GOOGLE_SHEETS_ERROR",
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    await this.upsertAccountProfile({
+      userId: input.userId,
+      username: input.username,
+      role: input.role,
+      playerId: input.playerId,
+      name: input.name,
+      birthDate: input.birthDate ?? "",
+      email: input.email ?? "",
+      phone: input.phone ?? "",
+      profilePhotoDataUrl: "",
+      passwordHash: input.passwordHash,
+      passwordUpdatedAt: now,
+      updatedAt: now,
     });
     invalidateAccountCache();
   }

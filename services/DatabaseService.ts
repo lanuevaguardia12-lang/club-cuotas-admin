@@ -71,6 +71,13 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async createAccountUser(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async createFanAccount(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
