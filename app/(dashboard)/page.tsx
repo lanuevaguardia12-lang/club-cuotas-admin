@@ -23,6 +23,10 @@ import {
   applyLeagueFixtureScheduleOverrides,
   getLeagueFixtureData,
 } from "@/lib/league-fixture";
+import {
+  buildMatchRegistrationStatusByMatchKey,
+  getRegistrationPlayerNamesByPeriod,
+} from "@/lib/match-registration-form";
 import { findPlayerProfileForUser } from "@/lib/player-profile";
 import { getDataService } from "@/services/data-service";
 
@@ -67,12 +71,23 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     redirect("/account");
   }
 
-  if (user.role === "player" || user.role === "fan") {
-    const [fixture, playerProfile] = await Promise.all([
+  if (user.role === "player" || user.role === "fan" || user.role === "coach") {
+    const canRegisterPlayers = user.role === "coach";
+    const [fixture, playerProfile, playerOfMatchData] = await Promise.all([
       fixturePromise,
       user.role === "player" ? findPlayerProfileForUser(user) : null,
+      canRegisterPlayers
+        ? dataService.getPlayerOfMatchData(user.id, user.playerId).catch(() => null)
+        : null,
     ]);
     const isFan = user.role === "fan";
+    const isCoach = user.role === "coach";
+    const registrationPlayerNamesByPeriod = canRegisterPlayers
+      ? await getRegistrationPlayerNamesByPeriod(dataService, fixture.allClubMatches)
+      : {};
+    const registrationStatusByMatchKey = playerOfMatchData
+      ? buildMatchRegistrationStatusByMatchKey(playerOfMatchData.matches)
+      : {};
 
     return (
       <main className="grid min-w-0 gap-6 overflow-hidden">
@@ -82,16 +97,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             Hola, {user.name}
           </h1>
           <p className="text-muted-foreground max-w-full text-sm break-words sm:max-w-2xl">
-            {isFan
+            {isFan || isCoach
               ? "El proximo partido, el ultimo resultado y la tabla del torneo en una vista rapida."
               : "Tu cuota, el proximo partido y la tabla del torneo en una vista rapida."}
           </p>
         </header>
 
         <HomeSummary
+          canRegisterPlayers={canRegisterPlayers}
           canUploadMedia={isFan}
           fixture={fixture}
           playerProfile={playerProfile}
+          registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+          registrationStatusByMatchKey={registrationStatusByMatchKey}
         />
       </main>
     );

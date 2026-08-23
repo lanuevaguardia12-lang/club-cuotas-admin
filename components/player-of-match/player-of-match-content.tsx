@@ -53,7 +53,7 @@ interface PlayerOfMatchContentProps {
   canManage: boolean;
   canVote: boolean;
   data: PlayerOfMatchData;
-  voteMode?: "fan" | "player";
+  voteMode?: "coach" | "fan" | "player";
 }
 
 type PlayerOfMatchTab = "mvp" | "ranking" | "rachas";
@@ -146,7 +146,7 @@ function MvpTab({
   currentPlayerName?: string;
   currentMatches: PlayerOfMatchMatch[];
   historyMatches: PlayerOfMatchMatch[];
-  voteMode: "fan" | "player";
+  voteMode: "coach" | "fan" | "player";
 }) {
   return (
     <section className="grid gap-6">
@@ -567,7 +567,7 @@ function MatchVoteCard({
   canVote: boolean;
   currentPlayerName?: string;
   match: PlayerOfMatchMatch;
-  voteMode: "fan" | "player";
+  voteMode: "coach" | "fan" | "player";
 }) {
   const [showResults, setShowResults] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
@@ -1008,7 +1008,7 @@ function PlayerVoteForm({
 }: {
   match: PlayerOfMatchMatch;
   players: string[];
-  voteMode: "fan" | "player";
+  voteMode: "coach" | "fan" | "player";
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -1058,7 +1058,9 @@ function PlayerVoteForm({
         <p className="mt-1 text-xs leading-relaxed">
           {voteMode === "fan"
             ? "Como fan, cada voto suma 1 punto. Elegí dos jugadores que hayan participado en el partido."
-            : "Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros del partido; tu propio nombre no participa de tus opciones."}
+            : voteMode === "coach"
+              ? "Como DT, tu primer voto vale 4 puntos y tu segundo voto vale 2 puntos. Elegí dos jugadores que hayan participado en el partido."
+              : "Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros del partido; tu propio nombre no participa de tus opciones."}
         </p>
       </div>
       <VoteSelect

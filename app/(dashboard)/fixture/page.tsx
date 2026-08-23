@@ -12,13 +12,8 @@ import {
   applyLeagueFixtureScheduleOverrides,
   getLeagueFixtureData,
 } from "@/lib/league-fixture";
-import {
-  MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
-  getMatchRegistrationPeriod,
-} from "@/lib/match-registration-form";
+import { getRegistrationPlayerNamesByPeriod } from "@/lib/match-registration-form";
 import { getDataService } from "@/services/data-service";
-import type { IDataService } from "@/services/IDataService";
-import type { LeagueFixtureMatch } from "@/types/fixture";
 
 export const dynamic = "force-dynamic";
 
@@ -121,44 +116,4 @@ function toArray(value?: string | string[]) {
   }
 
   return Array.isArray(value) ? value : [value];
-}
-
-async function getRegistrationPlayerNamesByPeriod(
-  dataService: IDataService,
-  matches: LeagueFixtureMatch[],
-) {
-  const basePlayerNames = (
-    await dataService.getPlayersData().catch(() => ({ players: [] }))
-  ).players
-    .filter((player) => player.status === "active")
-    .map((player) => player.name);
-  const periods = Array.from(
-    new Set(
-      matches
-        .filter((match) => match.isClubMatch)
-        .map(getMatchRegistrationPeriod)
-        .filter((period) => period !== MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY),
-    ),
-  );
-  const entries = await Promise.all(
-    periods.map(async (period) => {
-      const calculatorData = await dataService
-        .getFeeCalculatorData(period)
-        .catch(() => null);
-      const periodPlayerNames =
-        calculatorData?.players
-          .filter((player) => player.status === "active")
-          .map((player) => player.name) ?? [];
-
-      return [
-        period,
-        periodPlayerNames.length > 0 ? periodPlayerNames : basePlayerNames,
-      ] as const;
-    }),
-  );
-
-  return {
-    [MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY]: basePlayerNames,
-    ...Object.fromEntries(entries),
-  };
 }

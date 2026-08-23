@@ -5967,6 +5967,13 @@ function buildPlayerOfMatchRankings({
 }
 
 function getPlayerOfMatchVotePoints(vote: PlayerOfMatchVote) {
+  if (vote.voterRole === "coach") {
+    return {
+      first: 4,
+      second: 2,
+    };
+  }
+
   if (vote.voterRole === "fan") {
     return {
       first: 1,

@@ -79,11 +79,7 @@ export function LoginForm({ redirectTo = "/" }: LoginFormProps) {
 
   return (
     <form action={formAction} className="grid gap-4">
-      <input
-        type="hidden"
-        name="redirectTo"
-        value={mode === "fan-login" ? "/account" : redirectTo}
-      />
+      <input type="hidden" name="redirectTo" value={redirectTo} />
 
       <div className="grid gap-2">
         <label htmlFor="username" className="text-sm font-medium">

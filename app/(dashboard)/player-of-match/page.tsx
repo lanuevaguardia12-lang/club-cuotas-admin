@@ -45,7 +45,9 @@ export default async function PlayerOfMatchPage() {
         canManage={canManage}
         canVote={canVote}
         data={data}
-        voteMode={user.role === "fan" ? "fan" : "player"}
+        voteMode={
+          user.role === "fan" ? "fan" : user.role === "coach" ? "coach" : "player"
+        }
       />
     </main>
   );

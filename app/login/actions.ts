@@ -114,14 +114,7 @@ export async function loginAction(
     })
     .catch(() => undefined);
 
-  const redirectTo =
-    authenticatedUser.role === "player" && requestedRedirectTo === DEFAULT_AUTH_REDIRECT
-      ? "/mi-cuota"
-      : authenticatedUser.role === "fan" && requestedRedirectTo === DEFAULT_AUTH_REDIRECT
-        ? "/account"
-        : requestedRedirectTo;
-
-  redirect(redirectTo);
+  redirect(requestedRedirectTo);
 }
 
 export async function registerFanAction(
@@ -208,7 +201,7 @@ export async function registerFanAction(
     })
     .catch(() => undefined);
 
-  redirect("/account");
+  redirect(DEFAULT_AUTH_REDIRECT);
 }
 
 function slugify(value: string) {

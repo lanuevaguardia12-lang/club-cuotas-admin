@@ -48,7 +48,7 @@ const iconMap = {
 export function MobileBottomNav({ user }: MobileBottomNavProps) {
   const pathname = usePathname();
   const visibleItems = getVisibleNavigationItems(user);
-  const orderedItems = centerHomeItem(visibleItems);
+  const orderedItems = orderMobileNavigationItems(visibleItems);
 
   return (
     <nav className="bg-primary text-primary-foreground border-primary fixed inset-x-0 bottom-0 z-50 border-t shadow-[0_-12px_30px_rgba(1,47,119,0.2)] backdrop-blur lg:hidden">
@@ -77,21 +77,53 @@ export function MobileBottomNav({ user }: MobileBottomNavProps) {
   );
 }
 
-function centerHomeItem<T extends { href: string }>(items: T[]) {
+const leftNavigationOrder = ["/account", "/mi-cuota", "/players", "/squad"];
+const rightNavigationOrder = [
+  "/player-of-match",
+  "/fixture",
+  "/notifications",
+  "/payments",
+  "/cash-flow",
+  "/fee-calculator",
+  "/audit",
+  "/api-docs",
+  "/users",
+  "/reports",
+  "/settings",
+];
+
+function orderMobileNavigationItems<T extends { href: string }>(items: T[]) {
   const homeItem = items.find((item) => item.href === "/");
 
   if (!homeItem) {
     return items;
   }
 
-  const otherItems = items.filter((item) => item.href !== "/");
-  const centerIndex = Math.ceil(otherItems.length / 2);
+  const itemsByHref = new Map(items.map((item) => [item.href, item]));
+  const orderedHrefs = new Set(["/"]);
+  const leftItems = leftNavigationOrder.flatMap((href) => {
+    const item = itemsByHref.get(href);
 
-  return [
-    ...otherItems.slice(0, centerIndex),
-    homeItem,
-    ...otherItems.slice(centerIndex),
-  ];
+    if (!item) {
+      return [];
+    }
+
+    orderedHrefs.add(href);
+    return [item];
+  });
+  const rightItems = rightNavigationOrder.flatMap((href) => {
+    const item = itemsByHref.get(href);
+
+    if (!item) {
+      return [];
+    }
+
+    orderedHrefs.add(href);
+    return [item];
+  });
+  const remainingItems = items.filter((item) => !orderedHrefs.has(item.href));
+
+  return [...leftItems, homeItem, ...rightItems, ...remainingItems];
 }
 
 function isActivePath(pathname: string, href: string) {

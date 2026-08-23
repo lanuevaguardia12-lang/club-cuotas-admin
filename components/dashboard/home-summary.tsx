@@ -19,15 +19,25 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
+import {
+  MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
+  buildMatchRegistrationFormUrl,
+  getMatchRegistrationPeriod,
+  getMatchRegistrationStatusKeyForFixture,
+  type MatchRegistrationStatus,
+} from "@/lib/match-registration-form";
 import { formatPeriod, getCurrentPeriod } from "@/lib/player-profile";
 import { cn } from "@/lib/utils";
 import type { PlayerMonthPaymentStatus, PlayerProfile } from "@/types/dashboard";
 import type { LeagueFixtureData, LeagueFixtureMatch } from "@/types/fixture";
 
 interface HomeSummaryProps {
+  canRegisterPlayers?: boolean;
   canUploadMedia?: boolean;
   fixture: LeagueFixtureData;
   playerProfile?: PlayerProfile | null;
+  registrationPlayerNamesByPeriod?: Record<string, string[]>;
+  registrationStatusByMatchKey?: Record<string, MatchRegistrationStatus>;
 }
 
 const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
@@ -36,9 +46,12 @@ const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
 };
 
 export function HomeSummary({
+  canRegisterPlayers = false,
   canUploadMedia = false,
   fixture,
   playerProfile,
+  registrationPlayerNamesByPeriod = {},
+  registrationStatusByMatchKey = {},
 }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
   const nextMatch = fixture.nextMatches[0];
@@ -107,9 +120,12 @@ export function HomeSummary({
         <CardContent>
           {nextMatch ? (
             <HomeMatchCard
+              canRegisterPlayers={canRegisterPlayers}
               canUploadMedia={canUploadMedia}
               match={nextMatch}
               matches={recentFormMatches}
+              registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+              registrationStatusByMatchKey={registrationStatusByMatchKey}
               rows={fixture.standings}
             />
           ) : (
@@ -135,8 +151,11 @@ export function HomeSummary({
         <CardContent>
           {lastMatch ? (
             <HomePlayedMatchCard
+              canRegisterPlayers={canRegisterPlayers}
               canUploadMedia={canUploadMedia}
               match={lastMatch}
+              registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+              registrationStatusByMatchKey={registrationStatusByMatchKey}
               rows={fixture.standings}
             />
           ) : (
@@ -195,14 +214,20 @@ export function HomeSummary({
 }
 
 function HomeMatchCard({
+  canRegisterPlayers,
   canUploadMedia,
   match,
   matches,
+  registrationPlayerNamesByPeriod,
+  registrationStatusByMatchKey,
   rows,
 }: {
+  canRegisterPlayers: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
+  registrationPlayerNamesByPeriod: Record<string, string[]>;
+  registrationStatusByMatchKey: Record<string, MatchRegistrationStatus>;
   rows: LeagueFixtureData["standings"];
 }) {
   const localPosition =
@@ -252,6 +277,12 @@ function HomeMatchCard({
         standings={rows}
         teamName={APP_TEAM_NAME}
       />
+      <MatchRegistrationAction
+        canRegisterPlayers={canRegisterPlayers}
+        match={match}
+        registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+        registrationStatusByMatchKey={registrationStatusByMatchKey}
+      />
       <Button asChild size="sm" variant="outline">
         <Link href="/fixture">
           <CalendarDays />
@@ -270,12 +301,18 @@ function HomeMatchCard({
 }
 
 function HomePlayedMatchCard({
+  canRegisterPlayers,
   canUploadMedia,
   match,
+  registrationPlayerNamesByPeriod,
+  registrationStatusByMatchKey,
   rows,
 }: {
+  canRegisterPlayers: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
+  registrationPlayerNamesByPeriod: Record<string, string[]>;
+  registrationStatusByMatchKey: Record<string, MatchRegistrationStatus>;
   rows: LeagueFixtureData["standings"];
 }) {
   const localPosition =
@@ -324,6 +361,12 @@ function HomePlayedMatchCard({
       </div>
       <MatchGoalsList match={match} />
       <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+      <MatchRegistrationAction
+        canRegisterPlayers={canRegisterPlayers}
+        match={match}
+        registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+        registrationStatusByMatchKey={registrationStatusByMatchKey}
+      />
       {canUploadMedia ? (
         <MatchMediaUploadButton
           matchDate={match.roundDate}
@@ -338,6 +381,58 @@ function HomePlayedMatchCard({
         </Link>
       </Button>
     </div>
+  );
+}
+
+function MatchRegistrationAction({
+  canRegisterPlayers,
+  match,
+  registrationPlayerNamesByPeriod,
+  registrationStatusByMatchKey,
+}: {
+  canRegisterPlayers: boolean;
+  match: LeagueFixtureMatch;
+  registrationPlayerNamesByPeriod: Record<string, string[]>;
+  registrationStatusByMatchKey: Record<string, MatchRegistrationStatus>;
+}) {
+  if (!canRegisterPlayers || !match.isClubMatch) {
+    return null;
+  }
+
+  const registrationStatus =
+    registrationStatusByMatchKey[getMatchRegistrationStatusKeyForFixture(match)];
+
+  if (registrationStatus?.registered) {
+    return (
+      <Badge variant="success" className="w-fit gap-1.5">
+        <CheckCircle2 className="size-3.5" />
+        Jugadores cargados
+        {registrationStatus.playersCount > 0
+          ? ` (${registrationStatus.playersCount})`
+          : ""}
+      </Badge>
+    );
+  }
+
+  const registrationPlayerNames =
+    registrationPlayerNamesByPeriod[getMatchRegistrationPeriod(match)] ??
+    registrationPlayerNamesByPeriod[MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY] ??
+    [];
+
+  return (
+    <Button asChild size="sm" variant="secondary">
+      <a
+        href={buildMatchRegistrationFormUrl({
+          match,
+          playerNames: registrationPlayerNames,
+        })}
+        rel="noreferrer"
+        target="_blank"
+      >
+        <ExternalLink />
+        Registrar jugadores
+      </a>
+    </Button>
   );
 }
 
