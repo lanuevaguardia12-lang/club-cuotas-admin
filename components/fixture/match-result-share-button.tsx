@@ -1,7 +1,7 @@
 "use client";
 
 import { ImageDown, Share2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
@@ -18,6 +18,7 @@ const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
 const RESULT_PHOTO_BACKGROUND_SRC = "/brand/result-background-photo.jpg";
 
 type ResultShareFormat = "post" | "post-photo" | "story" | "story-photo";
+type PhotoResultShareFormat = Extract<ResultShareFormat, "post-photo" | "story-photo">;
 
 interface MatchResultShareButtonProps {
   backgroundImageSrc?: string;
@@ -34,6 +35,9 @@ export function MatchResultShareButton({
   showAdminFormats = false,
   teamName,
 }: MatchResultShareButtonProps) {
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoFormatToShare, setPhotoFormatToShare] =
+    useState<PhotoResultShareFormat | null>(null);
   const [pendingFormat, setPendingFormat] = useState<ResultShareFormat | null>(null);
   const [message, setMessage] = useState("");
   const canShareResult =
@@ -41,7 +45,7 @@ export function MatchResultShareButton({
     typeof match.localScore === "number" &&
     typeof match.visitorScore === "number";
 
-  async function handleShare(format: ResultShareFormat) {
+  async function handleShare(format: ResultShareFormat, selectedBackgroundSrc?: string) {
     setPendingFormat(format);
     setMessage("");
 
@@ -51,7 +55,7 @@ export function MatchResultShareButton({
         match,
         teamName,
         format,
-        backgroundImageSrc,
+        selectedBackgroundSrc ?? backgroundImageSrc,
       );
       const formatLabel = getFormatFileLabel(format);
       const fileName = `resultado-${formatLabel}-${slugify(result.rivalName)}.png`;
@@ -79,12 +83,56 @@ export function MatchResultShareButton({
     }
   }
 
+  function requestPhotoAndShare(format: PhotoResultShareFormat) {
+    setMessage("");
+    setPhotoFormatToShare(format);
+
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
+      photoInputRef.current.click();
+    }
+  }
+
+  async function handlePhotoInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    const format = photoFormatToShare;
+
+    setPhotoFormatToShare(null);
+
+    if (!format || !file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setMessage("Cargá una foto para generar este formato.");
+      input.value = "";
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+      await handleShare(format, objectUrl);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      input.value = "";
+    }
+  }
+
   if (!canShareResult) {
     return null;
   }
 
   return (
     <div className={cn("grid gap-2", className)}>
+      <input
+        ref={photoInputRef}
+        accept="image/*"
+        className="sr-only"
+        onChange={(event) => void handlePhotoInputChange(event)}
+        type="file"
+      />
       <LoadingModal
         open={Boolean(pendingFormat)}
         description={
@@ -119,7 +167,7 @@ export function MatchResultShareButton({
               size="sm"
               variant="secondary"
               disabled={Boolean(pendingFormat)}
-              onClick={() => void handleShare("story-photo")}
+              onClick={() => requestPhotoAndShare("story-photo")}
             >
               <Share2 />
               Story 2
@@ -129,7 +177,7 @@ export function MatchResultShareButton({
               size="sm"
               variant="outline"
               disabled={Boolean(pendingFormat)}
-              onClick={() => void handleShare("post-photo")}
+              onClick={() => requestPhotoAndShare("post-photo")}
             >
               <ImageDown />
               Publicacion 2
