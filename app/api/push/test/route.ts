@@ -15,9 +15,9 @@ export async function POST() {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  if (user.role !== "player") {
+  if (user.role === "admin") {
     return NextResponse.json(
-      { message: "Las notificaciones push son solo para jugadores." },
+      { message: "Las notificaciones push no estan disponibles para administradores." },
       { status: 403 },
     );
   }

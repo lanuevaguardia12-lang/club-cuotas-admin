@@ -21,7 +21,7 @@ export async function GET() {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  if (user.role !== "player") {
+  if (user.role === "admin") {
     return NextResponse.json({ notifications: [], unreadCount: 0 });
   }
 
@@ -43,9 +43,12 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  if (user.role !== "player") {
+  if (user.role === "admin") {
     return NextResponse.json(
-      { message: "Las notificaciones de usuario son solo para jugadores." },
+      {
+        message:
+          "Las notificaciones personales no estan disponibles para administradores.",
+      },
       { status: 403 },
     );
   }

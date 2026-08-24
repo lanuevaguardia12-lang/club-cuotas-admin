@@ -914,6 +914,10 @@ Los cron jobs se configuran en `vercel.json`:
   {
     "path": "/api/cron/upcoming-match-reminders",
     "schedule": "0 22 * * *"
+  },
+  {
+    "path": "/api/cron/birthday-reminders",
+    "schedule": "0 12 * * *"
   }
 ]
 ```
@@ -1026,6 +1030,12 @@ manana, envia a los jugadores suscriptos el push `Prepara los botines tu proximo
 partido es vs <rival>` y usa `reference_id` en `Notificaciones` para no repetir
 el aviso por usuario/partido.
 
+El cron `/api/cron/birthday-reminders` corre todos los dias a las 12:00 UTC
+(09:00 de Argentina). Busca cumpleaños en `CuentasUsuario` y en el ABM
+`Jugadores`, envia un saludo personal a quien cumple años y un aviso al resto de
+los usuarios con suscripcion push activa. Usa `reference_id` por fecha, persona
+cumpleañera y destinatario para no repetir el aviso durante el mismo dia.
+
 Para probar el aviso con un solo jugador, un admin o integracion con
 `CRON_SECRET` puede ejecutar:
 
@@ -1038,6 +1048,15 @@ curl -X POST "https://TU_URL_DE_VERCEL/api/cron/upcoming-match-reminders" \
 
 Ese envio toma el siguiente partido pendiente, aunque no caiga manana o pasado
 manana, y queda registrado en `Notificaciones` para el jugador indicado.
+
+Para probar cumpleaños en una fecha puntual:
+
+```bash
+curl -X POST "https://TU_URL_DE_VERCEL/api/cron/birthday-reminders" \
+  -H "Authorization: Bearer TU_CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"date":"2026-08-24","ignoreAlreadyNotified":true}'
+```
 
 ### Push notifications
 
@@ -1075,6 +1094,9 @@ Rutas principales:
 - `POST /api/cron/player-of-match-reminders`: prueba manual de push MVP para un
   `playerId` o `userId`.
 - `GET /api/cron/upcoming-match-reminders`: envia push si hay partido en los proximos dos dias.
+- `GET /api/cron/birthday-reminders`: envia saludos y avisos de cumpleaños del dia.
+- `POST /api/cron/birthday-reminders`: prueba manual de cumpleaños para fecha,
+  `playerId` o `userId`.
 - `POST /api/webhooks/payments`: webhook para Google Apps Script. Expira el
   cache de pagos cuando el formulario agrega una nueva respuesta.
 - `POST /api/webhooks/player-of-match`: webhook para Google Apps Script. Expira
@@ -1412,6 +1434,12 @@ Schedule: 0 18 */4 * *
 
 Path: /api/cron/player-of-match-reminders
 Schedule: 0 1 * * *
+
+Path: /api/cron/upcoming-match-reminders
+Schedule: 0 22 * * *
+
+Path: /api/cron/birthday-reminders
+Schedule: 0 12 * * *
 ```
 
 ## Calidad
