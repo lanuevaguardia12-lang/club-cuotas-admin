@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { apiAuditActor } from "@/lib/audit";
-import { getWhatsAppBotReminderRunId, isWhatsAppBotReminder } from "@/lib/whatsapp-bot";
+import { isWhatsAppBotReminder } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
 import type { ReminderJob, ReminderStatus } from "@/types/premium";
 
@@ -27,7 +27,9 @@ export async function GET(request: NextRequest) {
     .filter((reminder) => !period || reminder.period === period);
   const targetReminders = includeAllRuns
     ? queuedReminders
-    : filterLatestReminderRun(queuedReminders);
+    : period
+      ? queuedReminders
+      : filterLatestReminderPeriod(queuedReminders);
   const jobs = targetReminders
     .sort(
       (left, right) =>
@@ -124,24 +126,21 @@ function requireBotAuth(request: NextRequest) {
   return null;
 }
 
-function filterLatestReminderRun(reminders: ReminderJob[]) {
+function filterLatestReminderPeriod(reminders: ReminderJob[]) {
   if (reminders.length === 0) {
     return [];
   }
 
-  const latestReminder = [...reminders].sort(
+  const latestPeriod = [...reminders].sort(
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-  )[0];
-  const latestRunId = getWhatsAppBotReminderRunId(latestReminder);
+  )[0]?.period;
 
-  if (!latestRunId) {
-    return [latestReminder];
+  if (!latestPeriod) {
+    return [];
   }
 
-  return reminders.filter(
-    (reminder) => getWhatsAppBotReminderRunId(reminder) === latestRunId,
-  );
+  return reminders.filter((reminder) => reminder.period === latestPeriod);
 }
 
 function clampLimit(value: string | null) {

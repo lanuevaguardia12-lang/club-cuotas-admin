@@ -28,10 +28,21 @@ npm start
 
 En macOS tambien podes iniciar el bot sin escribir en la terminal:
 
-1. Abrí `bot/whatsapp/Iniciar Bot WhatsApp.app`.
-2. Se abre Google Chrome con WhatsApp Web.
-3. Si aparece QR, escanealo desde WhatsApp.
-4. El bot queda consultando la cola en segundo plano.
+1. Abrí `bot/whatsapp/Iniciar Bot WhatsApp.app` una vez para que macOS registre
+   el launcher.
+2. Desde la app web, tocá `Correr bot recordatorios`.
+3. La web intenta abrir el launcher automáticamente. Si el navegador lo bloquea,
+   tocá `Abrir bot local`.
+4. Se abre Google Chrome con WhatsApp Web.
+5. Si aparece QR, escanealo desde WhatsApp.
+6. El bot queda consultando la cola en segundo plano.
+
+Si necesitás regenerar el launcher:
+
+```bash
+cd bot/whatsapp
+./create-macos-launcher.sh
+```
 
 La primera vez se abre una ventana de WhatsApp Web con el QR. Escanealo desde
 WhatsApp:

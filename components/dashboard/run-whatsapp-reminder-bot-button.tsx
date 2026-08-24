@@ -7,6 +7,8 @@ import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 
+const LOCAL_WHATSAPP_BOT_URL = "lng-whatsapp-bot://start";
+
 interface RunWhatsAppReminderBotButtonProps {
   period: string;
 }
@@ -32,6 +34,7 @@ export function RunWhatsAppReminderBotButton({
   const [messageTemplate, setMessageTemplate] = useState(
     settings.whatsAppMessageTemplate,
   );
+  const [showLocalLauncher, setShowLocalLauncher] = useState(false);
   const selectedPeriodLabel = formatPeriodLabel(period);
 
   useEffect(() => {
@@ -41,6 +44,7 @@ export function RunWhatsAppReminderBotButton({
   async function runBot() {
     setLoading(true);
     setMessage("");
+    setShowLocalLauncher(false);
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
@@ -65,8 +69,13 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.`,
+        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intentando abrir el bot local..." : ""}`,
       );
+
+      if (result?.mode === "local-queue") {
+        setShowLocalLauncher(true);
+        openLocalBot();
+      }
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -102,6 +111,12 @@ export function RunWhatsAppReminderBotButton({
         <Bot />
         Correr bot recordatorios
       </Button>
+      {showLocalLauncher ? (
+        <Button type="button" variant="secondary" onClick={openLocalBot}>
+          <Bot />
+          Abrir bot local
+        </Button>
+      ) : null}
       <p className="text-muted-foreground text-xs sm:text-right">
         Mes a enviar: {selectedPeriodLabel}
       </p>
@@ -110,6 +125,10 @@ export function RunWhatsAppReminderBotButton({
       ) : null}
     </div>
   );
+}
+
+function openLocalBot() {
+  window.location.href = LOCAL_WHATSAPP_BOT_URL;
 }
 
 function formatPeriodLabel(period: string) {
