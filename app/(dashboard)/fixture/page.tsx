@@ -100,6 +100,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
         activeTab={params.tab}
         canManage={canManageFixture}
         canRegisterPlayers={canRegisterPlayers}
+        canShareAlternateResultFormats={canManageFixture}
         canUploadMedia={canUploadMedia}
         data={data}
         playerOptions={playerOptions}

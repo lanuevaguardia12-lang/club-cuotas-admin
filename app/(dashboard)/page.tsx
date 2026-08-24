@@ -165,7 +165,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </div>
       </header>
 
-      <HomeSummary fixture={fixture} teamStatsMatches={teamStatsMatches} />
+      <HomeSummary
+        canShareAlternateResultFormats={user.role === "admin"}
+        fixture={fixture}
+        teamStatsMatches={teamStatsMatches}
+      />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {dashboard.metrics.map((item) => {

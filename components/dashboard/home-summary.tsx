@@ -34,6 +34,7 @@ import type { LeagueFixtureData, LeagueFixtureMatch } from "@/types/fixture";
 
 interface HomeSummaryProps {
   canRegisterPlayers?: boolean;
+  canShareAlternateResultFormats?: boolean;
   canUploadMedia?: boolean;
   fixture: LeagueFixtureData;
   playerProfile?: PlayerProfile | null;
@@ -49,6 +50,7 @@ const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
 
 export function HomeSummary({
   canRegisterPlayers = false,
+  canShareAlternateResultFormats = false,
   canUploadMedia = false,
   fixture,
   playerProfile,
@@ -168,6 +170,7 @@ export function HomeSummary({
           {lastMatch ? (
             <HomePlayedMatchCard
               canRegisterPlayers={canRegisterPlayers}
+              canShareAlternateResultFormats={canShareAlternateResultFormats}
               canUploadMedia={canUploadMedia}
               match={lastMatch}
               registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
@@ -318,6 +321,7 @@ function HomeMatchCard({
 
 function HomePlayedMatchCard({
   canRegisterPlayers,
+  canShareAlternateResultFormats,
   canUploadMedia,
   match,
   registrationPlayerNamesByPeriod,
@@ -325,6 +329,7 @@ function HomePlayedMatchCard({
   rows,
 }: {
   canRegisterPlayers: boolean;
+  canShareAlternateResultFormats: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   registrationPlayerNamesByPeriod: Record<string, string[]>;
@@ -376,7 +381,11 @@ function HomePlayedMatchCard({
         />
       </div>
       <MatchGoalsList match={match} />
-      <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+      <MatchResultShareButton
+        match={match}
+        showAdminFormats={canShareAlternateResultFormats}
+        teamName={APP_TEAM_NAME}
+      />
       <MatchRegistrationAction
         canRegisterPlayers={canRegisterPlayers}
         match={match}

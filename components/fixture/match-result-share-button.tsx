@@ -12,19 +12,26 @@ const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
 const POST_WIDTH = 1080;
 const POST_HEIGHT = 1350;
+const PHOTO_POST_WIDTH = 1080;
+const PHOTO_POST_HEIGHT = 1080;
 const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
+const RESULT_PHOTO_BACKGROUND_SRC = "/brand/result-background-photo.jpg";
 
-type ResultShareFormat = "story" | "post";
+type ResultShareFormat = "post" | "post-photo" | "story" | "story-photo";
 
 interface MatchResultShareButtonProps {
+  backgroundImageSrc?: string;
   className?: string;
   match: LeagueFixtureMatch;
+  showAdminFormats?: boolean;
   teamName: string;
 }
 
 export function MatchResultShareButton({
+  backgroundImageSrc,
   className,
   match,
+  showAdminFormats = false,
   teamName,
 }: MatchResultShareButtonProps) {
   const [pendingFormat, setPendingFormat] = useState<ResultShareFormat | null>(null);
@@ -40,8 +47,13 @@ export function MatchResultShareButton({
 
     try {
       const result = getResultView(match, teamName);
-      const blob = await createMatchResultBlob(match, teamName, format);
-      const formatLabel = format === "story" ? "story" : "publicacion";
+      const blob = await createMatchResultBlob(
+        match,
+        teamName,
+        format,
+        backgroundImageSrc,
+      );
+      const formatLabel = getFormatFileLabel(format);
       const fileName = `resultado-${formatLabel}-${slugify(result.rivalName)}.png`;
       const file = new File([blob], fileName, { type: "image/png" });
 
@@ -76,7 +88,7 @@ export function MatchResultShareButton({
       <LoadingModal
         open={Boolean(pendingFormat)}
         description={
-          pendingFormat === "post" ? "Preparando publicacion..." : "Preparando story..."
+          pendingFormat ? `Preparando ${getFormatDisplayName(pendingFormat)}...` : ""
         }
       />
       <div className="grid grid-cols-2 gap-2">
@@ -100,6 +112,30 @@ export function MatchResultShareButton({
           <ImageDown />
           Publicacion
         </Button>
+        {showAdminFormats ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={Boolean(pendingFormat)}
+              onClick={() => void handleShare("story-photo")}
+            >
+              <Share2 />
+              Story 2
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={Boolean(pendingFormat)}
+              onClick={() => void handleShare("post-photo")}
+            >
+              <ImageDown />
+              Publicacion 2
+            </Button>
+          </>
+        ) : null}
       </div>
       {message ? (
         <p className="text-muted-foreground text-center text-xs font-medium">{message}</p>
@@ -112,11 +148,13 @@ async function createMatchResultBlob(
   match: LeagueFixtureMatch,
   teamName: string,
   format: ResultShareFormat,
+  backgroundImageSrc?: string,
 ) {
   const canvas = document.createElement("canvas");
+  const size = getCanvasSize(format);
 
-  canvas.width = format === "story" ? STORY_WIDTH : POST_WIDTH;
-  canvas.height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
+  canvas.width = size.width;
+  canvas.height = size.height;
 
   const context = canvas.getContext("2d");
 
@@ -124,7 +162,7 @@ async function createMatchResultBlob(
     throw new Error("Tu navegador no pudo preparar la imagen.");
   }
 
-  await drawMatchResultPlate(context, match, teamName, format);
+  await drawMatchResultPlate(context, match, teamName, format, backgroundImageSrc);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -142,9 +180,21 @@ async function drawMatchResultPlate(
   match: LeagueFixtureMatch,
   teamName: string,
   format: ResultShareFormat,
+  backgroundImageSrc?: string,
 ) {
-  const width = format === "story" ? STORY_WIDTH : POST_WIDTH;
-  const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
+  const { height, width } = getCanvasSize(format);
+
+  if (isPhotoOverlayFormat(format)) {
+    await drawPhotoOverlayMatchResultPlate(
+      context,
+      match,
+      teamName,
+      format,
+      backgroundImageSrc,
+    );
+    return;
+  }
+
   const compact = format === "post";
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
   const result = getResultView(match, teamName);
@@ -234,6 +284,161 @@ async function drawMatchResultPlate(
       maxWidth: width - 160,
     },
   );
+}
+
+async function drawPhotoOverlayMatchResultPlate(
+  context: CanvasRenderingContext2D,
+  match: LeagueFixtureMatch,
+  teamName: string,
+  format: ResultShareFormat,
+  backgroundImageSrc?: string,
+) {
+  const { height, width } = getCanvasSize(format);
+  const compact = format === "post-photo";
+  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
+  const result = getResultView(match, teamName);
+  const scorers = getTeamGoalScorers(match, teamName);
+
+  await drawPhotoOverlayBackground(context, width, height, backgroundImageSrc);
+
+  if (logo) {
+    drawContainedImage(
+      context,
+      logo,
+      width / 2 - (compact ? 46 : 70),
+      compact ? 52 : 106,
+      compact ? 92 : 140,
+      compact ? 84 : 128,
+    );
+  } else {
+    drawFallbackLogo(context, width, compact ? 92 : 170);
+  }
+
+  drawCenteredText(context, "RESULTADO FINAL", width / 2, compact ? 190 : 356, {
+    color: "#ffffff",
+    font: compact
+      ? "900 72px Impact, Arial Black, sans-serif"
+      : "900 92px Impact, Arial Black, sans-serif",
+    maxWidth: width - 130,
+    shadowBlur: 26,
+    shadowColor: "rgba(0,0,0,0.45)",
+  });
+
+  drawCenteredText(
+    context,
+    `${formatResultDate(match.dateIso)} / ${formatCompetition(match.competitionKind)}`,
+    width / 2,
+    compact ? 268 : 466,
+    {
+      color: "rgba(255,255,255,0.9)",
+      font: compact ? "800 30px Arial, sans-serif" : "800 38px Arial, sans-serif",
+      maxWidth: width - 150,
+      shadowBlur: 14,
+      shadowColor: "rgba(0,0,0,0.35)",
+    },
+  );
+
+  drawWrappedCenteredText(
+    context,
+    `VS ${result.rivalName}`,
+    width / 2,
+    compact ? 332 : 558,
+    width - 150,
+    {
+      color: "#f4ce0f",
+      font: compact
+        ? "900 38px Arial Black, Impact, sans-serif"
+        : "900 48px Arial Black, Impact, sans-serif",
+      lineHeight: compact ? 46 : 56,
+      maxLines: compact ? 2 : 2,
+      shadowBlur: 18,
+      shadowColor: "rgba(0,0,0,0.48)",
+      uppercase: true,
+    },
+  );
+
+  drawScoreboard(context, {
+    compact,
+    result,
+    width,
+    y: compact ? 455 : 795,
+  });
+
+  if (scorers.length > 0) {
+    drawScorersBlock(context, {
+      compact,
+      scorers,
+      width,
+      y: compact ? 820 : 1295,
+    });
+  }
+
+  drawCenteredText(
+    context,
+    "LA NUEVA GUARDIA",
+    width / 2,
+    height - (compact ? 46 : 104),
+    {
+      color: "rgba(255,255,255,0.78)",
+      font: compact ? "800 24px Arial, sans-serif" : "800 34px Arial, sans-serif",
+      letterSpacing: compact ? 8 : 10,
+      maxWidth: width - 160,
+      shadowBlur: 12,
+      shadowColor: "rgba(0,0,0,0.4)",
+    },
+  );
+}
+
+async function drawPhotoOverlayBackground(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  backgroundImageSrc?: string,
+) {
+  const image = await loadImage(backgroundImageSrc || RESULT_PHOTO_BACKGROUND_SRC).catch(
+    () => undefined,
+  );
+
+  if (image) {
+    context.save();
+    context.filter = "saturate(1.12) contrast(1.04)";
+    drawCoverImage(context, image, 0, 0, width, height);
+    context.restore();
+  } else {
+    drawBackground(context, width, height);
+  }
+
+  const shade = context.createLinearGradient(0, 0, 0, height);
+  shade.addColorStop(0, "rgba(1,18,48,0.68)");
+  shade.addColorStop(0.44, "rgba(1,47,119,0.62)");
+  shade.addColorStop(1, "rgba(2,9,22,0.86)");
+  context.fillStyle = shade;
+  context.fillRect(0, 0, width, height);
+
+  const sideShade = context.createLinearGradient(0, 0, width, 0);
+  sideShade.addColorStop(0, "rgba(1,12,30,0.58)");
+  sideShade.addColorStop(0.5, "rgba(0,148,220,0.12)");
+  sideShade.addColorStop(1, "rgba(1,12,30,0.58)");
+  context.fillStyle = sideShade;
+  context.fillRect(0, 0, width, height);
+
+  context.save();
+  context.strokeStyle = "rgba(102,220,255,0.15)";
+  context.lineWidth = 2;
+  for (let x = -height; x < width; x += 86) {
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x + height * 0.6, height);
+    context.stroke();
+  }
+  context.restore();
+
+  context.save();
+  context.strokeStyle = "rgba(102,220,255,0.42)";
+  context.lineWidth = 4;
+  roundedRect(context, 42, 42, width - 84, height - 84, 46);
+  context.stroke();
+  context.restore();
 }
 
 function drawBackground(
@@ -543,6 +748,65 @@ function drawContainedImage(
     drawWidth,
     drawHeight,
   );
+}
+
+function drawCoverImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const ratio = Math.max(width / image.width, height / image.height);
+  const drawWidth = image.width * ratio;
+  const drawHeight = image.height * ratio;
+
+  context.drawImage(
+    image,
+    x + (width - drawWidth) / 2,
+    y + (height - drawHeight) / 2,
+    drawWidth,
+    drawHeight,
+  );
+}
+
+function getCanvasSize(format: ResultShareFormat) {
+  if (format === "story" || format === "story-photo") {
+    return { height: STORY_HEIGHT, width: STORY_WIDTH };
+  }
+
+  if (format === "post-photo") {
+    return { height: PHOTO_POST_HEIGHT, width: PHOTO_POST_WIDTH };
+  }
+
+  return { height: POST_HEIGHT, width: POST_WIDTH };
+}
+
+function getFormatDisplayName(format: ResultShareFormat) {
+  const labels: Record<ResultShareFormat, string> = {
+    post: "publicacion",
+    "post-photo": "publicacion 2",
+    story: "story",
+    "story-photo": "story 2",
+  };
+
+  return labels[format];
+}
+
+function getFormatFileLabel(format: ResultShareFormat) {
+  const labels: Record<ResultShareFormat, string> = {
+    post: "publicacion",
+    "post-photo": "publicacion-2",
+    story: "story",
+    "story-photo": "story-2",
+  };
+
+  return labels[format];
+}
+
+function isPhotoOverlayFormat(format: ResultShareFormat) {
+  return format === "story-photo" || format === "post-photo";
 }
 
 function drawCenteredText(

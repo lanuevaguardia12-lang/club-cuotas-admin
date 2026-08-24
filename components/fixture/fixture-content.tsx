@@ -42,6 +42,7 @@ interface FixtureContentProps {
   activeTab?: string;
   canManage?: boolean;
   canRegisterPlayers?: boolean;
+  canShareAlternateResultFormats?: boolean;
   canUploadMedia?: boolean;
   data: LeagueFixtureData;
   playerOptions?: FixturePlayerOption[];
@@ -55,6 +56,7 @@ export function FixtureContent({
   activeTab,
   canManage = false,
   canRegisterPlayers = false,
+  canShareAlternateResultFormats = false,
   canUploadMedia = false,
   data,
   playerOptions = [],
@@ -85,13 +87,19 @@ export function FixtureContent({
         </section>
       ) : null}
 
-      {tab === "resumen" ? <SummaryTab data={data} /> : null}
+      {tab === "resumen" ? (
+        <SummaryTab
+          canShareAlternateResultFormats={canShareAlternateResultFormats}
+          data={data}
+        />
+      ) : null}
       {tab === "posiciones" ? <StandingsTable data={data} /> : null}
       {tab === "goleadores" ? <ScorersTable rows={data.scorers} /> : null}
       {tab === "fixture" ? (
         <FixtureRounds
           canManage={canManage}
           canRegisterPlayers={canRegisterPlayers}
+          canShareAlternateResultFormats={canShareAlternateResultFormats}
           canUploadMedia={canUploadMedia}
           data={data}
           playerOptions={playerOptions}
@@ -139,7 +147,10 @@ function FixtureTabNav({
   );
 }
 
-function SummaryTab({ data }: FixtureContentProps) {
+function SummaryTab({
+  canShareAlternateResultFormats = false,
+  data,
+}: FixtureContentProps) {
   const nextMatch =
     data.nextMatches[0] ?? data.clubMatches.find((match) => match.status === "pending");
   const lastMatch =
@@ -213,7 +224,11 @@ function SummaryTab({ data }: FixtureContentProps) {
         </CardHeader>
         <CardContent>
           {lastMatch ? (
-            <PlayedMatchCard match={lastMatch} rows={data.standings} />
+            <PlayedMatchCard
+              canShareAlternateResultFormats={canShareAlternateResultFormats}
+              match={lastMatch}
+              rows={data.standings}
+            />
           ) : (
             <EmptyInline
               title="Sin partidos jugados"
@@ -377,9 +392,11 @@ function TeamRecentForm({
 }
 
 function PlayedMatchCard({
+  canShareAlternateResultFormats,
   match,
   rows,
 }: {
+  canShareAlternateResultFormats: boolean;
   match: LeagueFixtureMatch;
   rows: LeagueStandingRow[];
 }) {
@@ -420,7 +437,11 @@ function PlayedMatchCard({
         <PositionTeamLine position={visitorPosition} teamName={match.visitorTeam} />
       </div>
       <MatchGoalsList match={match} />
-      <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+      <MatchResultShareButton
+        match={match}
+        showAdminFormats={canShareAlternateResultFormats}
+        teamName={APP_TEAM_NAME}
+      />
     </div>
   );
 }
@@ -600,6 +621,7 @@ function StandingsLegend() {
 function FixtureRounds({
   canManage,
   canRegisterPlayers,
+  canShareAlternateResultFormats,
   canUploadMedia,
   data,
   playerOptions,
@@ -609,6 +631,7 @@ function FixtureRounds({
 }: {
   canManage: boolean;
   canRegisterPlayers: boolean;
+  canShareAlternateResultFormats: boolean;
   canUploadMedia: boolean;
   data: LeagueFixtureData;
   playerOptions: FixturePlayerOption[];
@@ -697,6 +720,7 @@ function FixtureRounds({
                     key={match.id}
                     canManage={canManage}
                     canRegisterPlayers={canRegisterPlayers}
+                    canShareAlternateResultFormats={canShareAlternateResultFormats}
                     canUploadMedia={canUploadMedia}
                     match={match}
                     matches={
@@ -737,6 +761,7 @@ function FixtureRounds({
 function FullMatchRow({
   canManage,
   canRegisterPlayers,
+  canShareAlternateResultFormats,
   canUploadMedia,
   match,
   matches,
@@ -746,6 +771,7 @@ function FullMatchRow({
 }: {
   canManage: boolean;
   canRegisterPlayers: boolean;
+  canShareAlternateResultFormats: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
@@ -830,7 +856,11 @@ function FullMatchRow({
 
       {match.isClubMatch && match.status === "played" ? (
         <div className="md:col-span-3">
-          <MatchResultShareButton match={match} teamName={APP_TEAM_NAME} />
+          <MatchResultShareButton
+            match={match}
+            showAdminFormats={canShareAlternateResultFormats}
+            teamName={APP_TEAM_NAME}
+          />
         </div>
       ) : null}
 
