@@ -6,7 +6,7 @@ LOG_FILE="$SCRIPT_DIR/whatsapp-bot.log"
 LAUNCHER_LOG_FILE="$SCRIPT_DIR/whatsapp-launcher.log"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-export WHATSAPP_BOT_HEADLESS=false
+export WHATSAPP_BOT_HEADLESS="${WHATSAPP_BOT_HEADLESS:-false}"
 export WHATSAPP_BOT_SEND_DELAY_MS="${WHATSAPP_BOT_SEND_DELAY_MS:-60000}"
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') launcher iniciado" >> "$LAUNCHER_LOG_FILE"
@@ -30,9 +30,11 @@ if [ -z "$NODE_BIN" ]; then
 fi
 
 cd "$SCRIPT_DIR"
-open -a "Google Chrome" "https://web.whatsapp.com/" >/dev/null 2>&1 || true
+if [ "$WHATSAPP_BOT_HEADLESS" != "true" ]; then
+  open -a "Google Chrome" "https://web.whatsapp.com/" >/dev/null 2>&1 || true
+fi
 : > "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') iniciando bot con delay ${WHATSAPP_BOT_SEND_DELAY_MS}ms" >> "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') iniciando bot con delay ${WHATSAPP_BOT_SEND_DELAY_MS}ms headless=${WHATSAPP_BOT_HEADLESS}" >> "$LOG_FILE"
 nohup "$NODE_BIN" "$SCRIPT_DIR/whatsapp-reminder-bot.mjs" >> "$LOG_FILE" 2>&1 &
 echo "$(date '+%Y-%m-%d %H:%M:%S') bot lanzado pid $!" >> "$LAUNCHER_LOG_FILE"
-notify "Bot iniciado. Se va a abrir Chrome con WhatsApp Web."
+notify "Bot iniciado. Ya esta consultando la cola."

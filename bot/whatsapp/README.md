@@ -44,6 +44,27 @@ cd bot/whatsapp
 ./create-macos-launcher.sh
 ```
 
+### Sin abrir ningun archivo cada vez
+
+La opcion mas comoda es instalar el bot como servicio de inicio de macOS. Se hace
+una sola vez:
+
+```bash
+cd bot/whatsapp
+./install-macos-autostart.sh
+```
+
+Desde ese momento el bot arranca solo cuando iniciás sesión en la Mac y queda
+consultando la cola. En la app web solo tocás `Correr bot recordatorios`; no hace
+falta abrir el launcher ni una terminal.
+
+Para desinstalarlo:
+
+```bash
+cd bot/whatsapp
+./uninstall-macos-autostart.sh
+```
+
 La primera vez se abre una ventana de WhatsApp Web con el QR. Escanealo desde
 WhatsApp:
 
