@@ -33,7 +33,7 @@ export const roleLabels: Record<AuthRole, string> = {
 
 export const roleDescriptions: Record<AuthRole, string> = {
   admin: "Acceso total al sistema, configuracion, usuarios, auditoria e integraciones.",
-  coach: "Acceso operativo a jugadores, fichas, cuotas y recordatorios.",
+  coach: "Acceso operativo a fixture, plantel, registro de jugadores y votaciones.",
   fan: "Acceso social para hinchas y comunidad del club.",
   player: "Acceso personal al estado de sus cuotas y notificaciones.",
   treasurer: "Acceso financiero a cuotas, cash flow, pagos, reportes y auditoria.",
@@ -65,10 +65,9 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
   coach: [
     "dashboard:read",
     "account:manage",
-    "players:read",
-    "players:write",
     "notifications:manage",
     "fixture:read",
+    "squad:read",
     "player-of-match:vote",
   ],
   fan: [

@@ -65,6 +65,7 @@ export interface AccountUser {
   birthDate: string;
   email: string;
   phone: string;
+  profilePhotoDataUrl?: string;
   hasPassword: boolean;
   passwordUpdatedAt: string;
   updatedAt: string;

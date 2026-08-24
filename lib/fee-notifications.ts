@@ -70,9 +70,15 @@ export async function sendDefinedFeeNotifications({
       continue;
     }
 
-    const referenceId = buildDefinedFeeReferenceId(calculation, period);
+    const referenceId = buildDefinedFeeReferenceId(calculation.playerId, period);
 
-    if (existingReferenceIds.has(referenceId)) {
+    if (
+      hasAlreadySentDefinedFeeNotification(
+        existingReferenceIds,
+        calculation.playerId,
+        period,
+      )
+    ) {
       result.skippedAlreadyNotified += 1;
       continue;
     }
@@ -171,19 +177,33 @@ function buildEmptyResult(
   };
 }
 
-function buildDefinedFeeReferenceId(calculation: FeePlayerCalculation, period: string) {
-  return `fee-defined:${calculation.playerId}:${period}:${Math.round(
-    calculation.finalQuota * 100,
-  )}`;
+function buildDefinedFeeReferenceId(playerId: string, period: string) {
+  return `fee-defined:${playerId}:${period}`;
+}
+
+function hasAlreadySentDefinedFeeNotification(
+  referenceIds: Set<string>,
+  playerId: string,
+  period: string,
+) {
+  const referenceId = buildDefinedFeeReferenceId(playerId, period);
+  const legacyReferencePrefix = `${referenceId}:`;
+
+  return (
+    referenceIds.has(referenceId) ||
+    Array.from(referenceIds).some((candidate) =>
+      candidate.startsWith(legacyReferencePrefix),
+    )
+  );
 }
 
 function buildDefinedFeeNotificationMessage(
   calculation: FeePlayerCalculation,
   period: string,
 ) {
-  return `${calculation.playerName}, ya está definida tu cuota para el mes de ${formatPeriod(
+  return `${calculation.playerName}, ya está definida tu cuota para ${formatPeriod(
     period,
-  )} es de ${formatCurrency(calculation.finalQuota)}. Hace click y registra tu pago.`;
+  )}: ${formatCurrency(calculation.finalQuota)}. Hacé click y registrá tu pago.`;
 }
 
 async function maybeDeactivateExpiredSubscription(

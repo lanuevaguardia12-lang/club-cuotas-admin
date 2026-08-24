@@ -908,6 +908,10 @@ Los cron jobs se configuran en `vercel.json`:
     "schedule": "0 18 */4 * *"
   },
   {
+    "path": "/api/cron/player-fee-defined",
+    "schedule": "0 12 1 * *"
+  },
+  {
     "path": "/api/cron/player-of-match-reminders",
     "schedule": "0 1 * * *"
   },
@@ -1009,6 +1013,12 @@ Payload enviado al bot:
 }
 ```
 
+El cron `/api/cron/player-fee-defined` corre el primer dia de cada mes a las
+12:00 UTC (09:00 de Argentina). Envia a los jugadores activos la notificacion
+`Ya está definida tu cuota` solo si la cuota del mes esta definida y usa
+`reference_id` por jugador/mes para no reenviar por cambios posteriores del
+calculador.
+
 El cron `/api/cron/player-fee-reminders` corre cada cuatro dias a las 18:00 UTC
 (15:00 de Argentina), envia push solo a jugadores impagos y usa `Recordatorios`
 como memoria para no repetir el aviso automatico antes de 4 dias por jugador y
@@ -1088,6 +1098,7 @@ Rutas principales:
 - `POST /api/push/test`: envia una prueba al usuario logueado.
 - `GET /api/notifications`: historial de la campana del usuario logueado.
 - `PATCH /api/notifications`: marca una notificacion visible como leida.
+- `GET /api/cron/player-fee-defined`: envia push de cuota definida el primer dia del mes.
 - `GET /api/cron/player-fee-reminders`: envia push de cuota pendiente cada 4 dias.
 - `GET /api/cron/player-of-match-reminders`: envia push de apertura, mitad o
   cierre de votacion MVP.
@@ -1431,6 +1442,9 @@ Crons configurados:
 ```text
 Path: /api/cron/player-fee-reminders
 Schedule: 0 18 */4 * *
+
+Path: /api/cron/player-fee-defined
+Schedule: 0 12 1 * *
 
 Path: /api/cron/player-of-match-reminders
 Schedule: 0 1 * * *

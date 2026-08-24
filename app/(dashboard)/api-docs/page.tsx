@@ -24,6 +24,7 @@ const webhookEndpoints = [
   ["POST", "/api/webhooks/player-of-match", "Google Forms dispara push MVP"],
   ["POST", "/api/bot/whatsapp-reminders", "Dispara bot externo de WhatsApp"],
   ["GET/PATCH", "/api/bot/whatsapp-reminders/jobs", "Cola del bot local"],
+  ["GET", "/api/cron/player-fee-defined", "Cron mensual de cuota definida"],
   ["GET", "/api/cron/player-fee-reminders", "Cron de cuotas impagas"],
   ["GET", "/api/cron/player-of-match-reminders", "Cron de respaldo MVP"],
   ["GET", "/api/cron/upcoming-match-reminders", "Cron de proximo partido"],

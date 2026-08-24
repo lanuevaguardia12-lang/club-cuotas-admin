@@ -1,4 +1,4 @@
-import { Mail, Phone, Shirt, UsersRound } from "lucide-react";
+import { Shirt, UsersRound } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { EmptySection } from "@/components/layout/empty-section";
@@ -29,7 +29,16 @@ export default async function SquadPage() {
     );
   }
 
-  const data = await getDataService().getPlayersData();
+  const dataService = getDataService();
+  const [data, accounts] = await Promise.all([
+    dataService.getPlayersData(),
+    dataService.getAccountUsers().catch(() => []),
+  ]);
+  const photosByPlayerId = new Map(
+    accounts
+      .filter((account) => account.playerId && account.profilePhotoDataUrl)
+      .map((account) => [account.playerId as string, account.profilePhotoDataUrl ?? ""]),
+  );
   const players = [...data.players].sort((left, right) => {
     if (left.status !== right.status) {
       return left.status === "active" ? -1 : 1;
@@ -37,7 +46,7 @@ export default async function SquadPage() {
 
     return left.name.localeCompare(right.name, "es");
   });
-  const activePlayers = players.filter((player) => player.status === "active").length;
+  const activePlayers = players.filter((player) => player.status === "active");
 
   return (
     <main className="grid min-w-0 gap-6 overflow-hidden">
@@ -48,7 +57,7 @@ export default async function SquadPage() {
           Plantel
         </h1>
         <p className="text-muted-foreground max-w-2xl text-sm">
-          Jugadores cargados en la base del club.
+          Vista rápida del plantel, con foto y posiciones de cada jugador.
         </p>
       </header>
 
@@ -58,19 +67,14 @@ export default async function SquadPage() {
         </section>
       ) : null}
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <MetricPill label="Jugadores" value={String(players.length)} />
-        <MetricPill label="Activos" value={String(activePlayers)} />
-        <MetricPill
-          label="Con posición"
-          value={String(players.filter((player) => player.position).length)}
-        />
-      </section>
-
-      {players.length > 0 ? (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {players.map((player) => (
-            <PlayerCard key={player.id} player={player} />
+      {activePlayers.length > 0 ? (
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          {activePlayers.map((player) => (
+            <PlayerCard
+              key={player.id}
+              player={player}
+              photoUrl={photosByPlayerId.get(player.id)}
+            />
           ))}
         </section>
       ) : (
@@ -91,71 +95,55 @@ export default async function SquadPage() {
   );
 }
 
-function MetricPill({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-muted-foreground text-xs font-medium uppercase">{label}</p>
-        <p className="mt-1 text-2xl font-bold">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PlayerCard({ player }: { player: PlayerDirectoryItem }) {
+function PlayerCard({
+  photoUrl,
+  player,
+}: {
+  photoUrl?: string;
+  player: PlayerDirectoryItem;
+}) {
   const positions = [player.position, player.secondPosition].filter(Boolean);
 
   return (
     <Card className="overflow-hidden">
-      <CardContent className="grid gap-4 p-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="bg-primary/10 text-primary grid size-12 shrink-0 place-items-center rounded-full text-sm font-black">
-            {getInitials(player.name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-start justify-between gap-2">
-              <h2 className="line-clamp-2 font-semibold">{player.name}</h2>
-              <Badge variant={player.status === "active" ? "success" : "secondary"}>
-                {player.status === "active" ? "Activo" : "Inactivo"}
-              </Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {positions.length > 0 ? (
-                positions.map((position) => (
-                  <span
-                    key={position}
-                    className={cn(
-                      "inline-flex rounded-md px-2 py-1 text-xs font-semibold",
-                      getPositionClassName(position),
-                    )}
-                  >
-                    {position}
-                  </span>
-                ))
-              ) : (
-                <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
-                  <Shirt className="size-3.5" />
-                  Sin posición
-                </span>
-              )}
-            </div>
-          </div>
+      <CardContent className="grid min-h-56 gap-3 p-3 text-center">
+        <div className="mx-auto grid size-24 place-items-center overflow-hidden rounded-full border-4 border-white bg-slate-100 shadow-md ring-2 ring-sky-100 sm:size-28">
+          {photoUrl ? (
+            <div
+              aria-label={player.name}
+              className="size-full bg-cover bg-center"
+              role="img"
+              style={{ backgroundImage: `url("${photoUrl}")` }}
+            />
+          ) : (
+            <span className="text-primary text-xl font-black">
+              {getInitials(player.name)}
+            </span>
+          )}
         </div>
 
-        <div className="text-muted-foreground grid gap-1.5 text-xs">
-          {player.phone ? (
-            <p className="flex min-w-0 items-center gap-2">
-              <Phone className="size-3.5 shrink-0" />
-              <span className="truncate">{player.phone}</span>
-            </p>
-          ) : null}
-          {player.email ? (
-            <p className="flex min-w-0 items-center gap-2">
-              <Mail className="size-3.5 shrink-0" />
-              <span className="truncate">{player.email}</span>
-            </p>
-          ) : null}
-          {!player.phone && !player.email ? <p>Sin contacto público cargado.</p> : null}
+        <div className="grid gap-2">
+          <h2 className="line-clamp-2 min-h-10 text-sm leading-tight font-semibold sm:text-base">
+            {player.name}
+          </h2>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {positions.length > 0 ? (
+              positions.map((position) => (
+                <Badge
+                  key={position}
+                  className={cn("max-w-full truncate", getPositionClassName(position))}
+                  variant="secondary"
+                >
+                  {position}
+                </Badge>
+              ))
+            ) : (
+              <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                <Shirt className="size-3.5" />
+                Sin posición
+              </span>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -180,7 +168,7 @@ function getPositionClassName(position: string) {
     .toLowerCase();
 
   if (normalized.includes("arquero")) {
-    return "bg-amber-100 text-amber-900";
+    return "bg-amber-100 text-amber-900 hover:bg-amber-100";
   }
 
   if (
@@ -188,16 +176,16 @@ function getPositionClassName(position: string) {
     normalized.includes("lateral") ||
     normalized.includes("central")
   ) {
-    return "bg-sky-100 text-sky-900";
+    return "bg-sky-100 text-sky-900 hover:bg-sky-100";
   }
 
   if (normalized.includes("medio") || normalized.includes("volante")) {
-    return "bg-emerald-100 text-emerald-900";
+    return "bg-emerald-100 text-emerald-900 hover:bg-emerald-100";
   }
 
   if (normalized.includes("delantero") || normalized.includes("punta")) {
-    return "bg-rose-100 text-rose-900";
+    return "bg-rose-100 text-rose-900 hover:bg-rose-100";
   }
 
-  return "bg-muted text-muted-foreground";
+  return "bg-muted text-muted-foreground hover:bg-muted";
 }

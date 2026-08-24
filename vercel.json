@@ -10,6 +10,10 @@
       "schedule": "0 18 */4 * *"
     },
     {
+      "path": "/api/cron/player-fee-defined",
+      "schedule": "0 12 1 * *"
+    },
+    {
       "path": "/api/cron/player-of-match-reminders",
       "schedule": "0 1 * * *"
     },

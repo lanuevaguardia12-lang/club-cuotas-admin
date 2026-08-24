@@ -907,6 +907,7 @@ export class GoogleSheetsService implements IDataService {
       birthDate: profile.birthDate,
       email: profile.email,
       phone: profile.phone,
+      profilePhotoDataUrl: profile.profilePhotoDataUrl,
       hasPassword: Boolean(profile.passwordHash),
       passwordUpdatedAt: profile.passwordUpdatedAt,
       updatedAt: profile.updatedAt,
