@@ -22,6 +22,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import {
   applyLeagueFixtureScheduleOverrides,
   getLeagueFixtureData,
+  getLeagueClubMatchesForYear,
 } from "@/lib/league-fixture";
 import {
   buildMatchRegistrationStatusByMatchKey,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/match-registration-form";
 import { findPlayerProfileForUser } from "@/lib/player-profile";
 import { getDataService } from "@/services/data-service";
+import type { LeagueFixtureData, LeagueFixtureMatch } from "@/types/fixture";
 
 export const dynamic = "force-dynamic";
 
@@ -82,9 +84,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ]);
     const isFan = user.role === "fan";
     const isCoach = user.role === "coach";
-    const registrationPlayerNamesByPeriod = canRegisterPlayers
-      ? await getRegistrationPlayerNamesByPeriod(dataService, fixture.allClubMatches)
-      : {};
+    const [registrationPlayerNamesByPeriod, teamStatsMatches] = await Promise.all([
+      canRegisterPlayers
+        ? getRegistrationPlayerNamesByPeriod(dataService, fixture.allClubMatches)
+        : {},
+      getTeamStatsMatches(fixture),
+    ]);
     const registrationStatusByMatchKey = playerOfMatchData
       ? buildMatchRegistrationStatusByMatchKey(playerOfMatchData.matches)
       : {};
@@ -110,6 +115,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           playerProfile={playerProfile}
           registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
           registrationStatusByMatchKey={registrationStatusByMatchKey}
+          teamStatsMatches={teamStatsMatches}
         />
       </main>
     );
@@ -119,6 +125,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     dataService.getDashboardData(period),
     fixturePromise,
   ]);
+  const teamStatsMatches = await getTeamStatsMatches(fixture);
 
   return (
     <main className="grid gap-6">
@@ -158,7 +165,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </div>
       </header>
 
-      <HomeSummary fixture={fixture} />
+      <HomeSummary fixture={fixture} teamStatsMatches={teamStatsMatches} />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {dashboard.metrics.map((item) => {
@@ -222,4 +229,44 @@ async function getFixtureDataWithOverrides() {
   ]);
 
   return applyLeagueFixtureScheduleOverrides(fixture, overrides);
+}
+
+async function getTeamStatsMatches(fixture: LeagueFixtureData) {
+  const currentYearMatches =
+    fixture.allClubMatches.length > 0 ? fixture.allClubMatches : fixture.clubMatches;
+  const otherYears = fixture.availableYears.filter(
+    (year) => year !== fixture.selectedYear,
+  );
+  const otherYearMatches = await Promise.all(
+    otherYears.map((year) =>
+      getLeagueClubMatchesForYear(year, fixture.tournaments).catch(
+        () => [] as LeagueFixtureMatch[],
+      ),
+    ),
+  );
+
+  return dedupeFixtureMatches([...currentYearMatches, ...otherYearMatches.flat()]);
+}
+
+function dedupeFixtureMatches(matches: LeagueFixtureMatch[]) {
+  const seen = new Set<string>();
+  const uniqueMatches: LeagueFixtureMatch[] = [];
+
+  for (const match of matches) {
+    const key = [
+      match.id,
+      match.dateIso ?? match.roundDate,
+      match.localTeam,
+      match.visitorTeam,
+    ].join("|");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueMatches.push(match);
+  }
+
+  return uniqueMatches;
 }

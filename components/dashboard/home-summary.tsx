@@ -12,6 +12,7 @@ import {
   CompetitionBadge,
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
+import { TeamStatsCard } from "@/components/dashboard/team-stats-card";
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { NextMatchShareButton } from "@/components/fixture/next-match-share-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
@@ -38,6 +39,7 @@ interface HomeSummaryProps {
   playerProfile?: PlayerProfile | null;
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
   registrationStatusByMatchKey?: Record<string, MatchRegistrationStatus>;
+  teamStatsMatches?: LeagueFixtureMatch[];
 }
 
 const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
@@ -52,6 +54,7 @@ export function HomeSummary({
   playerProfile,
   registrationPlayerNamesByPeriod = {},
   registrationStatusByMatchKey = {},
+  teamStatsMatches,
 }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
   const nextMatch = fixture.nextMatches[0];
@@ -135,6 +138,19 @@ export function HomeSummary({
           )}
         </CardContent>
       </Card>
+
+      <TeamStatsCard
+        className="md:col-span-2 xl:col-span-4"
+        matches={
+          teamStatsMatches ??
+          (fixture.allClubMatches.length > 0
+            ? fixture.allClubMatches
+            : fixture.clubMatches)
+        }
+        selectedCompetitionKey={fixture.selectedCompetitionKey}
+        selectedYear={fixture.selectedYear}
+        teamName={APP_TEAM_NAME}
+      />
 
       <Card className="club-animate-fade-up overflow-hidden">
         <CardHeader className="pb-3">

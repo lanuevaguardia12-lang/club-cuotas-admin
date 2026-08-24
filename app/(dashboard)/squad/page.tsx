@@ -8,6 +8,7 @@ import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 import { getDataService } from "@/services/data-service";
+import type { AccountUser } from "@/types/account";
 import type { PlayerDirectoryItem } from "@/types/players";
 
 export const dynamic = "force-dynamic";
@@ -34,11 +35,7 @@ export default async function SquadPage() {
     dataService.getPlayersData(),
     dataService.getAccountUsers().catch(() => []),
   ]);
-  const photosByPlayerId = new Map(
-    accounts
-      .filter((account) => account.playerId && account.profilePhotoDataUrl)
-      .map((account) => [account.playerId as string, account.profilePhotoDataUrl ?? ""]),
-  );
+  const photosByPlayerKey = buildPlayerPhotoMap(accounts);
   const players = [...data.players].sort((left, right) => {
     if (left.status !== right.status) {
       return left.status === "active" ? -1 : 1;
@@ -73,7 +70,7 @@ export default async function SquadPage() {
             <PlayerCard
               key={player.id}
               player={player}
-              photoUrl={photosByPlayerId.get(player.id)}
+              photoUrl={getPlayerPhotoUrl(player, photosByPlayerKey)}
             />
           ))}
         </section>
@@ -159,6 +156,79 @@ function getInitials(name: string) {
     .join("");
 
   return initials || "LNG";
+}
+
+function buildPlayerPhotoMap(accounts: AccountUser[]) {
+  const photos = new Map<string, string>();
+
+  for (const account of accounts) {
+    if (!account.profilePhotoDataUrl) {
+      continue;
+    }
+
+    const candidates = [
+      account.playerId,
+      account.userId,
+      account.username,
+      account.name,
+      createPlayerSlug(account.name),
+      createPlayerSlug(account.userId),
+      createPlayerSlug(account.username),
+    ];
+
+    for (const candidate of candidates) {
+      for (const key of buildPlayerPhotoKeys(candidate)) {
+        if (!photos.has(key)) {
+          photos.set(key, account.profilePhotoDataUrl);
+        }
+      }
+    }
+  }
+
+  return photos;
+}
+
+function getPlayerPhotoUrl(
+  player: PlayerDirectoryItem,
+  photosByPlayerKey: Map<string, string>,
+) {
+  const candidates = [player.id, player.name, createPlayerSlug(player.name)];
+
+  for (const candidate of candidates) {
+    for (const key of buildPlayerPhotoKeys(candidate)) {
+      const photoUrl = photosByPlayerKey.get(key);
+
+      if (photoUrl) {
+        return photoUrl;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function buildPlayerPhotoKeys(value?: string) {
+  if (!value) {
+    return [];
+  }
+
+  const normalized = normalizePlayerPhotoKey(value);
+  const spaced = normalizePlayerPhotoKey(value.replace(/[-_]+/g, " "));
+
+  return Array.from(new Set([normalized, spaced].filter(Boolean)));
+}
+
+function createPlayerSlug(value?: string) {
+  return normalizePlayerPhotoKey(value ?? "").replace(/\s+/g, "-");
+}
+
+function normalizePlayerPhotoKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function getPositionClassName(position: string) {
