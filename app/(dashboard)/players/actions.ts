@@ -7,6 +7,7 @@ import { userToAuditActor } from "@/lib/audit";
 import { assertPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { LNG_DEFAULT_ROSTER } from "@/lib/default-roster";
+import { isPlayerPosition } from "@/lib/player-positions";
 import { getDataService } from "@/services/data-service";
 
 const playerSchema = z.object({
@@ -17,8 +18,16 @@ const playerSchema = z.object({
   category: z.string().trim().max(80).optional(),
   dni: z.string().trim().max(20).optional(),
   birthDate: z.string().trim().max(20).optional(),
-  position: z.string().trim().max(80).optional(),
-  secondPosition: z.string().trim().max(80).optional(),
+  position: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
+  secondPosition: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
   notes: z.string().trim().max(500).optional(),
 });
 

@@ -31,6 +31,7 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { PLAYER_POSITIONS, isPlayerPosition } from "@/lib/player-positions";
 import type { AccountProfile } from "@/types/account";
 
 const profileSchema = z.object({
@@ -39,9 +40,17 @@ const profileSchema = z.object({
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   name: z.string().trim().min(2, "Ingresá tu nombre.").max(120),
   phone: z.string().trim().max(40).optional(),
-  position: z.string().trim().max(80).optional(),
+  position: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
   profilePhotoDataUrl: z.string().optional(),
-  secondPosition: z.string().trim().max(80).optional(),
+  secondPosition: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
 });
 
 const passwordSchema = z
@@ -336,19 +345,33 @@ export function AccountContent({ profile }: AccountContentProps) {
                         />
                       </Field>
                       <Field label="Posición" error={profileErrors.position?.message}>
-                        <input
+                        <select
                           {...registerProfile("position")}
                           className={inputClassName}
-                        />
+                        >
+                          <option value="">Sin posición</option>
+                          {PLAYER_POSITIONS.map((position) => (
+                            <option key={position} value={position}>
+                              {position}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
                       <Field
                         label="Segunda posición"
                         error={profileErrors.secondPosition?.message}
                       >
-                        <input
+                        <select
                           {...registerProfile("secondPosition")}
                           className={inputClassName}
-                        />
+                        >
+                          <option value="">Sin segunda posición</option>
+                          {PLAYER_POSITIONS.map((position) => (
+                            <option key={position} value={position}>
+                              {position}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
                     </>
                   ) : null}

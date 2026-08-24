@@ -6,6 +6,7 @@ import { z } from "zod";
 import { userToAuditActor } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth/passwords";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isPlayerPosition } from "@/lib/player-positions";
 import { createAuthService } from "@/services/auth/auth-service";
 import { getDataService } from "@/services/data-service";
 
@@ -17,7 +18,11 @@ const accountProfileSchema = z.object({
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   name: z.string().trim().min(2, "Ingresá tu nombre.").max(120),
   phone: z.string().trim().max(40).optional(),
-  position: z.string().trim().max(80).optional(),
+  position: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
   profilePhotoDataUrl: z
     .string()
     .trim()
@@ -27,7 +32,11 @@ const accountProfileSchema = z.object({
       "La foto debe ser una imagen válida.",
     )
     .optional(),
-  secondPosition: z.string().trim().max(80).optional(),
+  secondPosition: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
 });
 
 const passwordSchema = z

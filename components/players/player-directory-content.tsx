@@ -27,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { PLAYER_POSITIONS, isPlayerPosition } from "@/lib/player-positions";
 import type { PlayerDirectoryData, PlayerDirectoryItem } from "@/types/players";
 
 interface PlayerDirectoryContentProps {
@@ -43,8 +44,16 @@ const playerSchema = z.object({
   category: z.string().trim().max(80).optional(),
   dni: z.string().trim().max(20).optional(),
   birthDate: z.string().trim().max(20).optional(),
-  position: z.string().trim().max(80).optional(),
-  secondPosition: z.string().trim().max(80).optional(),
+  position: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
+  secondPosition: z
+    .string()
+    .trim()
+    .refine((value) => !value || isPlayerPosition(value), "Elegí una posición válida.")
+    .optional(),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -302,19 +311,33 @@ export function PlayerDirectoryContent({
               </Field>
 
               <Field label="Posición" error={errors.position?.message}>
-                <input
+                <select
                   {...register("position")}
                   disabled={!canWrite}
                   className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                />
+                >
+                  <option value="">Sin posición</option>
+                  {PLAYER_POSITIONS.map((position) => (
+                    <option key={position} value={position}>
+                      {position}
+                    </option>
+                  ))}
+                </select>
               </Field>
 
               <Field label="Segunda posición" error={errors.secondPosition?.message}>
-                <input
+                <select
                   {...register("secondPosition")}
                   disabled={!canWrite}
                   className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                />
+                >
+                  <option value="">Sin segunda posición</option>
+                  {PLAYER_POSITIONS.map((position) => (
+                    <option key={position} value={position}>
+                      {position}
+                    </option>
+                  ))}
+                </select>
               </Field>
 
               <Field label="Observaciones" error={errors.notes?.message}>
