@@ -16,6 +16,8 @@ const PHOTO_POST_WIDTH = 1080;
 const PHOTO_POST_HEIGHT = 1080;
 const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
 const RESULT_PHOTO_BACKGROUND_SRC = "/brand/result-background-photo.jpg";
+const SUPPORTED_RESULT_PHOTO_EXTENSIONS = [".jpeg", ".jpg", ".png", ".webp"];
+const SUPPORTED_RESULT_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type ResultShareFormat = "post" | "post-photo" | "story" | "story-photo";
 type PhotoResultShareFormat = Extract<ResultShareFormat, "post-photo" | "story-photo">;
@@ -104,8 +106,8 @@ export function MatchResultShareButton({
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      setMessage("Cargá una foto para generar este formato.");
+    if (!isSupportedResultPhotoFile(file)) {
+      setMessage("Formato no soportado. Usá una foto JPG, PNG o WebP.");
       input.value = "";
       return;
     }
@@ -128,7 +130,7 @@ export function MatchResultShareButton({
     <div className={cn("grid gap-2", className)}>
       <input
         ref={photoInputRef}
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         className="sr-only"
         onChange={(event) => void handlePhotoInputChange(event)}
         type="file"
@@ -857,6 +859,18 @@ function isPhotoOverlayFormat(format: ResultShareFormat) {
   return format === "story-photo" || format === "post-photo";
 }
 
+function isSupportedResultPhotoFile(file: File) {
+  if (SUPPORTED_RESULT_PHOTO_TYPES.has(file.type)) {
+    return true;
+  }
+
+  const fileName = file.name.toLowerCase();
+
+  return SUPPORTED_RESULT_PHOTO_EXTENSIONS.some((extension) =>
+    fileName.endsWith(extension),
+  );
+}
+
 function drawCenteredText(
   context: CanvasRenderingContext2D,
   text: string,
@@ -1069,7 +1083,7 @@ function loadImage(source: string) {
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("No se pudo cargar una imagen."));
 
-    if (!source.startsWith("data:")) {
+    if (source.startsWith("http://") || source.startsWith("https://")) {
       image.crossOrigin = "anonymous";
     }
 
