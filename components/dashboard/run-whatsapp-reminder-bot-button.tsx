@@ -70,12 +70,11 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intentando abrir el bot local..." : ""}`,
+        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Ahora tocá Abrir bot local." : ""}`,
       );
 
       if (result?.mode === "local-queue") {
         setShowLocalLauncher(true);
-        openLocalBot();
       }
     } catch (error) {
       setMessage(
@@ -113,9 +112,11 @@ export function RunWhatsAppReminderBotButton({
         Correr bot recordatorios
       </Button>
       {showLocalLauncher ? (
-        <Button type="button" variant="secondary" onClick={openLocalBot}>
-          <Bot />
-          Abrir bot local
+        <Button asChild variant="secondary">
+          <a href={LOCAL_WHATSAPP_BOT_URL}>
+            <Bot />
+            Abrir bot local
+          </a>
         </Button>
       ) : null}
       <p className="text-muted-foreground text-xs sm:text-right">
@@ -126,10 +127,6 @@ export function RunWhatsAppReminderBotButton({
       ) : null}
     </div>
   );
-}
-
-function openLocalBot() {
-  window.location.href = LOCAL_WHATSAPP_BOT_URL;
 }
 
 function formatPeriodLabel(period: string) {
