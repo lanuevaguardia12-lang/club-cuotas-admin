@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-import { userToAuditActor } from "@/lib/audit";
+import { systemAuditActor, userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
@@ -8,14 +8,15 @@ import { getDataService } from "@/services/data-service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
-  const user = await getCurrentUser();
+export async function POST(request: NextRequest) {
+  const cronAuthorized = isCronAuthorized(request);
+  const user = cronAuthorized ? null : await getCurrentUser();
 
-  if (!user) {
+  if (!cronAuthorized && !user) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  if (user.role === "admin") {
+  if (user?.role === "admin") {
     return NextResponse.json(
       { message: "Las notificaciones push no estan disponibles para administradores." },
       { status: 403 },
@@ -23,7 +24,17 @@ export async function POST() {
   }
 
   const dataService = getDataService();
-  const subscriptions = await dataService.getPushSubscriptionsForUser(user.id);
+  const body = (await request.json().catch(() => ({}))) as { playerId?: unknown };
+  const playerId = typeof body.playerId === "string" ? body.playerId.trim() : "";
+  const subscriptions = cronAuthorized
+    ? playerId
+      ? await dataService.getPushSubscriptionsForPlayer(playerId)
+      : []
+    : await dataService.getPushSubscriptionsForUser(user!.id);
+
+  if (cronAuthorized && !playerId) {
+    return NextResponse.json({ message: "Tenes que indicar playerId." }, { status: 400 });
+  }
 
   if (subscriptions.length === 0) {
     return NextResponse.json(
@@ -39,8 +50,10 @@ export async function POST() {
     try {
       await sendPushNotification(subscription, {
         title: "Notificaciones activas",
-        body: `Hola ${user.name}. Este dispositivo ya puede recibir avisos de La Nueva Guardia.`,
-        tag: `push-test-${user.id}`,
+        body: cronAuthorized
+          ? "Este dispositivo ya puede recibir avisos de La Nueva Guardia."
+          : `Hola ${user!.name}. Este dispositivo ya puede recibir avisos de La Nueva Guardia.`,
+        tag: `push-test-${cronAuthorized ? playerId : user!.id}`,
         url: "/mi-cuota",
       });
       sent += 1;
@@ -52,12 +65,13 @@ export async function POST() {
 
   await dataService
     .recordAuditEvent({
-      actor: userToAuditActor(user),
+      actor: user ? userToAuditActor(user) : systemAuditActor,
       action: "notification.created",
       entityType: "notification",
-      entityId: user.id,
+      entityId: cronAuthorized ? playerId : user!.id,
       summary: "Notificacion push de prueba enviada.",
       metadata: {
+        playerId: cronAuthorized ? playerId : (user?.playerId ?? ""),
         sent,
         failed,
       },
@@ -65,6 +79,13 @@ export async function POST() {
     .catch(() => undefined);
 
   return NextResponse.json({ failed, sent });
+}
+
+function isCronAuthorized(request: NextRequest) {
+  const expected = process.env.CRON_SECRET;
+  const authorization = request.headers.get("authorization");
+
+  return Boolean(expected && authorization === `Bearer ${expected}`);
 }
 
 async function maybeDeactivateExpiredSubscription(
