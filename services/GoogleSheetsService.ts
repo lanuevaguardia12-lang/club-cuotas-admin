@@ -10222,13 +10222,64 @@ function parseMoney(value: string) {
     return 0;
   }
 
-  const normalized = value
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\.(?=\d{3}(\D|$))/g, "")
-    .replace(",", ".");
+  const raw = String(value)
+    .replace(/\s/g, "")
+    .replace(/[^\d,.-]/g, "");
+
+  if (!raw) {
+    return 0;
+  }
+
+  const sign = raw.includes("-") ? -1 : 1;
+  const unsigned = raw.replace(/-/g, "");
+  const commaIndex = unsigned.lastIndexOf(",");
+  const dotIndex = unsigned.lastIndexOf(".");
+  const normalized =
+    commaIndex >= 0 && dotIndex >= 0
+      ? normalizeMixedMoneySeparators(unsigned, commaIndex > dotIndex ? "," : ".")
+      : normalizeSingleMoneySeparator(unsigned);
   const parsed = Number(normalized);
 
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed * sign : 0;
+}
+
+function normalizeMixedMoneySeparators(value: string, decimalSeparator: "," | ".") {
+  const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+
+  return value
+    .replace(new RegExp(`\\${thousandsSeparator}`, "g"), "")
+    .replace(decimalSeparator, ".");
+}
+
+function normalizeSingleMoneySeparator(value: string) {
+  const separator = value.includes(",") ? "," : value.includes(".") ? "." : "";
+
+  if (!separator) {
+    return value;
+  }
+
+  const parts = value.split(separator);
+  const lastPart = parts.at(-1) ?? "";
+
+  if (parts.length > 2) {
+    const hasDecimalPart = lastPart.length > 0 && lastPart.length !== 3;
+
+    if (!hasDecimalPart) {
+      return parts.join("");
+    }
+
+    return `${parts.slice(0, -1).join("")}.${lastPart}`;
+  }
+
+  const [integerPart = "", decimalPart = ""] = parts;
+  const isThousandsSeparator =
+    decimalPart.length === 3 && integerPart.length > 0 && integerPart !== "0";
+
+  if (isThousandsSeparator) {
+    return `${integerPart}${decimalPart}`;
+  }
+
+  return `${integerPart}.${decimalPart}`;
 }
 
 function parseNumericValue(value: string) {
