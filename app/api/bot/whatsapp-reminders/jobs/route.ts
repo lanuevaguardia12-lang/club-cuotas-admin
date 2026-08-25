@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
   const includeAllRuns = searchParams.get("all") === "1";
   const period = searchParams.get("period");
   const limit = clampLimit(searchParams.get("limit"));
-  const queuedReminders = (await getDataService().getReminderJobs())
+  const dataService = getDataService();
+  const queuedReminders = (await dataService.getReminderJobs())
     .filter((reminder) => reminder.status === "queued")
     .filter(isWhatsAppBotReminder)
     .filter((reminder) => !period || reminder.period === period);
@@ -30,7 +31,9 @@ export async function GET(request: NextRequest) {
     : period
       ? queuedReminders
       : filterLatestReminderPeriod(queuedReminders);
-  const jobs = targetReminders
+  const { reminders: currentReminders, skipped: skippedStale } =
+    await filterCurrentPendingReminders(dataService, targetReminders);
+  const jobs = currentReminders
     .sort(
       (left, right) =>
         new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
@@ -51,6 +54,7 @@ export async function GET(request: NextRequest) {
     jobs,
     latestOnly: !includeAllRuns,
     limit,
+    skippedStale,
     total: jobs.length,
     totalQueued: queuedReminders.length,
   });
@@ -141,6 +145,67 @@ function filterLatestReminderPeriod(reminders: ReminderJob[]) {
   }
 
   return reminders.filter((reminder) => reminder.period === latestPeriod);
+}
+
+async function filterCurrentPendingReminders(
+  dataService: ReturnType<typeof getDataService>,
+  reminders: ReminderJob[],
+) {
+  const remindersByPeriod = new Map<string, ReminderJob[]>();
+
+  for (const reminder of reminders) {
+    const periodReminders = remindersByPeriod.get(reminder.period) ?? [];
+    periodReminders.push(reminder);
+    remindersByPeriod.set(reminder.period, periodReminders);
+  }
+
+  const currentReminders: ReminderJob[] = [];
+  let skipped = 0;
+
+  for (const [period, periodReminders] of remindersByPeriod.entries()) {
+    const dashboard = await dataService.getDashboardData(period).catch(() => null);
+
+    if (!dashboard) {
+      currentReminders.push(...periodReminders);
+      continue;
+    }
+
+    const playersById = new Map(dashboard.players.map((player) => [player.id, player]));
+    const staleReminders: ReminderJob[] = [];
+
+    for (const reminder of periodReminders) {
+      const player = playersById.get(reminder.playerId);
+
+      if (
+        player &&
+        player.status !== "paid" &&
+        player.feeSource !== "none" &&
+        player.feeAmount > 0
+      ) {
+        currentReminders.push(reminder);
+      } else {
+        staleReminders.push(reminder);
+      }
+    }
+
+    if (staleReminders.length === 0) {
+      continue;
+    }
+
+    const results = await Promise.allSettled(
+      staleReminders.map((reminder) =>
+        dataService.updateReminderJobStatus({
+          error: "Omitido porque el jugador ya no figura pendiente en el dashboard.",
+          reminderId: reminder.id,
+          status: "skipped",
+        }),
+      ),
+    );
+
+    skipped += results.filter((result) => result.status === "fulfilled").length;
+  }
+
+  return { reminders: currentReminders, skipped };
 }
 
 function clampLimit(value: string | null) {

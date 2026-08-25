@@ -9,7 +9,7 @@ import {
 } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
 import type { PlayerTableRow } from "@/types/dashboard";
-import type { FeePlayerCalculation } from "@/types/fee-calculator";
+import type { ReminderJob } from "@/types/premium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,9 +68,8 @@ async function runWhatsAppReminderBot(request: NextRequest) {
       ? body.period
       : getCurrentPeriod();
   const dataService = getDataService();
-  const [dashboard, feeCalculatorData, settingsData, reminders] = await Promise.all([
+  const [dashboard, settingsData, reminders] = await Promise.all([
     dataService.getDashboardData(period),
-    dataService.getFeeCalculatorData(period),
     dataService.getAppSettings(),
     dataService.getReminderJobs(),
   ]);
@@ -78,44 +77,29 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     body.messageTemplate,
     settingsData.settings.whatsAppMessageTemplate,
   );
-  const calculationsByPlayer = buildCalculationLookup(
-    feeCalculatorData.playerCalculations,
-  );
-  const quotaIsDefined = feeCalculatorData.summary.quotaStatus === "defined";
   const pendingPlayers = dashboard.players.filter((player) => player.status !== "paid");
-  const pendingPlayersWithDefinedFee = pendingPlayers.filter((player) => {
-    const calculation = getPlayerCalculation(calculationsByPlayer, player);
-
-    return quotaIsDefined && Boolean(calculation) && (calculation?.finalQuota ?? 0) > 0;
-  });
-  const alreadyQueuedPlayerIds = new Set(
-    reminders
-      .filter(
-        (reminder) =>
-          reminder.period === period &&
-          reminder.status === "queued" &&
-          isWhatsAppBotReminder(reminder),
-      )
-      .map((reminder) => reminder.playerId),
+  const pendingPlayersWithDefinedFee = pendingPlayers.filter(hasDashboardFeeDefined);
+  const previousQueuedReminders = reminders.filter(
+    (reminder) =>
+      reminder.period === period &&
+      reminder.status === "queued" &&
+      isWhatsAppBotReminder(reminder),
+  );
+  const replacedQueued = await skipQueuedWhatsAppBotReminders(
+    dataService,
+    previousQueuedReminders,
   );
   const periodLabel = formatPeriod(period);
   const messages: WhatsAppBotPayloadMessage[] = [];
-  let skippedAlreadyQueued = 0;
   let skippedNoPhone = 0;
   let skippedUndefinedFee = pendingPlayers.length - pendingPlayersWithDefinedFee.length;
 
   for (const player of pendingPlayersWithDefinedFee) {
-    const calculation = getPlayerCalculation(calculationsByPlayer, player);
-    const amount = calculation?.finalQuota ?? 0;
-    const fee = formatCurrency(amount);
+    const amount = player.feeAmount;
+    const fee = player.fee && player.fee !== "-" ? player.fee : formatCurrency(amount);
 
-    if (!calculation || amount <= 0) {
+    if (amount <= 0) {
       skippedUndefinedFee += 1;
-      continue;
-    }
-
-    if (alreadyQueuedPlayerIds.has(player.id)) {
-      skippedAlreadyQueued += 1;
       continue;
     }
 
@@ -154,7 +138,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         summary: `Bot de WhatsApp no encontro pendientes con telefono para ${period}.`,
         metadata: {
           period,
-          skippedAlreadyQueued,
+          replacedQueued,
           skippedNoPhone,
           skippedUndefinedFee,
           totalCandidates: pendingPlayers.length,
@@ -168,7 +152,8 @@ async function runWhatsAppReminderBot(request: NextRequest) {
       period,
       periodLabel,
       queued: 0,
-      skippedAlreadyQueued,
+      replacedQueued,
+      skippedAlreadyQueued: 0,
       skippedNoPhone,
       skippedUndefinedFee,
       totalCandidates: pendingPlayers.length,
@@ -209,7 +194,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         metadata: {
           period,
           queued: messages.length,
-          skippedAlreadyQueued,
+          replacedQueued,
           skippedUndefinedFee,
           status: webhookResponse.status,
         },
@@ -222,7 +207,8 @@ async function runWhatsAppReminderBot(request: NextRequest) {
           webhookResponse.message || "El bot externo no pudo recibir los recordatorios.",
         period,
         queued: messages.length,
-        skippedAlreadyQueued,
+        replacedQueued,
+        skippedAlreadyQueued: 0,
         skippedNoPhone,
         skippedUndefinedFee,
         totalCandidates: pendingPlayers.length,
@@ -260,7 +246,8 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         period,
         queued: 0,
         reminderRecordsFailed,
-        skippedAlreadyQueued,
+        replacedQueued,
+        skippedAlreadyQueued: 0,
         skippedNoPhone,
         skippedUndefinedFee,
         totalCandidates: pendingPlayers.length,
@@ -292,8 +279,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
         mode: webhookUrl ? "webhook" : "local-queue",
         period,
         queued: messages.length - reminderRecordsFailed,
+        replacedQueued,
         reminderRecordsFailed,
-        skippedAlreadyQueued,
+        skippedAlreadyQueued: 0,
         skippedNoPhone,
         skippedUndefinedFee,
         totalCandidates: pendingPlayers.length,
@@ -308,8 +296,9 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     period,
     periodLabel,
     queued: messages.length - reminderRecordsFailed,
+    replacedQueued,
     reminderRecordsFailed,
-    skippedAlreadyQueued,
+    skippedAlreadyQueued: 0,
     skippedNoPhone,
     skippedUndefinedFee,
     totalCandidates: pendingPlayers.length,
@@ -386,48 +375,29 @@ function formatPeriod(period: string) {
   }).format(date);
 }
 
-type CalculationLookup = Map<string, FeePlayerCalculation>;
+function hasDashboardFeeDefined(player: PlayerTableRow) {
+  return player.feeSource !== "none" && player.feeAmount > 0;
+}
 
-function buildCalculationLookup(calculations: FeePlayerCalculation[]) {
-  const lookup: CalculationLookup = new Map();
-
-  for (const calculation of calculations) {
-    for (const key of buildPlayerLookupKeys(
-      calculation.playerId,
-      calculation.playerName,
-    )) {
-      if (!lookup.has(key)) {
-        lookup.set(key, calculation);
-      }
-    }
+async function skipQueuedWhatsAppBotReminders(
+  dataService: ReturnType<typeof getDataService>,
+  reminders: ReminderJob[],
+) {
+  if (reminders.length === 0) {
+    return 0;
   }
 
-  return lookup;
-}
+  const results = await Promise.allSettled(
+    reminders.map((reminder) =>
+      dataService.updateReminderJobStatus({
+        error: "Reemplazado por una nueva corrida del bot de WhatsApp.",
+        reminderId: reminder.id,
+        status: "skipped",
+      }),
+    ),
+  );
 
-function getPlayerCalculation(lookup: CalculationLookup, player: PlayerTableRow) {
-  for (const key of buildPlayerLookupKeys(player.id, player.name)) {
-    const calculation = lookup.get(key);
-
-    if (calculation) {
-      return calculation;
-    }
-  }
-
-  return null;
-}
-
-function buildPlayerLookupKeys(...values: string[]) {
-  return values.map(normalizeLookupValue).filter(Boolean);
-}
-
-function normalizeLookupValue(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  return results.filter((result) => result.status === "fulfilled").length;
 }
 
 function formatCurrency(amount: number) {

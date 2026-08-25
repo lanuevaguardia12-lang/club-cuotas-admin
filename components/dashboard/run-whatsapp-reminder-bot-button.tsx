@@ -19,6 +19,7 @@ interface RunWhatsAppReminderBotResponse {
   periodLabel: string;
   queued: number;
   reminderRecordsFailed?: number;
+  replacedQueued?: number;
   skippedAlreadyQueued?: number;
   skippedNoPhone: number;
   skippedUndefinedFee?: number;
@@ -69,7 +70,7 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Ya estaban en cola ${result?.skippedAlreadyQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intentando abrir el bot local..." : ""}`,
+        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intentando abrir el bot local..." : ""}`,
       );
 
       if (result?.mode === "local-queue") {
