@@ -482,6 +482,9 @@ const accountProfileHeaders = [
   "actualizado_en",
 ];
 
+const MAX_PROFILE_PHOTO_DATA_URL_LENGTH = 45000;
+const PROFILE_PHOTO_DATA_URL_PATTERN = /^data:image\/(png|jpeg|webp);base64,/;
+
 const playerAttendanceSnapshotHeaders = [
   "id",
   "jugador_id",
@@ -4219,11 +4222,9 @@ function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
           parseDate(pick(record, ["fecha_nacimiento", "birth_date", "nacimiento"])) ?? "",
         email: pick(record, ["email", "correo", "mail"]),
         phone: pick(record, ["telefono", "phone", "whatsapp", "celular"]),
-        profilePhotoDataUrl: pick(record, [
-          "foto_perfil",
-          "profile_photo",
-          "profile_photo_data_url",
-        ]),
+        profilePhotoDataUrl: sanitizeProfilePhotoDataUrl(
+          pick(record, ["foto_perfil", "profile_photo", "profile_photo_data_url"]),
+        ),
         passwordHash: pick(record, ["password_hash", "hash_password"]),
         passwordUpdatedAt:
           parseDateTime(
@@ -4233,6 +4234,24 @@ function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
       },
     ];
   });
+}
+
+function sanitizeProfilePhotoDataUrl(value?: string) {
+  const dataUrl = value?.trim() ?? "";
+
+  if (!dataUrl) {
+    return "";
+  }
+
+  if (dataUrl.length > MAX_PROFILE_PHOTO_DATA_URL_LENGTH) {
+    return "";
+  }
+
+  if (!PROFILE_PHOTO_DATA_URL_PATTERN.test(dataUrl)) {
+    return "";
+  }
+
+  return dataUrl;
 }
 
 function mapRowsToPlayerAttendanceSnapshots(
@@ -4303,7 +4322,7 @@ function buildAccountProfile(
     birthDate: account?.birthDate || player?.birthDate || "",
     email: account?.email ?? "",
     phone: account?.phone || player?.phone || "",
-    profilePhotoDataUrl: account?.profilePhotoDataUrl ?? "",
+    profilePhotoDataUrl: sanitizeProfilePhotoDataUrl(account?.profilePhotoDataUrl),
     player: player
       ? {
           id: player.id,
@@ -4336,7 +4355,7 @@ function buildAccountProfileFromInput(
     birthDate: input.birthDate?.trim() ?? existing?.birthDate ?? "",
     email: input.email?.trim() ?? "",
     phone: input.phone?.trim() ?? "",
-    profilePhotoDataUrl: input.profilePhotoDataUrl?.trim() ?? "",
+    profilePhotoDataUrl: sanitizeProfilePhotoDataUrl(input.profilePhotoDataUrl),
     passwordHash: existing?.passwordHash ?? "",
     passwordUpdatedAt: existing?.passwordUpdatedAt ?? "",
     updatedAt: new Date().toISOString(),

@@ -19,7 +19,7 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -76,6 +76,7 @@ export function AccountContent({ profile }: AccountContentProps) {
   const [profileMessage, setProfileMessage] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [photoFailed, setPhotoFailed] = useState(false);
   const {
     formState: { errors: profileErrors, isSubmitting: profileSubmitting },
     handleSubmit: handleProfileSubmit,
@@ -108,7 +109,8 @@ export function AccountContent({ profile }: AccountContentProps) {
     },
     resolver: zodResolver(passwordSchema),
   });
-  const photoDataUrl = watch("profilePhotoDataUrl");
+  const watchedPhotoDataUrl = watch("profilePhotoDataUrl");
+  const photoDataUrl = photoFailed ? "" : watchedPhotoDataUrl;
   const player = profile.player;
   const attendance = player?.attendance;
   const birthDate = player?.birthDate || profile.birthDate;
@@ -116,6 +118,10 @@ export function AccountContent({ profile }: AccountContentProps) {
     (position): position is string => Boolean(position),
   );
   const isLoading = profileSubmitting || passwordSubmitting || Boolean(loadingMessage);
+
+  useEffect(() => {
+    setPhotoFailed(false);
+  }, [watchedPhotoDataUrl]);
 
   async function onProfileSubmit(values: ProfileFormValues) {
     setProfileMessage("");
@@ -180,6 +186,7 @@ export function AccountContent({ profile }: AccountContentProps) {
                   src={photoDataUrl}
                   alt="Foto de perfil"
                   className="size-full object-cover"
+                  onError={() => setPhotoFailed(true)}
                 />
               ) : (
                 <UserRound className="size-11 text-white/80" />
