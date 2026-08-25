@@ -33,7 +33,7 @@ En macOS tambien podes iniciar el bot sin escribir en la terminal:
 2. Desde la app web, tocá `Correr bot recordatorios`.
 3. La web intenta abrir el launcher automáticamente. Si el navegador lo bloquea,
    tocá `Abrir bot local`.
-4. Se abre Google Chrome con WhatsApp Web.
+4. Se abre la ventana de WhatsApp Web controlada por el bot.
 5. Si aparece QR, escanealo desde WhatsApp.
 6. El bot queda consultando la cola en segundo plano.
 
@@ -56,7 +56,8 @@ cd bot/whatsapp
 
 Desde ese momento el bot arranca solo cuando iniciás sesión en la Mac y queda
 consultando la cola. En la app web solo tocás `Correr bot recordatorios`; no hace
-falta abrir el launcher ni una terminal.
+falta abrir el launcher ni una terminal. Usá esta opción después de haber
+escaneado el QR al menos una vez con el modo visible.
 
 Para desinstalarlo:
 
@@ -82,8 +83,17 @@ WhatsApp > Dispositivos vinculados > Vincular un dispositivo
 - `WHATSAPP_BOT_SEND_DELAY_MS`: `60000` deja 1 minuto entre chat y chat.
 - `WHATSAPP_BOT_HEADLESS`: `false` abre WhatsApp Web visible para escanear el QR;
   `true` lo deja en segundo plano y muestra el QR en la terminal.
-- `WHATSAPP_BOT_BROWSER_PATH`: ruta opcional del navegador. En macOS detecta
-  Google Chrome automaticamente si esta instalado.
+- `WHATSAPP_BOT_BROWSER_PATH`: ruta opcional del navegador. En macOS, si se deja
+  vacía, usa Google Chrome instalado porque WhatsApp Web rechaza algunos
+  navegadores internos de Puppeteer.
+- `WHATSAPP_BOT_USE_PUPPETEER_BROWSER`: `true` fuerza el navegador interno de
+  Puppeteer. No es lo recomendado para WhatsApp Web.
+- `WHATSAPP_BOT_USER_AGENT`: User-Agent opcional. Por defecto usa uno compatible
+  con WhatsApp Web.
+- `WHATSAPP_BOT_READY_TIMEOUT_MS`: tiempo máximo de espera para que WhatsApp Web
+  llegue a listo. Por defecto son `120000` milisegundos.
+- `WHATSAPP_BOT_CLIENT_ID`: nombre de la sesión local. Por defecto usa
+  `club-cuotas-reminders-v2`.
 
 ## Importante
 

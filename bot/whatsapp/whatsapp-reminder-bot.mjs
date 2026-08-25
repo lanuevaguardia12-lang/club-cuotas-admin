@@ -16,19 +16,35 @@ const runnerSecret = requiredEnv("WHATSAPP_BOT_RUNNER_SECRET");
 const pollIntervalMs = readPositiveNumber("WHATSAPP_BOT_POLL_INTERVAL_MS", 10_000);
 const batchLimit = readPositiveNumber("WHATSAPP_BOT_BATCH_LIMIT", 5);
 const sendDelayMs = readPositiveNumber("WHATSAPP_BOT_SEND_DELAY_MS", 60_000);
+const readyTimeoutMs = readPositiveNumber("WHATSAPP_BOT_READY_TIMEOUT_MS", 120_000);
 const defaultCountryCode = process.env.WHATSAPP_BOT_DEFAULT_COUNTRY_CODE ?? "549";
 const dryRun = parseBoolean(process.env.WHATSAPP_BOT_DRY_RUN);
 const headless = parseBoolean(process.env.WHATSAPP_BOT_HEADLESS);
 const browserExecutablePath = getBrowserExecutablePath();
+const whatsappUserAgent =
+  process.env.WHATSAPP_BOT_USER_AGENT?.trim() ||
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const statusFile = path.resolve(
+  __dirname,
+  process.env.WHATSAPP_BOT_STATUS_FILE ?? "./whatsapp-bot-status.json",
+);
+const clientId =
+  process.env.WHATSAPP_BOT_CLIENT_ID?.trim() || "club-cuotas-reminders-v2";
 const sessionPath = path.resolve(
   __dirname,
   process.env.WHATSAPP_SESSION_PATH ?? "./.wwebjs_auth",
 );
+const browserSessionPath = path.join(sessionPath, `session-${clientId}`);
 let polling = false;
+let ready = false;
+let qrFallbackReported = false;
+let shuttingDown = false;
+
+cleanupStaleBrowserLocks(browserSessionPath);
 
 const client = new Client({
   authStrategy: new LocalAuth({
-    clientId: "club-cuotas-reminders",
+    clientId,
     dataPath: sessionPath,
   }),
   puppeteer: {
@@ -37,40 +53,116 @@ const client = new Client({
     defaultViewport: null,
     headless,
   },
+  userAgent: whatsappUserAgent,
+});
+
+const readyTimeout = setTimeout(() => {
+  if (ready) {
+    return;
+  }
+
+  writeStatus("startup-timeout", {
+    message: `WhatsApp no llego a listo en ${readyTimeoutMs}ms.`,
+  });
+  errorLog(`WhatsApp no llego a listo en ${readyTimeoutMs}ms. Reinicia el bot.`);
+  void shutdown("startup-timeout", 1);
+}, readyTimeoutMs);
+const startupInspector = setInterval(inspectStartupPage, 15_000);
+
+writeStatus("starting", {
+  appUrl,
+  batchLimit,
+  browser: browserExecutablePath || "puppeteer-default",
+  dryRun,
+  headless,
+  pollIntervalMs,
+  sendDelayMs,
+});
+
+log("Inicializando WhatsApp Web...");
+log(
+  `Config: dryRun=${dryRun} headless=${headless} browser=${browserExecutablePath || "puppeteer-default"} delay=${sendDelayMs}ms`,
+);
+
+client.on("loading_screen", (percent, message) => {
+  writeStatus("loading", { message, percent });
+  log(`WhatsApp cargando ${percent}% ${message ?? ""}`.trim());
 });
 
 client.on("qr", (qr) => {
+  clearTimeout(readyTimeout);
+  writeStatus("qr", {
+    message: "WhatsApp necesita escanear QR.",
+  });
+
   if (!headless) {
-    console.log(
+    log(
       "WhatsApp Web esta abierto. Escanea el QR desde esa ventana para iniciar sesion.",
     );
     return;
   }
 
-  console.log("Escanea este QR con WhatsApp para iniciar sesion:");
+  log("Escanea este QR con WhatsApp para iniciar sesion:");
   qrcode.generate(qr, { small: true });
 });
 
 client.on("authenticated", () => {
-  console.log("WhatsApp autenticado. La sesion queda guardada en:", sessionPath);
+  writeStatus("authenticated", { sessionPath });
+  log(`WhatsApp autenticado. La sesion queda guardada en: ${sessionPath}`);
 });
 
 client.on("ready", () => {
-  console.log("Bot de WhatsApp listo. Consultando trabajos cada", pollIntervalMs, "ms.");
+  ready = true;
+  clearTimeout(readyTimeout);
+  clearInterval(startupInspector);
+  writeStatus("ready", { pollIntervalMs });
+  log(`Bot de WhatsApp listo. Consultando trabajos cada ${pollIntervalMs} ms.`);
   pollQueue();
   setInterval(pollQueue, pollIntervalMs);
 });
 
+client.on("change_state", (state) => {
+  writeStatus("state-change", { state });
+  log(`Estado de WhatsApp: ${state}`);
+});
+
 client.on("auth_failure", (message) => {
-  console.error("Fallo la autenticacion de WhatsApp:", message);
+  clearInterval(startupInspector);
+  writeStatus("auth-failure", { message });
+  errorLog(`Fallo la autenticacion de WhatsApp: ${message}`);
 });
 
 client.on("disconnected", (reason) => {
-  console.error("WhatsApp se desconecto:", reason);
+  clearInterval(startupInspector);
+  writeStatus("disconnected", { reason });
+  errorLog(`WhatsApp se desconecto: ${reason}`);
 });
 
-console.log("Inicializando WhatsApp Web...");
-client.initialize();
+client.initialize().catch(async (error) => {
+  writeStatus("startup-error", { message: getErrorMessage(error) });
+  errorLog(`No pude inicializar WhatsApp Web: ${getErrorMessage(error)}`);
+  await shutdown("startup-error", 1);
+});
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+
+process.on("unhandledRejection", (error) => {
+  writeStatus("unhandled-rejection", { message: getErrorMessage(error) });
+  errorLog(`Promesa rechazada sin manejar: ${getErrorMessage(error)}`);
+  void shutdown("unhandled-rejection", 1);
+});
+
+process.on("uncaughtException", (error) => {
+  writeStatus("uncaught-exception", { message: getErrorMessage(error) });
+  errorLog(`Error no capturado: ${getErrorMessage(error)}`);
+  void shutdown("uncaught-exception", 1);
+});
 
 async function pollQueue() {
   if (polling) {
@@ -83,18 +175,21 @@ async function pollQueue() {
     const jobs = await fetchJobs();
 
     if (jobs.length === 0) {
-      console.log("Sin trabajos pendientes.");
+      writeStatus("idle", { jobs: 0 });
+      log("Sin trabajos pendientes.");
       return;
     }
 
-    console.log(`Trabajos encontrados: ${jobs.length}`);
+    writeStatus("processing", { jobs: jobs.length });
+    log(`Trabajos encontrados: ${jobs.length}`);
 
     for (const job of jobs) {
       await processJob(job);
       await sleep(sendDelayMs);
     }
   } catch (error) {
-    console.error("No se pudo consultar/procesar la cola:", error);
+    writeStatus("error", { message: getErrorMessage(error) });
+    errorLog(`No se pudo consultar/procesar la cola: ${getErrorMessage(error)}`);
   } finally {
     polling = false;
   }
@@ -129,19 +224,31 @@ async function processJob(job) {
 
   try {
     if (dryRun) {
-      console.log("[DRY_RUN]", phone, job.playerName, job.message);
+      log(`[DRY_RUN] ${phone} ${job.playerName} ${job.message}`);
       return;
     } else {
       await client.sendMessage(`${phone}@c.us`, job.message);
     }
 
     await updateJob(job.id, "sent");
-    console.log("Enviado:", job.period, job.playerName, phone);
+    writeStatus("sent", {
+      phone,
+      playerId: job.playerId,
+      playerName: job.playerName,
+      period: job.period,
+    });
+    log(`Enviado: ${job.period} ${job.playerName} ${phone}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error desconocido.";
+    const message = getErrorMessage(error);
 
     await updateJob(job.id, "failed", message);
-    console.error("Fallo:", job.period, job.playerName, message);
+    writeStatus("failed", {
+      message,
+      playerId: job.playerId,
+      playerName: job.playerName,
+      period: job.period,
+    });
+    errorLog(`Fallo: ${job.period} ${job.playerName} ${message}`);
   }
 }
 
@@ -157,6 +264,48 @@ async function updateJob(reminderId, status, error) {
 
   if (!response.ok) {
     throw new Error(`No se pudo actualizar ${reminderId}: ${await response.text()}`);
+  }
+}
+
+async function inspectStartupPage() {
+  if (ready || !client.pupPage) {
+    return;
+  }
+
+  try {
+    const pageText = await client.pupPage.evaluate(
+      () => document.body?.innerText?.slice(0, 1200) ?? "",
+    );
+    const normalizedText = pageText.replace(/\s+/g, " ").trim();
+
+    if (
+      normalizedText.includes("Escanea para iniciar sesión") ||
+      normalizedText.includes("Escanea el código QR")
+    ) {
+      if (qrFallbackReported) {
+        return;
+      }
+
+      qrFallbackReported = true;
+      clearTimeout(readyTimeout);
+
+      writeStatus("qr", {
+        message: headless
+          ? "La sesion de WhatsApp vencio. Reinicia el bot en modo visible para escanear QR."
+          : "WhatsApp necesita escanear QR en la ventana abierta por el bot.",
+      });
+      log(
+        headless
+          ? "WhatsApp pide QR. Ejecuta el bot con WHATSAPP_BOT_HEADLESS=false para vincularlo."
+          : "WhatsApp pide QR. Escanea la ventana abierta por el bot.",
+      );
+
+      if (headless) {
+        void shutdown("qr-headless", 1);
+      }
+    }
+  } catch (error) {
+    errorLog(`No pude inspeccionar la pantalla inicial: ${getErrorMessage(error)}`);
   }
 }
 
@@ -184,6 +333,28 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function shutdown(reason, exitCode = 0) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+  clearTimeout(readyTimeout);
+  clearInterval(startupInspector);
+  writeStatus("stopping", { reason });
+  log(`Cerrando bot: ${reason}`);
+
+  try {
+    if (client.pupBrowser?.isConnected?.()) {
+      await client.pupBrowser.close();
+    }
+  } catch (error) {
+    errorLog(`No pude cerrar Chrome limpiamente: ${getErrorMessage(error)}`);
+  }
+
+  process.exit(exitCode);
+}
+
 function requiredEnv(name) {
   const value = process.env[name]?.trim();
 
@@ -209,6 +380,10 @@ function parseBoolean(value) {
 }
 
 function getBrowserExecutablePath() {
+  if (parseBoolean(process.env.WHATSAPP_BOT_USE_PUPPETEER_BROWSER)) {
+    return undefined;
+  }
+
   const configuredPath = process.env.WHATSAPP_BOT_BROWSER_PATH?.trim();
 
   if (configuredPath) {
@@ -258,4 +433,57 @@ function loadLocalEnv() {
       process.env[key] = value;
     }
   }
+}
+
+function cleanupStaleBrowserLocks(profilePath) {
+  if (parseBoolean(process.env.WHATSAPP_BOT_SKIP_LOCK_CLEANUP)) {
+    return;
+  }
+
+  for (const lockFile of [
+    "SingletonLock",
+    "SingletonSocket",
+    "SingletonCookie",
+    "DevToolsActivePort",
+    "RunningChromeVersion",
+  ]) {
+    const target = path.join(profilePath, lockFile);
+
+    if (!fs.existsSync(target)) {
+      continue;
+    }
+
+    try {
+      fs.rmSync(target, { force: true, recursive: true });
+      log(`Lock viejo removido: ${target}`);
+    } catch (error) {
+      errorLog(`No pude remover lock viejo ${target}: ${getErrorMessage(error)}`);
+    }
+  }
+}
+
+function log(message) {
+  console.log(`${new Date().toISOString()} ${message}`);
+}
+
+function errorLog(message) {
+  console.error(`${new Date().toISOString()} ${message}`);
+}
+
+function writeStatus(status, extra = {}) {
+  const payload = {
+    ...extra,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    fs.writeFileSync(statusFile, `${JSON.stringify(payload, null, 2)}\n`);
+  } catch {
+    // El status es diagnostico; el bot puede seguir aunque no pueda escribirlo.
+  }
+}
+
+function getErrorMessage(error) {
+  return error instanceof Error ? error.message : "Error desconocido.";
 }
