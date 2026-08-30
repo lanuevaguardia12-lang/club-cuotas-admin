@@ -3,8 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
+import {
+  applyLeagueFixtureScheduleOverrides,
+  getLeagueFixtureData,
+} from "@/lib/league-fixture";
+import { sendCoachMatchRegistrationNotification } from "@/lib/match-registration-notifications";
 import { getDataService } from "@/services/data-service";
+import type { IDataService } from "@/services/IDataService";
+import type { LeagueFixtureMatch } from "@/types/fixture";
 
 export interface FixtureScheduleActionResult {
   ok: boolean;
@@ -66,7 +74,18 @@ export async function updateFixtureMatchSchedule(
   }
 
   try {
-    await getDataService().updateFixtureMatchSchedule({
+    const dataService = getDataService();
+    const resultWasLoaded =
+      typeof parsed.data.localScore === "number" &&
+      typeof parsed.data.visitorScore === "number";
+    const match = resultWasLoaded
+      ? await findFixtureMatch(dataService, parsed.data.matchId).catch((error) => {
+          console.error("No se pudo encontrar el partido para notificar al DT", error);
+          return undefined;
+        })
+      : undefined;
+
+    await dataService.updateFixtureMatchSchedule({
       dateTime: parsed.data.dateTime,
       goalScorers: parsed.data.goalScorers,
       localPenaltyScore: parsed.data.localPenaltyScore,
@@ -77,6 +96,16 @@ export async function updateFixtureMatchSchedule(
       visitorPenaltyScore: parsed.data.visitorPenaltyScore,
       visitorScore: parsed.data.visitorScore,
     });
+
+    if (match) {
+      await sendCoachMatchRegistrationNotification({
+        actor: userToAuditActor(user),
+        match,
+      }).catch((error) => {
+        console.error("No se pudo notificar al DT para registrar jugadores", error);
+      });
+    }
+
     revalidatePath("/fixture");
     revalidatePath("/player-of-match");
 
@@ -93,4 +122,23 @@ export async function updateFixtureMatchSchedule(
           : "No se pudo actualizar la fecha del partido.",
     };
   }
+}
+
+async function findFixtureMatch(
+  dataService: IDataService,
+  matchId: string,
+): Promise<LeagueFixtureMatch | undefined> {
+  const [fixture, overrides] = await Promise.all([
+    getLeagueFixtureData(),
+    dataService.getFixtureMatchScheduleOverrides().catch(() => []),
+  ]);
+  const data = applyLeagueFixtureScheduleOverrides(fixture, overrides);
+  const matches = [
+    ...data.allClubMatches,
+    ...data.clubMatches,
+    ...data.matches,
+    ...data.allCompetitionMatches,
+  ];
+
+  return matches.find((match) => match.id === matchId);
 }
