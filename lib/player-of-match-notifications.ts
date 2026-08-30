@@ -5,7 +5,8 @@ import { unstable_expireTag } from "next/cache";
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
 import { getConfiguredAuthUsers } from "@/services/auth/env-admin-user-store";
-import type { AuthUser } from "@/types/auth";
+import type { AccountUser } from "@/types/account";
+import type { AuthRole, AuthUser } from "@/types/auth";
 import type { PlayerOfMatchMatch } from "@/types/player-of-match";
 import type {
   AppNotification,
@@ -31,6 +32,7 @@ export interface PlayerOfMatchNotificationDetail {
   playerId?: string;
   recentNotificationMatchIds: string[];
   reasons: string[];
+  role?: AuthRole;
   sent: number;
   sentMatchIds: string[];
   skipped: number;
@@ -46,6 +48,7 @@ export interface PlayerOfMatchNotificationReportItem {
   notifiedMatchIds: string[];
   playerId?: string;
   reasons: string[];
+  role?: AuthRole;
   sent: number;
   subscriptionCount: number;
   userId: string;
@@ -100,7 +103,6 @@ export async function sendOpenPlayerOfMatchNotifications({
   trigger: "cron" | "match-update" | "manual" | "webhook";
 }): Promise<SendOpenPlayerOfMatchNotificationsResult> {
   const dataService = getDataService();
-  const hasTarget = Boolean(targetPlayerId || targetUserId);
   const [subscriptions, premium] = await Promise.all([
     targetPlayerId
       ? dataService.getPushSubscriptionsForPlayer(targetPlayerId)
@@ -113,7 +115,7 @@ export async function sendOpenPlayerOfMatchNotifications({
   ]);
   const recipients = await buildNotificationRecipients({
     dataService,
-    includeConfiguredUsers: includeDetails || !hasTarget,
+    includeConfiguredUsers: true,
     subscriptions,
     targetPlayerId,
     targetUserId,
@@ -140,13 +142,14 @@ export async function sendOpenPlayerOfMatchNotifications({
   let userDataFailed = 0;
 
   for (const recipient of recipients.values()) {
-    const { userId, userSubscriptions } = recipient;
+    const { role = "player", userId, userSubscriptions } = recipient;
     const userPlayerId = recipient.playerId ?? userSubscriptions[0]?.playerId;
     const detail = createNotificationDetail(
       userId,
       userPlayerId,
       userSubscriptions,
       recipient.userName,
+      role,
     );
     const data = await dataService
       .getPlayerOfMatchData(userId, userPlayerId)
@@ -290,7 +293,7 @@ export async function sendOpenPlayerOfMatchNotifications({
               title: notification.title,
               message: notification.message,
               type: "info",
-              targetRole: "player",
+              targetRole: role,
               targetUserId: userId,
               targetPlayerId: userPlayerId,
               referenceId,
@@ -462,6 +465,7 @@ async function buildNotificationRecipients({
     string,
     {
       playerId?: string;
+      role?: AuthRole;
       userId: string;
       userName?: string;
       userSubscriptions: PushSubscriptionRecord[];
@@ -471,6 +475,7 @@ async function buildNotificationRecipients({
   for (const [userId, userSubscriptions] of subscriptionsByUser) {
     recipients.set(userId, {
       playerId: userSubscriptions[0]?.playerId,
+      role: "player",
       userId,
       userSubscriptions,
     });
@@ -480,9 +485,9 @@ async function buildNotificationRecipients({
     return recipients;
   }
 
-  const configuredPlayerUsers = getConfiguredPlayerUsers();
+  const configuredUsers = await getConfiguredNotificationUsers(dataService);
 
-  if (configuredPlayerUsers.length === 0 && !targetPlayerId && !targetUserId) {
+  if (configuredUsers.length === 0 && !targetPlayerId && !targetUserId) {
     const fallbackSubscriptions = await dataService
       .getPushSubscriptions()
       .catch(() => []);
@@ -491,6 +496,7 @@ async function buildNotificationRecipients({
     for (const [userId, userSubscriptions] of fallbackSubscriptionsByUser) {
       recipients.set(userId, {
         playerId: userSubscriptions[0]?.playerId,
+        role: "player",
         userId,
         userSubscriptions,
       });
@@ -500,7 +506,7 @@ async function buildNotificationRecipients({
   }
 
   await Promise.all(
-    configuredPlayerUsers.map(async (user) => {
+    configuredUsers.map(async (user) => {
       if (targetUserId && user.id !== targetUserId) {
         return;
       }
@@ -510,22 +516,29 @@ async function buildNotificationRecipients({
       }
 
       const current = recipients.get(user.id);
-      const playerSubscriptions = user.playerId
-        ? await dataService.getPushSubscriptionsForPlayer(user.playerId).catch(() => [])
-        : [];
-      const userSubscriptions =
-        playerSubscriptions.length > 0
-          ? playerSubscriptions
+      const primarySubscriptions =
+        user.role === "coach"
+          ? await dataService.getPushSubscriptionsForUser(user.id).catch(() => [])
+          : user.playerId
+            ? await dataService
+                .getPushSubscriptionsForPlayer(user.playerId)
+                .catch(() => [])
+            : [];
+      const fallbackSubscriptions =
+        primarySubscriptions.length > 0
+          ? primarySubscriptions
           : await dataService.getPushSubscriptionsForUser(user.id).catch(() => []);
+      const userSubscriptions = mergeSubscriptions(
+        current?.userSubscriptions ?? [],
+        fallbackSubscriptions,
+      );
 
       recipients.set(user.id, {
         playerId: current?.playerId ?? user.playerId ?? userSubscriptions[0]?.playerId,
+        role: user.role,
         userId: user.id,
         userName: user.name,
-        userSubscriptions:
-          current?.userSubscriptions && current.userSubscriptions.length > 0
-            ? current.userSubscriptions
-            : userSubscriptions,
+        userSubscriptions,
       });
     }),
   );
@@ -541,14 +554,59 @@ function countRecipientsWithSubscriptions(
   ).length;
 }
 
-function getConfiguredPlayerUsers(): AuthUser[] {
+async function getConfiguredNotificationUsers(
+  dataService: ReturnType<typeof getDataService>,
+): Promise<AuthUser[]> {
+  const users = new Map<string, AuthUser>();
+
   try {
-    return getConfiguredAuthUsers().filter(
-      (user) => user.role === "player" && Boolean(user.playerId),
-    );
+    for (const user of getConfiguredAuthUsers().filter(isMvpNotificationUser)) {
+      users.set(user.id, user);
+    }
   } catch {
-    return [];
+    // Configured users are optional for notification fan-out.
   }
+
+  const accountUsers = await dataService.getAccountUsers().catch(() => []);
+
+  for (const account of accountUsers.filter(isMvpNotificationAccount)) {
+    users.set(account.userId, {
+      id: account.userId,
+      name: account.name,
+      playerId: account.playerId,
+      role: account.role,
+      username: account.username,
+    });
+  }
+
+  return [...users.values()];
+}
+
+function isMvpNotificationUser(user: AuthUser) {
+  return user.role === "coach" || (user.role === "player" && Boolean(user.playerId));
+}
+
+function isMvpNotificationAccount(account: AccountUser) {
+  return (
+    account.role === "coach" || (account.role === "player" && Boolean(account.playerId))
+  );
+}
+
+function mergeSubscriptions(
+  left: PushSubscriptionRecord[],
+  right: PushSubscriptionRecord[],
+) {
+  const subscriptions = [...left];
+
+  for (const subscription of right) {
+    if (
+      !subscriptions.some((candidate) => candidate.endpoint === subscription.endpoint)
+    ) {
+      subscriptions.push(subscription);
+    }
+  }
+
+  return subscriptions;
 }
 
 function createNotificationDetail(
@@ -556,6 +614,7 @@ function createNotificationDetail(
   playerId: string | undefined,
   subscriptions: PushSubscriptionRecord[],
   userName?: string,
+  role?: AuthRole,
 ): PlayerOfMatchNotificationDetail {
   return {
     alreadyVotedMatchIds: [],
@@ -569,6 +628,7 @@ function createNotificationDetail(
     playerId,
     recentNotificationMatchIds: [],
     reasons: [],
+    role,
     sent: 0,
     sentMatchIds: [],
     skipped: 0,
@@ -815,6 +875,7 @@ function createReportItem(
     notifiedMatchIds: detail.notifiedMatchIds,
     playerId: detail.playerId,
     reasons: detail.reasons,
+    role: detail.role,
     sent: detail.sent,
     subscriptionCount: detail.subscriptionCount,
     userId: detail.userId,

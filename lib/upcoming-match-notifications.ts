@@ -8,6 +8,9 @@ import {
 } from "@/lib/league-fixture";
 import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
+import { getConfiguredAuthUsers } from "@/services/auth/env-admin-user-store";
+import type { AccountUser } from "@/types/account";
+import type { AuthUser } from "@/types/auth";
 import type { LeagueFixtureMatch } from "@/types/fixture";
 import type { AuditActor, PushSubscriptionRecord } from "@/types/premium";
 
@@ -43,7 +46,7 @@ export async function sendUpcomingMatchReminderNotifications({
     addDaysToDateIso(getArgentinaDateIso(now), days),
   );
   const targetDateSet = new Set(targetDates);
-  const [rawFixture, fixtureScheduleOverrides, subscriptions, notifications] =
+  const [rawFixture, fixtureScheduleOverrides, subscriptions, notifications, coachUsers] =
     await Promise.all([
       getLeagueFixtureData(),
       dataService.getFixtureMatchScheduleOverrides().catch(() => []),
@@ -56,6 +59,9 @@ export async function sendUpcomingMatchReminderNotifications({
             .getNotifications()
             .then((records) => ({ notifications: records }))
             .catch(() => ({ notifications: [] })),
+      targetPlayerId
+        ? Promise.resolve([] as AuthUser[])
+        : getConfiguredCoachUsers(dataService),
     ]);
   const fixture = applyLeagueFixtureScheduleOverrides(
     rawFixture,
@@ -69,7 +75,13 @@ export async function sendUpcomingMatchReminderNotifications({
         (typeof match.dateIso === "string" && targetDateSet.has(match.dateIso))),
   );
   const matches = forceNextMatch ? candidateMatches.slice(0, 1) : candidateMatches;
-  const subscriptionsByUser = groupPlayerSubscriptionsByUser(subscriptions);
+  const coachUserIds = new Set(coachUsers.map((coach) => coach.id));
+  const subscriptionsByUser = groupPlayerSubscriptionsByUser(
+    subscriptions.filter((subscription) => !coachUserIds.has(subscription.userId)),
+  );
+  const coachSubscriptionsByUser = groupSubscriptionsByUser(
+    subscriptions.filter((subscription) => coachUserIds.has(subscription.userId)),
+  );
   const alreadyNotified = new Set(
     notifications.notifications
       .map((notification) => notification.referenceId)
@@ -84,6 +96,7 @@ export async function sendUpcomingMatchReminderNotifications({
   for (const match of matches) {
     const rival = getRivalName(match);
     const message = `Prepara los botines tu proximo partido es vs ${rival}`;
+    const coachMessage = `Vamos con todo: el próximo rival es ${rival}.`;
 
     for (const [userId, userSubscriptions] of subscriptionsByUser) {
       const playerId = userSubscriptions[0]?.playerId;
@@ -139,7 +152,67 @@ export async function sendUpcomingMatchReminderNotifications({
         }
       }
     }
+
+    for (const coach of coachUsers) {
+      const userSubscriptions = coachSubscriptionsByUser.get(coach.id) ?? [];
+      const referenceId = getCoachUpcomingMatchReferenceId(coach.id, match);
+
+      if (
+        (!ignoreAlreadyNotified && alreadyNotified.has(referenceId)) ||
+        notifiedThisRun.has(referenceId)
+      ) {
+        skipped += 1;
+        continue;
+      }
+
+      if (userSubscriptions.length === 0) {
+        skipped += 1;
+        continue;
+      }
+
+      let matchSent = 0;
+
+      for (const subscription of userSubscriptions) {
+        try {
+          await sendPushNotification(subscription, {
+            title: "Próximo partido",
+            body: coachMessage,
+            tag: referenceId,
+            url: "/fixture",
+          });
+          sent += 1;
+          matchSent += 1;
+        } catch (error) {
+          failed += 1;
+          await maybeDeactivateExpiredSubscription(
+            dataService,
+            subscription.endpoint,
+            error,
+          );
+        }
+      }
+
+      if (matchSent > 0) {
+        notifiedThisRun.add(referenceId);
+        try {
+          await dataService.createNotification({
+            title: "Próximo partido",
+            message: coachMessage,
+            type: "info",
+            targetRole: "coach",
+            targetUserId: coach.id,
+            targetPlayerId: coach.playerId,
+            referenceId,
+            url: "/fixture",
+          });
+        } catch {
+          notificationRecordsFailed += 1;
+        }
+      }
+    }
   }
+
+  const users = subscriptionsByUser.size + coachSubscriptionsByUser.size;
 
   await dataService
     .recordAuditEvent({
@@ -151,6 +224,7 @@ export async function sendUpcomingMatchReminderNotifications({
         " o ",
       )}.`,
       metadata: {
+        coaches: coachSubscriptionsByUser.size,
         failed,
         matches: matches.length,
         notificationRecordsFailed,
@@ -158,7 +232,7 @@ export async function sendUpcomingMatchReminderNotifications({
         skipped,
         targetDates: targetDates.join(","),
         targetPlayerId: targetPlayerId ?? null,
-        users: subscriptionsByUser.size,
+        users,
       },
     })
     .catch(() => undefined);
@@ -171,7 +245,7 @@ export async function sendUpcomingMatchReminderNotifications({
     skipped,
     targetPlayerId,
     targetDates,
-    users: subscriptionsByUser.size,
+    users,
   };
 }
 
@@ -197,6 +271,20 @@ function groupPlayerSubscriptionsByUser(subscriptions: PushSubscriptionRecord[])
   }, new Map<string, PushSubscriptionRecord[]>());
 }
 
+function groupSubscriptionsByUser(subscriptions: PushSubscriptionRecord[]) {
+  return subscriptions.reduce((groups, subscription) => {
+    const current = groups.get(subscription.userId) ?? [];
+
+    if (!current.some((candidate) => candidate.endpoint === subscription.endpoint)) {
+      current.push(subscription);
+    }
+
+    groups.set(subscription.userId, current);
+
+    return groups;
+  }, new Map<string, PushSubscriptionRecord[]>());
+}
+
 function getUpcomingMatchReferenceId(userId: string, match: LeagueFixtureMatch) {
   const dateKey = match.dateIso || match.roundDate || "sin-fecha";
   const rivalKey = normalizeReferenceSegment(getRivalName(match));
@@ -207,6 +295,14 @@ function getUpcomingMatchReferenceId(userId: string, match: LeagueFixtureMatch) 
 
 function getLegacyUpcomingMatchReferenceId(userId: string, match: LeagueFixtureMatch) {
   return `upcoming-match:${userId}:${match.id}`;
+}
+
+function getCoachUpcomingMatchReferenceId(userId: string, match: LeagueFixtureMatch) {
+  const dateKey = match.dateIso || match.roundDate || "sin-fecha";
+  const rivalKey = normalizeReferenceSegment(getRivalName(match));
+  const competitionKey = normalizeReferenceSegment(match.competitionKind);
+
+  return `upcoming-match-coach:${userId}:${dateKey}:${competitionKey}:${rivalKey}`;
 }
 
 function isAlreadyNotified(
@@ -225,6 +321,36 @@ function normalizeReferenceSegment(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+async function getConfiguredCoachUsers(dataService: ReturnType<typeof getDataService>) {
+  const coaches = new Map<string, AuthUser>();
+
+  try {
+    for (const user of getConfiguredAuthUsers().filter((user) => user.role === "coach")) {
+      coaches.set(user.id, user);
+    }
+  } catch {
+    // Configured users are optional for notification fan-out.
+  }
+
+  const accountUsers = await dataService.getAccountUsers().catch(() => []);
+
+  for (const account of accountUsers.filter(isCoachAccount)) {
+    coaches.set(account.userId, {
+      id: account.userId,
+      name: account.name,
+      playerId: account.playerId,
+      role: account.role,
+      username: account.username,
+    });
+  }
+
+  return [...coaches.values()];
+}
+
+function isCoachAccount(account: AccountUser) {
+  return account.role === "coach";
 }
 
 async function maybeDeactivateExpiredSubscription(
