@@ -153,11 +153,7 @@ async function drawNextMatchPlate(
   const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
   const compact = format === "post";
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
-  const localRecentMatches = getLastPlayedMatchesForTeam(
-    matches,
-    match.localTeam,
-    match,
-  )
+  const localRecentMatches = getLastPlayedMatchesForTeam(matches, match.localTeam, match)
     .slice(0, 3)
     .map((recentMatch) => getTeamMatchOutcome(recentMatch, match.localTeam));
   const visitorRecentMatches = getLastPlayedMatchesForTeam(
@@ -317,7 +313,9 @@ function drawTimePill(
 
   drawCenteredText(context, `${time} HS`, width / 2, y + (compact ? 45 : 52), {
     color: "#f4ce0f",
-    font: compact ? "900 34px Arial Black, sans-serif" : "900 40px Arial Black, sans-serif",
+    font: compact
+      ? "900 34px Arial Black, sans-serif"
+      : "900 40px Arial Black, sans-serif",
     letterSpacing: 2,
   });
 }
@@ -346,13 +344,21 @@ function drawMatchup(
     y: number;
   },
 ) {
-  const cardHeight = compact ? 520 : 650;
+  const cardHeight = compact ? 540 : 660;
   const cardX = compact ? 74 : 82;
   const cardWidth = width - cardX * 2;
-  const centerY = y + cardHeight / 2;
+  const teamNameY = y + (compact ? 92 : 128);
+  const teamRoleY = y + (compact ? 214 : 284);
+  const versusY = y + (compact ? 314 : 392);
+  const recentFormY = y + (compact ? 382 : 488);
 
   context.save();
-  const cardGradient = context.createLinearGradient(cardX, y, cardX + cardWidth, y + cardHeight);
+  const cardGradient = context.createLinearGradient(
+    cardX,
+    y,
+    cardX + cardWidth,
+    y + cardHeight,
+  );
   cardGradient.addColorStop(0, "rgba(255,255,255,0.16)");
   cardGradient.addColorStop(0.5, "rgba(0,148,220,0.18)");
   cardGradient.addColorStop(1, "rgba(255,255,255,0.08)");
@@ -368,25 +374,27 @@ function drawMatchup(
     align: "left",
     compact,
     label: localTeam,
+    roleY: teamRoleY,
     role: `Local · ${localPosition}`,
     x: cardX + (compact ? 58 : 68),
-    y: y + (compact ? 112 : 148),
+    y: teamNameY,
   });
 
   drawTeamBlock(context, {
     align: "right",
     compact,
     label: visitorTeam,
+    roleY: teamRoleY,
     role: `Visita · ${visitorPosition}`,
     x: cardX + cardWidth - (compact ? 58 : 68),
-    y: y + (compact ? 112 : 148),
+    y: teamNameY,
   });
 
-  drawCenteredText(context, "VS", width / 2, centerY + (compact ? 28 : 36), {
+  drawCenteredText(context, "VS", width / 2, versusY, {
     color: "#f4ce0f",
     font: compact
-      ? "900 106px Arial Black, Impact, sans-serif"
-      : "900 142px Arial Black, Impact, sans-serif",
+      ? "900 88px Arial Black, Impact, sans-serif"
+      : "900 118px Arial Black, Impact, sans-serif",
     shadowBlur: 28,
     shadowColor: "rgba(244,206,15,0.22)",
   });
@@ -396,7 +404,7 @@ function drawMatchup(
     compact,
     outcomes: localRecentMatches,
     x: cardX + (compact ? 58 : 68),
-    y: y + (compact ? 332 : 420),
+    y: recentFormY,
   });
 
   drawRecentForm(context, {
@@ -404,7 +412,7 @@ function drawMatchup(
     compact,
     outcomes: visitorRecentMatches,
     x: cardX + cardWidth - (compact ? 58 : 68),
-    y: y + (compact ? 332 : 420),
+    y: recentFormY,
   });
 }
 
@@ -414,6 +422,7 @@ function drawTeamBlock(
     align,
     compact,
     label,
+    roleY,
     role,
     x,
     y,
@@ -421,21 +430,22 @@ function drawTeamBlock(
     align: "left" | "right";
     compact: boolean;
     label: string;
+    roleY: number;
     role: string;
     x: number;
     y: number;
   },
 ) {
-  const maxWidth = compact ? 330 : 360;
+  const maxWidth = compact ? 318 : 350;
   const fontSize = compact
-    ? getTeamNameFontSize(label, 42)
-    : getTeamNameFontSize(label, 48);
-  const lineHeight = compact ? 48 : 56;
+    ? getTeamNameFontSize(label, 38)
+    : getTeamNameFontSize(label, 44);
+  const lineHeight = compact ? 44 : 52;
   const lines = getClampedLines(
     context,
     label.toUpperCase(),
     maxWidth,
-    3,
+    2,
     `900 ${fontSize}px Arial Black, sans-serif`,
   );
 
@@ -449,7 +459,7 @@ function drawTeamBlock(
 
   context.fillStyle = "rgba(255,255,255,0.74)";
   context.font = compact ? "800 28px Arial, sans-serif" : "800 32px Arial, sans-serif";
-  context.fillText(role, x, y + lineHeight * 3 + (compact ? 42 : 52), maxWidth);
+  context.fillText(role, x, roleY, maxWidth);
   context.restore();
 }
 
@@ -507,16 +517,19 @@ function drawRecentForm(
     context.fill();
 
     context.fillStyle = "#ffffff";
-    context.font = compact
-      ? "800 19px Arial, sans-serif"
-      : "800 22px Arial, sans-serif";
+    context.font = compact ? "800 19px Arial, sans-serif" : "800 22px Arial, sans-serif";
     context.textAlign = align;
 
     const textX = align === "left" ? left + 44 : left + chipWidth - 44;
     const maxWidth = chipWidth - 58;
     const label = `${outcome.label} vs ${outcome.rival ?? "-"}`;
 
-    context.fillText(fitTextWithEllipsis(context, label, maxWidth), textX, top + (compact ? 27 : 31), maxWidth);
+    context.fillText(
+      fitTextWithEllipsis(context, label, maxWidth),
+      textX,
+      top + (compact ? 27 : 31),
+      maxWidth,
+    );
     context.restore();
   });
 }
@@ -939,7 +952,9 @@ function getFixtureMatchSortValue(match: LeagueFixtureMatch) {
 }
 
 function getMatchRival(match: LeagueFixtureMatch, teamName: string) {
-  return areSameFixtureTeam(match.localTeam, teamName) ? match.visitorTeam : match.localTeam;
+  return areSameFixtureTeam(match.localTeam, teamName)
+    ? match.visitorTeam
+    : match.localTeam;
 }
 
 function isShareAbort(error: unknown) {
