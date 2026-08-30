@@ -16,6 +16,7 @@ import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-s
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { NextMatchShareButton } from "@/components/fixture/next-match-share-button";
+import { StandingsShareButton } from "@/components/fixture/standings-share-button";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -449,11 +450,18 @@ function PlayedMatchCard({
 function StandingsTable({ data }: FixtureContentProps) {
   return (
     <Card>
-      <CardHeader className="p-3">
+      <CardHeader className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="flex items-center gap-2 text-base">
           <Table2 className="text-primary size-4" />
           Tabla de posiciones
         </CardTitle>
+        <StandingsShareButton
+          categoryName={data.selectedCategoryName}
+          className="sm:min-w-64"
+          competitionName={data.selectedTournamentName}
+          rows={data.standings}
+          teamName={APP_TEAM_NAME}
+        />
       </CardHeader>
       <CardContent className="p-0">
         {data.standings.length > 0 ? (
