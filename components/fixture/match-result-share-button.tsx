@@ -22,6 +22,13 @@ const SUPPORTED_RESULT_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/
 type ResultShareFormat = "post" | "post-photo" | "story" | "story-photo";
 type PhotoResultShareFormat = Extract<ResultShareFormat, "post-photo" | "story-photo">;
 
+interface PreparedPhotoShare {
+  file: File;
+  format: PhotoResultShareFormat;
+  text: string;
+  title: string;
+}
+
 interface MatchResultShareButtonProps {
   backgroundImageSrc?: string;
   className?: string;
@@ -40,6 +47,9 @@ export function MatchResultShareButton({
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [photoFormatToShare, setPhotoFormatToShare] =
     useState<PhotoResultShareFormat | null>(null);
+  const [preparedPhotoShare, setPreparedPhotoShare] = useState<PreparedPhotoShare | null>(
+    null,
+  );
   const [pendingFormat, setPendingFormat] = useState<ResultShareFormat | null>(null);
   const [message, setMessage] = useState("");
   const canShareResult =
@@ -50,6 +60,7 @@ export function MatchResultShareButton({
   async function handleShare(format: ResultShareFormat, selectedBackgroundSrc?: string) {
     setPendingFormat(format);
     setMessage("");
+    setPreparedPhotoShare(null);
 
     try {
       const result = getResultView(match, teamName);
@@ -87,6 +98,7 @@ export function MatchResultShareButton({
 
   function requestPhotoAndShare(format: PhotoResultShareFormat) {
     setMessage("");
+    setPreparedPhotoShare(null);
     setPhotoFormatToShare(format);
 
     if (photoInputRef.current) {
@@ -115,10 +127,65 @@ export function MatchResultShareButton({
     const objectUrl = URL.createObjectURL(file);
 
     try {
-      await handleShare(format, objectUrl);
+      setPendingFormat(format);
+      setMessage("");
+
+      const result = getResultView(match, teamName);
+      const blob = await createMatchResultBlob(match, teamName, format, objectUrl);
+      const formatLabel = getFormatFileLabel(format);
+      const fileName = `resultado-${formatLabel}-${slugify(result.rivalName)}.png`;
+
+      setPreparedPhotoShare({
+        file: new File([blob], fileName, { type: "image/png" }),
+        format,
+        text: `Resultado final: ${result.localName} ${result.localScore}-${result.visitorScore} ${result.visitorName}`,
+        title: "Resultado final",
+      });
+      setMessage(
+        `Foto lista. Tocá Compartir ${getFormatDisplayName(format)} para abrir el menú.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo generar la placa.");
     } finally {
+      setPendingFormat(null);
       URL.revokeObjectURL(objectUrl);
       input.value = "";
+    }
+  }
+
+  async function handlePreparedPhotoShare() {
+    if (!preparedPhotoShare) {
+      return;
+    }
+
+    setMessage("");
+
+    try {
+      if (navigator.canShare?.({ files: [preparedPhotoShare.file] })) {
+        await navigator.share({
+          files: [preparedPhotoShare.file],
+          text: preparedPhotoShare.text,
+          title: preparedPhotoShare.title,
+        });
+        setMessage("Placa lista para compartir.");
+      } else {
+        downloadBlob(preparedPhotoShare.file, preparedPhotoShare.file.name);
+        setMessage("Imagen descargada.");
+      }
+    } catch (error) {
+      if (isShareAbort(error)) {
+        return;
+      }
+
+      if (isShareNotAllowed(error)) {
+        downloadBlob(preparedPhotoShare.file, preparedPhotoShare.file.name);
+        setMessage("El navegador bloqueó compartir directo. Descargué la imagen.");
+        return;
+      }
+
+      setMessage(
+        error instanceof Error ? error.message : "No se pudo compartir la placa.",
+      );
     }
   }
 
@@ -187,6 +254,23 @@ export function MatchResultShareButton({
           </>
         ) : null}
       </div>
+      {preparedPhotoShare ? (
+        <div className="bg-muted/50 grid gap-2 rounded-md border p-2">
+          <p className="text-muted-foreground text-center text-xs font-medium">
+            {`La ${getFormatDisplayName(preparedPhotoShare.format)} ya está generada.`}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={Boolean(pendingFormat)}
+            onClick={() => void handlePreparedPhotoShare()}
+          >
+            <Share2 />
+            {`Compartir ${getFormatDisplayName(preparedPhotoShare.format)}`}
+          </Button>
+        </div>
+      ) : null}
       {message ? (
         <p className="text-muted-foreground text-center text-xs font-medium">{message}</p>
       ) : null}
@@ -1238,6 +1322,14 @@ function isShareAbort(error: unknown) {
   return (
     error instanceof DOMException &&
     (error.name === "AbortError" || error.message.toLowerCase().includes("abort"))
+  );
+}
+
+function isShareNotAllowed(error: unknown) {
+  return (
+    error instanceof DOMException &&
+    (error.name === "NotAllowedError" ||
+      error.message.toLowerCase().includes("not allowed"))
   );
 }
 
