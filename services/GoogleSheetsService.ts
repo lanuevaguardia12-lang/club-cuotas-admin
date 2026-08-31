@@ -6032,12 +6032,14 @@ function buildPlayerOfMatchResults(
   playerPhotoMap: Map<string, string>,
 ) {
   const pointCounts = new Map<string, number>();
+  const firstVoteCounts = new Map<string, number>();
   const voteCounts = new Map<string, number>();
   const playerNamesByKey = new Map<string, string>();
 
   match.players.forEach((player) => {
     const key = normalizeClubPlayerName(player);
 
+    firstVoteCounts.set(key, 0);
     pointCounts.set(key, 0);
     voteCounts.set(key, 0);
     playerNamesByKey.set(key, player);
@@ -6059,6 +6061,12 @@ function buildPlayerOfMatchResults(
       pointCounts.set(key, (pointCounts.get(key) ?? 0) + points);
       voteCounts.set(key, (voteCounts.get(key) ?? 0) + 1);
     });
+
+    const firstVoteKey = normalizeClubPlayerName(vote.firstVotePlayerName);
+
+    if (firstVoteCounts.has(firstVoteKey)) {
+      firstVoteCounts.set(firstVoteKey, (firstVoteCounts.get(firstVoteKey) ?? 0) + 1);
+    }
   });
 
   return [...voteCounts.entries()]
@@ -6072,6 +6080,14 @@ function buildPlayerOfMatchResults(
     .sort((left, right) => {
       if (right.points !== left.points) {
         return right.points - left.points;
+      }
+
+      const firstVoteDifference =
+        (firstVoteCounts.get(normalizeClubPlayerName(right.playerName)) ?? 0) -
+        (firstVoteCounts.get(normalizeClubPlayerName(left.playerName)) ?? 0);
+
+      if (firstVoteDifference !== 0) {
+        return firstVoteDifference;
       }
 
       if (right.votes !== left.votes) {
