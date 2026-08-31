@@ -2783,7 +2783,19 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async markNotificationRead(notificationId: string): Promise<void> {
+    await this.markNotificationsRead([notificationId]);
+  }
+
+  async markNotificationsRead(notificationIds: string[]): Promise<void> {
     this.assertConfigured();
+
+    const targetIds = new Set(
+      notificationIds.map((notificationId) => notificationId.trim()).filter(Boolean),
+    );
+
+    if (targetIds.size === 0) {
+      return;
+    }
 
     const values = await this.readValues(this.config.notificationsRange);
 
@@ -2801,29 +2813,36 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    const targetRowIndex = dataRows.findIndex(
-      (row) => String(row[idIndex] ?? "").trim() === notificationId,
-    );
-
-    if (targetRowIndex < 0) {
-      return;
-    }
-
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.notificationsRange);
-    const spreadsheetRow = targetRowIndex + 2;
-    const data = [
-      {
-        range: `${sheetPrefix}!${toColumnName(statusIndex)}${spreadsheetRow}`,
-        values: [["read"]],
-      },
-    ];
+    const readAt = new Date().toISOString();
+    const data = dataRows.flatMap((row, index) => {
+      const notificationId = String(row[idIndex] ?? "").trim();
 
-    if (readAtIndex >= 0) {
-      data.push({
-        range: `${sheetPrefix}!${toColumnName(readAtIndex)}${spreadsheetRow}`,
-        values: [[new Date().toISOString()]],
-      });
+      if (!targetIds.has(notificationId)) {
+        return [];
+      }
+
+      const spreadsheetRow = index + 2;
+      const rowUpdates = [
+        {
+          range: `${sheetPrefix}!${toColumnName(statusIndex)}${spreadsheetRow}`,
+          values: [["read"]],
+        },
+      ];
+
+      if (readAtIndex >= 0) {
+        rowUpdates.push({
+          range: `${sheetPrefix}!${toColumnName(readAtIndex)}${spreadsheetRow}`,
+          values: [[readAt]],
+        });
+      }
+
+      return rowUpdates;
+    });
+
+    if (data.length === 0) {
+      return;
     }
 
     await sheets.spreadsheets.values.batchUpdate({

@@ -94,6 +94,7 @@ export interface IDataService {
   recordAuditEvent(input: CreateAuditEventInput): Promise<void>;
   createNotification(input: CreateNotificationInput): Promise<void>;
   markNotificationRead(notificationId: string): Promise<void>;
+  markNotificationsRead(notificationIds: string[]): Promise<void>;
   getReminderJobs(): Promise<ReminderJob[]>;
   createReminderJob(input: CreateReminderJobInput): Promise<void>;
   updateReminderJobStatus(input: UpdateReminderJobStatusInput): Promise<void>;

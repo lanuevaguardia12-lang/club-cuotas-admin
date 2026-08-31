@@ -63,6 +63,7 @@ export function NotificationBell({ hydrateDelayMs = 0, user }: NotificationBellP
   const [message, setMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
   const loadHistory = useCallback(async () => {
@@ -156,11 +157,69 @@ export function NotificationBell({ hydrateDelayMs = 0, user }: NotificationBellP
     };
   }, [hydrateDelayMs, hydrated, loadHistory, open]);
 
+  const markAllRead = useCallback(async () => {
+    if (markingAllRead || unreadCount <= 0) {
+      return;
+    }
+
+    setMarkingAllRead(true);
+
+    const readAt = new Date().toISOString();
+
+    setNotifications((current) =>
+      current.map((notification) =>
+        notification.status === "unread"
+          ? {
+              ...notification,
+              readAt,
+              status: "read",
+            }
+          : notification,
+      ),
+    );
+    setUnreadCount(0);
+
+    try {
+      const response = await fetch("/api/notifications", {
+        body: JSON.stringify({ markAll: true }),
+        headers: {
+          "content-type": "application/json",
+        },
+        method: "PATCH",
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudieron marcar como leídas.");
+      }
+
+      await loadHistory();
+    } catch {
+      setMessage("No se pudieron marcar las notificaciones como leídas.");
+      await loadHistory();
+    } finally {
+      setMarkingAllRead(false);
+    }
+  }, [loadHistory, markingAllRead, unreadCount]);
+
   useEffect(() => {
     if (open && hydrated) {
       void loadHistory();
     }
   }, [hydrated, loadHistory, open]);
+
+  useEffect(() => {
+    if (open && unreadCount > 0) {
+      void markAllRead();
+    }
+  }, [markAllRead, open, unreadCount]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+
+    if (nextOpen && unreadCount > 0) {
+      void markAllRead();
+    }
+  }
 
   async function subscribe() {
     setMessage("");
@@ -301,7 +360,7 @@ export function NotificationBell({ hydrateDelayMs = 0, user }: NotificationBellP
     status === "checking" || status === "unsupported" || status === "unconfigured";
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
       <SheetTrigger asChild>
         <Button

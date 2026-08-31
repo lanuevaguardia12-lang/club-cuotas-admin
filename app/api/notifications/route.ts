@@ -10,9 +10,14 @@ import type { AppNotification } from "@/types/premium";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const markReadSchema = z.object({
-  notificationId: z.string().trim().min(1),
-});
+const markReadSchema = z
+  .object({
+    markAll: z.boolean().optional(),
+    notificationId: z.string().trim().min(1).optional(),
+  })
+  .refine((data) => data.markAll === true || Boolean(data.notificationId), {
+    message: "Tenes que indicar notificationId o markAll.",
+  });
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -61,9 +66,36 @@ export async function PATCH(request: NextRequest) {
 
   const dataService = getDataService();
   const notifications = await dataService.getNotifications();
-  const notification = notifications.find(
-    (candidate) => candidate.id === parsed.data.notificationId,
-  );
+  if (parsed.data.markAll) {
+    const unreadNotifications = notifications.filter(
+      (candidate) =>
+        candidate.status === "unread" && canUserSeeNotification(candidate, user),
+    );
+
+    await dataService.markNotificationsRead(
+      unreadNotifications.map((notification) => notification.id),
+    );
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "notification.read",
+        entityType: "notification",
+        entityId: "all-visible",
+        summary: `${unreadNotifications.length} notificaciones marcadas como leidas desde la campana.`,
+        metadata: {
+          notificationIds: unreadNotifications
+            .map((notification) => notification.id)
+            .join(","),
+          total: unreadNotifications.length,
+        },
+      })
+      .catch(() => undefined);
+
+    return NextResponse.json({ marked: unreadNotifications.length, ok: true });
+  }
+
+  const notificationId = parsed.data.notificationId;
+  const notification = notifications.find((candidate) => candidate.id === notificationId);
 
   if (!notification || !canUserSeeNotification(notification, user)) {
     return NextResponse.json({ message: "Notificacion no encontrada." }, { status: 404 });

@@ -540,6 +540,13 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async markNotificationsRead(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async getReminderJobs(): Promise<never> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
