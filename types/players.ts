@@ -9,6 +9,7 @@ export interface PlayerDirectoryItem {
   email: string;
   category: string;
   dni: string;
+  jerseyNumber: string;
   birthDate: string;
   position: string;
   secondPosition: string;
@@ -36,6 +37,7 @@ export interface UpsertPlayerInput {
   email?: string;
   category?: string;
   dni?: string;
+  jerseyNumber?: string;
   birthDate?: string;
   position?: string;
   secondPosition?: string;

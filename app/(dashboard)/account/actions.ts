@@ -15,6 +15,7 @@ const MAX_PROFILE_PHOTO_LENGTH = 45000;
 const accountProfileSchema = z.object({
   birthDate: z.string().trim().max(20).optional(),
   dni: z.string().trim().max(20).optional(),
+  jerseyNumber: z.string().trim().max(4).optional(),
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   name: z.string().trim().min(2, "Ingresá tu nombre.").max(120),
   phone: z.string().trim().max(40).optional(),

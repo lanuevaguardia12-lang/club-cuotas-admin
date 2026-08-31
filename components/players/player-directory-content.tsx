@@ -43,6 +43,7 @@ const playerSchema = z.object({
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
   dni: z.string().trim().max(20).optional(),
+  jerseyNumber: z.string().trim().max(4).optional(),
   birthDate: z.string().trim().max(20).optional(),
   position: z
     .string()
@@ -93,6 +94,7 @@ export function PlayerDirectoryContent({
           player.email,
           player.category,
           player.dni,
+          player.jerseyNumber,
           player.birthDate,
           player.position,
           player.secondPosition,
@@ -135,6 +137,7 @@ export function PlayerDirectoryContent({
       email: player.email,
       category: player.category,
       dni: player.dni,
+      jerseyNumber: player.jerseyNumber,
       birthDate: player.birthDate,
       position: player.position,
       secondPosition: player.secondPosition,
@@ -301,6 +304,16 @@ export function PlayerDirectoryContent({
                 />
               </Field>
 
+              <Field label="Número de camiseta" error={errors.jerseyNumber?.message}>
+                <input
+                  {...register("jerseyNumber")}
+                  disabled={!canWrite}
+                  inputMode="numeric"
+                  maxLength={4}
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+
               <Field label="Fecha de nacimiento" error={errors.birthDate?.message}>
                 <input
                   {...register("birthDate")}
@@ -431,7 +444,7 @@ function PlayersDesktopTable({
   return (
     <div className="border-border bg-card hidden overflow-hidden rounded-lg border md:block">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-sm">
+        <table className="w-full min-w-[1180px] text-sm">
           <thead className="bg-muted/60">
             <tr className="border-border border-b">
               <TableHead>Nombre</TableHead>
@@ -439,6 +452,7 @@ function PlayersDesktopTable({
               <TableHead>Email</TableHead>
               <TableHead>Categoría</TableHead>
               <TableHead>DNI</TableHead>
+              <TableHead>Camiseta</TableHead>
               <TableHead>Nacimiento</TableHead>
               <TableHead>Posición</TableHead>
               <TableHead>Segunda posición</TableHead>
@@ -455,6 +469,7 @@ function PlayersDesktopTable({
                   <td className="px-4 py-3">{player.email || "-"}</td>
                   <td className="px-4 py-3">{player.category}</td>
                   <td className="px-4 py-3">{player.dni || "-"}</td>
+                  <td className="px-4 py-3">{player.jerseyNumber || "-"}</td>
                   <td className="px-4 py-3">{player.birthDate || "-"}</td>
                   <td className="px-4 py-3">{player.position || "-"}</td>
                   <td className="px-4 py-3">{player.secondPosition || "-"}</td>
@@ -474,7 +489,7 @@ function PlayersDesktopTable({
               ))
             ) : (
               <tr>
-                <td colSpan={10} className="text-muted-foreground h-24 px-4 text-center">
+                <td colSpan={11} className="text-muted-foreground h-24 px-4 text-center">
                   No hay jugadores para mostrar.
                 </td>
               </tr>
@@ -510,7 +525,12 @@ function PlayersMobileList({
                   <h3 className="truncate font-semibold">{player.name}</h3>
                   <p className="text-muted-foreground mt-1 text-sm">{player.category}</p>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {formatPlayerPositions(player)}
+                    {[
+                      player.jerseyNumber ? `#${player.jerseyNumber}` : "",
+                      formatPlayerPositions(player),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                 </div>
               </div>
@@ -656,6 +676,7 @@ function getDefaultValues(): PlayerFormValues {
     email: "",
     category: "Plantel",
     dni: "",
+    jerseyNumber: "",
     birthDate: "",
     position: "",
     secondPosition: "",

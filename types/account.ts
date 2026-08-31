@@ -21,6 +21,7 @@ export interface AccountPlayerProfile {
   name: string;
   category: string;
   dni: string;
+  jerseyNumber: string;
   birthDate: string;
   position: string;
   secondPosition: string;
@@ -100,6 +101,7 @@ export interface UpdateAccountProfileInput {
   name: string;
   birthDate?: string;
   dni?: string;
+  jerseyNumber?: string;
   email?: string;
   phone?: string;
   position?: string;

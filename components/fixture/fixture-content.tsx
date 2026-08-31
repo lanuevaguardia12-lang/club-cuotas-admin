@@ -13,6 +13,7 @@ import {
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
 import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-schedule-editor";
+import { MatchConvocationButton } from "@/components/fixture/match-convocation-button";
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { NextMatchShareButton } from "@/components/fixture/next-match-share-button";
@@ -852,6 +853,16 @@ function FullMatchRow({
       {canEditSchedule ? (
         <div className="md:col-span-3">
           <FixtureMatchScheduleEditor match={match} playerOptions={playerOptions} />
+        </div>
+      ) : null}
+
+      {canManage && match.isClubMatch && match.status !== "played" ? (
+        <div className="md:col-span-3">
+          <MatchConvocationButton
+            match={match}
+            playerOptions={playerOptions}
+            teamName={APP_TEAM_NAME}
+          />
         </div>
       ) : null}
 

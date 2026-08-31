@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleDot,
   Flame,
+  Hash,
   IdCard,
   KeyRound,
   Mail,
@@ -37,6 +38,7 @@ import type { AccountProfile } from "@/types/account";
 const profileSchema = z.object({
   birthDate: z.string().trim().max(20).optional(),
   dni: z.string().trim().max(20).optional(),
+  jerseyNumber: z.string().trim().max(4).optional(),
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   name: z.string().trim().min(2, "Ingresá tu nombre.").max(120),
   phone: z.string().trim().max(40).optional(),
@@ -88,6 +90,7 @@ export function AccountContent({ profile }: AccountContentProps) {
       birthDate: profile.player?.birthDate || profile.birthDate,
       dni: profile.player?.dni ?? "",
       email: profile.email,
+      jerseyNumber: profile.player?.jerseyNumber ?? "",
       name: profile.name,
       phone: profile.phone,
       position: profile.player?.position ?? "",
@@ -219,6 +222,12 @@ export function AccountContent({ profile }: AccountContentProps) {
                   {formatDate(birthDate)}
                 </span>
               ) : null}
+              {player?.jerseyNumber ? (
+                <span className="inline-flex items-center gap-1">
+                  <Hash className="size-4" aria-hidden="true" />
+                  Camiseta {player.jerseyNumber}
+                </span>
+              ) : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {positions.length > 0 ? (
@@ -348,6 +357,17 @@ export function AccountContent({ profile }: AccountContentProps) {
                         <input
                           {...registerProfile("dni")}
                           inputMode="numeric"
+                          className={inputClassName}
+                        />
+                      </Field>
+                      <Field
+                        label="Número de camiseta"
+                        error={profileErrors.jerseyNumber?.message}
+                      >
+                        <input
+                          {...registerProfile("jerseyNumber")}
+                          inputMode="numeric"
+                          maxLength={4}
                           className={inputClassName}
                         />
                       </Field>

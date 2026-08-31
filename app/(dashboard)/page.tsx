@@ -30,7 +30,11 @@ import {
 } from "@/lib/match-registration-form";
 import { findPlayerProfileForUser } from "@/lib/player-profile";
 import { getDataService } from "@/services/data-service";
-import type { LeagueFixtureData, LeagueFixtureMatch } from "@/types/fixture";
+import type {
+  FixturePlayerOption,
+  LeagueFixtureData,
+  LeagueFixtureMatch,
+} from "@/types/fixture";
 
 export const dynamic = "force-dynamic";
 
@@ -121,9 +125,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     );
   }
 
-  const [dashboard, fixture] = await Promise.all([
+  const [dashboard, fixture, playerOptions] = await Promise.all([
     dataService.getDashboardData(period),
     fixturePromise,
+    getFixturePlayerOptions(dataService),
   ]);
   const teamStatsMatches = await getTeamStatsMatches(fixture);
 
@@ -166,8 +171,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </header>
 
       <HomeSummary
+        canManageConvocations={user.role === "admin"}
         canShareAlternateResultFormats={user.role === "admin"}
         fixture={fixture}
+        playerOptions={playerOptions}
         teamStatsMatches={teamStatsMatches}
       />
 
@@ -233,6 +240,20 @@ async function getFixtureDataWithOverrides() {
   ]);
 
   return applyLeagueFixtureScheduleOverrides(fixture, overrides);
+}
+
+async function getFixturePlayerOptions(
+  dataService: ReturnType<typeof getDataService>,
+): Promise<FixturePlayerOption[]> {
+  return (await dataService.getPlayersData().catch(() => ({ players: [] }))).players
+    .filter((player) => player.status === "active")
+    .map((player) => ({
+      id: player.id,
+      jerseyNumber: player.jerseyNumber,
+      name: player.name,
+      position: player.position,
+      secondPosition: player.secondPosition,
+    }));
 }
 
 async function getTeamStatsMatches(fixture: LeagueFixtureData) {

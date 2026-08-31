@@ -63,7 +63,13 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
   const playerOptions = canManageFixture
     ? (await dataService.getPlayersData().catch(() => ({ players: [] }))).players
         .filter((player) => player.status === "active")
-        .map((player) => ({ id: player.id, name: player.name }))
+        .map((player) => ({
+          id: player.id,
+          jerseyNumber: player.jerseyNumber,
+          name: player.name,
+          position: player.position,
+          secondPosition: player.secondPosition,
+        }))
     : [];
   const registrationPlayerNamesByPeriod = canRegisterPlayers
     ? await getRegistrationPlayerNamesByPeriod(dataService, data.allClubMatches)

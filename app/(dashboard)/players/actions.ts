@@ -17,6 +17,7 @@ const playerSchema = z.object({
   email: z.string().trim().email("Ingresá un email válido.").optional().or(z.literal("")),
   category: z.string().trim().max(80).optional(),
   dni: z.string().trim().max(20).optional(),
+  jerseyNumber: z.string().trim().max(4).optional(),
   birthDate: z.string().trim().max(20).optional(),
   position: z
     .string()

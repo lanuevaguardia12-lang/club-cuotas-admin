@@ -127,5 +127,8 @@ export interface UpdateFixtureMatchScheduleInput {
 
 export interface FixturePlayerOption {
   id: string;
+  jerseyNumber?: string;
   name: string;
+  position?: string;
+  secondPosition?: string;
 }

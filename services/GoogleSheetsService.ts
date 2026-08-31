@@ -177,6 +177,7 @@ interface PlayerRecord {
   name: string;
   category: string;
   dni: string;
+  jerseyNumber: string;
   birthDate: string;
   position: string;
   secondPosition: string;
@@ -418,6 +419,7 @@ const playerDirectoryHeaders = [
   "email",
   "categoria",
   "dni",
+  "numero_camiseta",
   "fecha_nacimiento",
   "posicion",
   "segunda_posicion",
@@ -797,6 +799,7 @@ export class GoogleSheetsService implements IDataService {
           category: existingPlayer.category,
           dni: input.dni,
           email: input.email,
+          jerseyNumber: input.jerseyNumber,
           name: input.name,
           notes: existingPlayer.notes,
           phone: input.phone,
@@ -4093,6 +4096,14 @@ function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
       category:
         pick(record, ["categoria", "category", "division", "equipo"]) || "Sin categoria",
       dni: pick(record, ["dni", "documento", "document_number", "numero_documento"]),
+      jerseyNumber: pick(record, [
+        "numero_camiseta",
+        "camiseta",
+        "dorsal",
+        "jersey_number",
+        "shirt_number",
+        "numero",
+      ]),
       birthDate:
         parseDate(
           pick(record, [
@@ -4188,6 +4199,14 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
         category:
           pick(record, ["categoria", "category", "division", "equipo"]) || "Plantel",
         dni: pick(record, ["dni", "documento", "document_number", "numero_documento"]),
+        jerseyNumber: pick(record, [
+          "numero_camiseta",
+          "camiseta",
+          "dorsal",
+          "jersey_number",
+          "shirt_number",
+          "numero",
+        ]),
         birthDate:
           parseDate(
             pick(record, [
@@ -4349,6 +4368,7 @@ function buildAccountProfile(
           birthDate: player.birthDate,
           category: player.category,
           dni: player.dni,
+          jerseyNumber: player.jerseyNumber,
           position: player.position,
           secondPosition: player.secondPosition,
           status: player.status,
@@ -4664,6 +4684,7 @@ function normalizePlayerInput(
     email: input.email?.trim() ?? existing?.email ?? "",
     category: input.category?.trim() || existing?.category || "Plantel",
     dni: input.dni?.trim() ?? existing?.dni ?? "",
+    jerseyNumber: input.jerseyNumber?.trim() ?? existing?.jerseyNumber ?? "",
     birthDate: input.birthDate
       ? (parseDate(input.birthDate) ?? existing?.birthDate ?? "")
       : (existing?.birthDate ?? ""),
@@ -4706,6 +4727,11 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     documento: player.dni,
     document_number: player.dni,
     numero_documento: player.dni,
+    numero_camiseta: player.jerseyNumber,
+    camiseta: player.jerseyNumber,
+    dorsal: player.jerseyNumber,
+    jersey_number: player.jerseyNumber,
+    shirt_number: player.jerseyNumber,
     fecha_nacimiento: player.birthDate,
     nacimiento: player.birthDate,
     birth_date: player.birthDate,
@@ -8558,6 +8584,7 @@ function buildPlayerTableRows(
           category: "Sin categoria",
           dni: "",
           birthDate: "",
+          jerseyNumber: "",
           position: "",
           secondPosition: "",
           phone: "-",
@@ -8627,6 +8654,7 @@ function buildPlayerFromFees(
     category: "Sin categoria",
     dni: "",
     birthDate: "",
+    jerseyNumber: "",
     position: "",
     secondPosition: "",
     phone: "-",

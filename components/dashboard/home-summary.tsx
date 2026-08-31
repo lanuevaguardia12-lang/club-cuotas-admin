@@ -13,6 +13,7 @@ import {
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
 import { TeamStatsCard } from "@/components/dashboard/team-stats-card";
+import { MatchConvocationButton } from "@/components/fixture/match-convocation-button";
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { NextMatchShareButton } from "@/components/fixture/next-match-share-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
@@ -30,14 +31,20 @@ import {
 import { formatPeriod, getCurrentPeriod } from "@/lib/player-profile";
 import { cn } from "@/lib/utils";
 import type { PlayerMonthPaymentStatus, PlayerProfile } from "@/types/dashboard";
-import type { LeagueFixtureData, LeagueFixtureMatch } from "@/types/fixture";
+import type {
+  FixturePlayerOption,
+  LeagueFixtureData,
+  LeagueFixtureMatch,
+} from "@/types/fixture";
 
 interface HomeSummaryProps {
+  canManageConvocations?: boolean;
   canRegisterPlayers?: boolean;
   canShareAlternateResultFormats?: boolean;
   canUploadMedia?: boolean;
   fixture: LeagueFixtureData;
   playerProfile?: PlayerProfile | null;
+  playerOptions?: FixturePlayerOption[];
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
   registrationStatusByMatchKey?: Record<string, MatchRegistrationStatus>;
   teamStatsMatches?: LeagueFixtureMatch[];
@@ -49,11 +56,13 @@ const paymentLabels: Record<PlayerMonthPaymentStatus, string> = {
 };
 
 export function HomeSummary({
+  canManageConvocations = false,
   canRegisterPlayers = false,
   canShareAlternateResultFormats = false,
   canUploadMedia = false,
   fixture,
   playerProfile,
+  playerOptions = [],
   registrationPlayerNamesByPeriod = {},
   registrationStatusByMatchKey = {},
   teamStatsMatches,
@@ -125,10 +134,12 @@ export function HomeSummary({
         <CardContent>
           {nextMatch ? (
             <HomeMatchCard
+              canManageConvocations={canManageConvocations}
               canRegisterPlayers={canRegisterPlayers}
               canUploadMedia={canUploadMedia}
               match={nextMatch}
               matches={recentFormMatches}
+              playerOptions={playerOptions}
               registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
               registrationStatusByMatchKey={registrationStatusByMatchKey}
               rows={fixture.standings}
@@ -233,18 +244,22 @@ export function HomeSummary({
 }
 
 function HomeMatchCard({
+  canManageConvocations,
   canRegisterPlayers,
   canUploadMedia,
   match,
   matches,
+  playerOptions,
   registrationPlayerNamesByPeriod,
   registrationStatusByMatchKey,
   rows,
 }: {
+  canManageConvocations: boolean;
   canRegisterPlayers: boolean;
   canUploadMedia: boolean;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
+  playerOptions: FixturePlayerOption[];
   registrationPlayerNamesByPeriod: Record<string, string[]>;
   registrationStatusByMatchKey: Record<string, MatchRegistrationStatus>;
   rows: LeagueFixtureData["standings"];
@@ -296,6 +311,13 @@ function HomeMatchCard({
         standings={rows}
         teamName={APP_TEAM_NAME}
       />
+      {canManageConvocations ? (
+        <MatchConvocationButton
+          match={match}
+          playerOptions={playerOptions}
+          teamName={APP_TEAM_NAME}
+        />
+      ) : null}
       <MatchRegistrationAction
         canRegisterPlayers={canRegisterPlayers}
         match={match}
