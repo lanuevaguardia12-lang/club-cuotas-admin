@@ -19,6 +19,7 @@ import { SendPendingNotificationsButton } from "@/components/dashboard/send-pend
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentCoachName } from "@/lib/coach-users";
 import {
   applyLeagueFixtureScheduleOverrides,
   getLeagueFixtureData,
@@ -125,10 +126,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     );
   }
 
-  const [dashboard, fixture, playerOptions] = await Promise.all([
+  const [dashboard, fixture, playerOptions, coachName] = await Promise.all([
     dataService.getDashboardData(period),
     fixturePromise,
     getFixturePlayerOptions(dataService),
+    getCurrentCoachName(dataService),
   ]);
   const teamStatsMatches = await getTeamStatsMatches(fixture);
 
@@ -173,6 +175,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       <HomeSummary
         canManageConvocations={user.role === "admin"}
         canShareAlternateResultFormats={user.role === "admin"}
+        coachName={coachName}
         fixture={fixture}
         playerOptions={playerOptions}
         teamStatsMatches={teamStatsMatches}

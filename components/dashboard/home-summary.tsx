@@ -42,6 +42,7 @@ interface HomeSummaryProps {
   canRegisterPlayers?: boolean;
   canShareAlternateResultFormats?: boolean;
   canUploadMedia?: boolean;
+  coachName?: string;
   fixture: LeagueFixtureData;
   playerProfile?: PlayerProfile | null;
   playerOptions?: FixturePlayerOption[];
@@ -60,6 +61,7 @@ export function HomeSummary({
   canRegisterPlayers = false,
   canShareAlternateResultFormats = false,
   canUploadMedia = false,
+  coachName = "",
   fixture,
   playerProfile,
   playerOptions = [],
@@ -137,6 +139,7 @@ export function HomeSummary({
               canManageConvocations={canManageConvocations}
               canRegisterPlayers={canRegisterPlayers}
               canUploadMedia={canUploadMedia}
+              coachName={coachName}
               match={nextMatch}
               matches={recentFormMatches}
               playerOptions={playerOptions}
@@ -247,6 +250,7 @@ function HomeMatchCard({
   canManageConvocations,
   canRegisterPlayers,
   canUploadMedia,
+  coachName,
   match,
   matches,
   playerOptions,
@@ -257,6 +261,7 @@ function HomeMatchCard({
   canManageConvocations: boolean;
   canRegisterPlayers: boolean;
   canUploadMedia: boolean;
+  coachName: string;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   playerOptions: FixturePlayerOption[];
@@ -313,6 +318,7 @@ function HomeMatchCard({
       />
       {canManageConvocations ? (
         <MatchConvocationButton
+          coachName={coachName}
           match={match}
           playerOptions={playerOptions}
           teamName={APP_TEAM_NAME}

@@ -46,6 +46,7 @@ interface FixtureContentProps {
   canRegisterPlayers?: boolean;
   canShareAlternateResultFormats?: boolean;
   canUploadMedia?: boolean;
+  coachName?: string;
   data: LeagueFixtureData;
   playerOptions?: FixturePlayerOption[];
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
@@ -60,6 +61,7 @@ export function FixtureContent({
   canRegisterPlayers = false,
   canShareAlternateResultFormats = false,
   canUploadMedia = false,
+  coachName = "",
   data,
   playerOptions = [],
   registrationPlayerNamesByPeriod = {},
@@ -103,6 +105,7 @@ export function FixtureContent({
           canRegisterPlayers={canRegisterPlayers}
           canShareAlternateResultFormats={canShareAlternateResultFormats}
           canUploadMedia={canUploadMedia}
+          coachName={coachName}
           data={data}
           playerOptions={playerOptions}
           registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
@@ -632,6 +635,7 @@ function FixtureRounds({
   canRegisterPlayers,
   canShareAlternateResultFormats,
   canUploadMedia,
+  coachName,
   data,
   playerOptions,
   registrationPlayerNamesByPeriod,
@@ -642,6 +646,7 @@ function FixtureRounds({
   canRegisterPlayers: boolean;
   canShareAlternateResultFormats: boolean;
   canUploadMedia: boolean;
+  coachName: string;
   data: LeagueFixtureData;
   playerOptions: FixturePlayerOption[];
   registrationPlayerNamesByPeriod: Record<string, string[]>;
@@ -731,6 +736,7 @@ function FixtureRounds({
                     canRegisterPlayers={canRegisterPlayers}
                     canShareAlternateResultFormats={canShareAlternateResultFormats}
                     canUploadMedia={canUploadMedia}
+                    coachName={coachName}
                     match={match}
                     matches={
                       data.allCompetitionMatches.length > 0
@@ -772,6 +778,7 @@ function FullMatchRow({
   canRegisterPlayers,
   canShareAlternateResultFormats,
   canUploadMedia,
+  coachName,
   match,
   matches,
   playerOptions,
@@ -782,6 +789,7 @@ function FullMatchRow({
   canRegisterPlayers: boolean;
   canShareAlternateResultFormats: boolean;
   canUploadMedia: boolean;
+  coachName: string;
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   playerOptions: FixturePlayerOption[];
@@ -859,6 +867,7 @@ function FullMatchRow({
       {canManage && match.isClubMatch && match.status !== "played" ? (
         <div className="md:col-span-3">
           <MatchConvocationButton
+            coachName={coachName}
             match={match}
             playerOptions={playerOptions}
             teamName={APP_TEAM_NAME}

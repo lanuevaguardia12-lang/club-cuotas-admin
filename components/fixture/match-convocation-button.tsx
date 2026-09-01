@@ -24,6 +24,7 @@ type ConvocationShareFormat = "post" | "story";
 
 interface MatchConvocationButtonProps {
   className?: string;
+  coachName?: string;
   match: LeagueFixtureMatch;
   playerOptions: FixturePlayerOption[];
   teamName: string;
@@ -48,6 +49,7 @@ interface ParsedConvocation {
 
 export function MatchConvocationButton({
   className,
+  coachName = "",
   match,
   playerOptions,
   teamName,
@@ -69,6 +71,7 @@ export function MatchConvocationButton({
 
     try {
       const blob = await createConvocationBlob({
+        coachName,
         format,
         match,
         players: parsed.matched,
@@ -158,7 +161,7 @@ export function MatchConvocationButton({
               <p className="text-muted-foreground text-xs font-semibold uppercase">
                 Orden para la placa
               </p>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
                 {parsed.matched.map((player) => (
                   <div
                     key={player.id}
@@ -418,11 +421,13 @@ function getPositionSortOrder(position: string) {
 }
 
 async function createConvocationBlob({
+  coachName,
   format,
   match,
   players,
   teamName,
 }: {
+  coachName?: string;
   format: ConvocationShareFormat;
   match: LeagueFixtureMatch;
   players: ConvokedPlayer[];
@@ -442,6 +447,7 @@ async function createConvocationBlob({
 
   await drawConvocationPlate(context, {
     compact,
+    coachName,
     height: canvas.height,
     match,
     players,
@@ -464,6 +470,7 @@ async function drawConvocationPlate(
   context: CanvasRenderingContext2D,
   {
     compact,
+    coachName,
     height,
     match,
     players,
@@ -471,6 +478,7 @@ async function drawConvocationPlate(
     width,
   }: {
     compact: boolean;
+    coachName?: string;
     height: number;
     match: LeagueFixtureMatch;
     players: ConvokedPlayer[];
@@ -550,6 +558,7 @@ async function drawConvocationPlate(
 
   drawConvocationList(context, {
     compact,
+    coachName,
     height: listHeight,
     players,
     width: width - (compact ? 112 : 128),
@@ -569,6 +578,7 @@ function drawConvocationList(
   context: CanvasRenderingContext2D,
   {
     compact,
+    coachName,
     height,
     players,
     width,
@@ -576,6 +586,7 @@ function drawConvocationList(
     y,
   }: {
     compact: boolean;
+    coachName?: string;
     height: number;
     players: ConvokedPlayer[];
     width: number;
@@ -597,16 +608,19 @@ function drawConvocationList(
   context.restore();
 
   const padding = compact ? 34 : 42;
-  const columns = players.length > (compact ? 10 : 14) ? 2 : 1;
-  const gap = compact ? 22 : 26;
-  const columnWidth = (width - padding * 2 - gap * (columns - 1)) / columns;
-  const rowsPerColumn = Math.ceil(players.length / columns);
+  const columns = 1;
+  const gap = 0;
+  const columnWidth = width - padding * 2;
+  const rowsPerColumn = players.length;
   const headerHeight = compact ? 54 : 64;
+  const coachHeight = coachName ? (compact ? 52 : 64) : 0;
+  const rowsAvailableHeight =
+    height - padding * 2 - headerHeight - coachHeight - (coachName ? 12 : 0);
   const rowHeight = Math.min(
     compact ? 58 : 64,
-    Math.max(42, Math.floor((height - padding * 2 - headerHeight) / rowsPerColumn)),
+    Math.max(38, Math.floor(rowsAvailableHeight / Math.max(rowsPerColumn, 1))),
   );
-  const rowFont = rowHeight < 50 ? 24 : compact ? 27 : 30;
+  const rowFont = rowHeight < 44 ? 21 : rowHeight < 50 ? 24 : compact ? 27 : 30;
   const jerseyWidth = compact ? 56 : 62;
   const positionWidth = compact ? 58 : 68;
 
@@ -685,6 +699,20 @@ function drawConvocationList(
       );
       context.restore();
     });
+  }
+
+  if (coachName) {
+    drawCenteredText(
+      context,
+      `DT: ${coachName}`,
+      x + width / 2,
+      y + height - padding + (compact ? 4 : 0),
+      {
+        color: "rgba(255,255,255,0.86)",
+        font: compact ? "800 24px Arial, sans-serif" : "800 30px Arial, sans-serif",
+        maxWidth: width - padding * 2,
+      },
+    );
   }
 }
 

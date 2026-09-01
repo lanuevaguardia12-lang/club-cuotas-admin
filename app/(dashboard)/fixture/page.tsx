@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { hasPermission } from "@/lib/auth/roles";
 import { LOGIN_PATH } from "@/lib/auth/constants";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentCoachName } from "@/lib/coach-users";
 import {
   applyLeagueFixtureScheduleOverrides,
   getLeagueFixtureData,
@@ -71,6 +72,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
           secondPosition: player.secondPosition,
         }))
     : [];
+  const coachName = canManageFixture ? await getCurrentCoachName(dataService) : "";
   const registrationPlayerNamesByPeriod = canRegisterPlayers
     ? await getRegistrationPlayerNamesByPeriod(dataService, data.allClubMatches)
     : {};
@@ -105,6 +107,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
       <FixtureContent
         activeTab={params.tab}
         canManage={canManageFixture}
+        coachName={coachName}
         canRegisterPlayers={canRegisterPlayers}
         canShareAlternateResultFormats={canManageFixture}
         canUploadMedia={canUploadMedia}
