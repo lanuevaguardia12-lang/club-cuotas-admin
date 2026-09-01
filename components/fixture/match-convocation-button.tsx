@@ -489,7 +489,7 @@ async function drawConvocationPlate(
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
   const rival = getMatchRival(match, teamName);
   const footerY = height - (compact ? 64 : 104);
-  const listY = compact ? 410 : 620;
+  const listY = compact ? 388 : 580;
   const listHeight = footerY - listY - (compact ? 52 : 82);
 
   drawBackground(context, width, height);
@@ -519,7 +519,7 @@ async function drawConvocationPlate(
 
   drawCenteredText(
     context,
-    `${formatCompetition(match.competitionKind)} / ${formatMatchDate(match)}`,
+    formatConvocationMatchMeta(match),
     width / 2,
     compact ? 292 : 426,
     {
@@ -529,21 +529,11 @@ async function drawConvocationPlate(
     },
   );
 
-  if (match.time) {
-    drawCenteredText(context, match.time, width / 2, compact ? 344 : 492, {
-      color: "#f4ce0f",
-      font: compact
-        ? "900 34px Arial Black, sans-serif"
-        : "900 40px Arial Black, sans-serif",
-      maxWidth: width - 220,
-    });
-  }
-
   drawWrappedCenteredText(
     context,
     `VS ${rival}`,
     width / 2,
-    compact ? 386 : 558,
+    compact ? 344 : 506,
     width - 140,
     {
       color: "#f4ce0f",
@@ -600,11 +590,8 @@ function drawConvocationList(
   gradient.addColorStop(0.55, "rgba(0,148,220,0.2)");
   gradient.addColorStop(1, "rgba(255,255,255,0.09)");
   context.fillStyle = gradient;
-  context.strokeStyle = "rgba(102,220,255,0.5)";
-  context.lineWidth = 4;
   roundedRect(context, x, y, width, height, 34);
   context.fill();
-  context.stroke();
   context.restore();
 
   const padding = compact ? 34 : 42;
@@ -612,7 +599,7 @@ function drawConvocationList(
   const gap = 0;
   const columnWidth = width - padding * 2;
   const rowsPerColumn = players.length;
-  const headerHeight = compact ? 54 : 64;
+  const headerHeight = 0;
   const coachHeight = coachName ? (compact ? 52 : 64) : 0;
   const rowsAvailableHeight =
     height - padding * 2 - headerHeight - coachHeight - (coachName ? 12 : 0);
@@ -620,16 +607,9 @@ function drawConvocationList(
     compact ? 58 : 64,
     Math.max(38, Math.floor(rowsAvailableHeight / Math.max(rowsPerColumn, 1))),
   );
-  const rowFont = rowHeight < 44 ? 21 : rowHeight < 50 ? 24 : compact ? 27 : 30;
+  const rowFont = rowHeight < 44 ? 22 : rowHeight < 50 ? 25 : compact ? 27 : 30;
   const jerseyWidth = compact ? 56 : 62;
   const positionWidth = compact ? 58 : 68;
-
-  drawCenteredText(context, "LISTA DE CONVOCADOS", x + width / 2, y + padding + 4, {
-    color: "rgba(255,255,255,0.78)",
-    font: compact ? "900 22px Arial, sans-serif" : "900 26px Arial, sans-serif",
-    letterSpacing: 4,
-    maxWidth: width - padding * 2,
-  });
 
   for (let column = 0; column < columns; column += 1) {
     const columnPlayers = players.slice(
@@ -671,15 +651,15 @@ function drawConvocationList(
       const nameMaxWidth = Math.max(80, positionX - nameX - 12);
       const playerName = fitTextWithEllipsis(
         context,
-        player.name.toUpperCase(),
+        formatDisplayPersonName(player.name),
         nameMaxWidth,
-        `900 ${rowFont}px Arial, sans-serif`,
+        `800 ${rowFont}px Arial, sans-serif`,
       );
 
       drawTableText(context, playerName, nameX, rowY + rowHeight / 2 + rowFont / 3 - 5, {
         align: "left",
         color: "#ffffff",
-        font: `900 ${rowFont}px Arial, sans-serif`,
+        font: `800 ${rowFont}px Arial, sans-serif`,
         maxWidth: nameMaxWidth,
       });
 
@@ -1045,6 +1025,12 @@ function isShareAbort(error: unknown) {
   return error.name === "AbortError" || error.message.toLowerCase().includes("abort");
 }
 
+function formatConvocationMatchMeta(match: LeagueFixtureMatch) {
+  return [formatCompetition(match.competitionKind), formatMatchDate(match), match.time]
+    .filter(Boolean)
+    .join(" / ");
+}
+
 function formatCompetition(kind: LeagueFixtureMatch["competitionKind"]) {
   const labels: Record<LeagueFixtureMatch["competitionKind"], string> = {
     cup: "Copa",
@@ -1069,6 +1055,17 @@ function formatMatchDate(match: LeagueFixtureMatch) {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
   }).format(date);
+}
+
+function formatDisplayPersonName(value: string) {
+  return value
+    .toLocaleLowerCase("es-AR")
+    .replace(
+      /(^|[\s'-])(\S)/g,
+      (_match, separator: string, letter: string) =>
+        `${separator}${letter.toLocaleUpperCase("es-AR")}`,
+    )
+    .trim();
 }
 
 function parseDate(value: string) {
