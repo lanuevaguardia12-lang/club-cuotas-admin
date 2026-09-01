@@ -6,6 +6,8 @@ import { PlayerDirectoryContent } from "@/components/players/player-directory-co
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
+import type { AccountUser } from "@/types/account";
+import type { PlayerDirectoryItem } from "@/types/players";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,12 @@ export default async function PlayersPage() {
     );
   }
 
-  const data = await getDataService().getPlayersData();
+  const dataService = getDataService();
+  const [data, accounts] = await Promise.all([
+    dataService.getPlayersData(),
+    dataService.getAccountUsers().catch(() => []),
+  ]);
+  const playerProfilePhotos = buildPlayerProfilePhotos(data.players, accounts);
 
   return (
     <main className="grid gap-6">
@@ -46,9 +53,71 @@ export default async function PlayersPage() {
 
       <PlayerDirectoryContent
         data={data}
+        playerProfilePhotos={playerProfilePhotos}
         canWrite={hasPermission(user, "players:write")}
         canRestoreRoster={hasPermission(user, "maintenance:manage")}
       />
     </main>
   );
+}
+
+function buildPlayerProfilePhotos(
+  players: PlayerDirectoryItem[],
+  accounts: AccountUser[],
+) {
+  return Object.fromEntries(
+    players.flatMap((player) => {
+      const photo = getPlayerPhotoUrl(player, accounts);
+
+      return photo ? [[player.id, photo]] : [];
+    }),
+  );
+}
+
+function getPlayerPhotoUrl(player: PlayerDirectoryItem, accounts: AccountUser[]) {
+  if (player.profilePhotoDataUrl) {
+    return player.profilePhotoDataUrl;
+  }
+
+  const playerKeys = buildLookupKeys(player.id, player.name);
+  const account = accounts.find((candidate) => {
+    if (candidate.role !== "player" || !candidate.profilePhotoDataUrl) {
+      return false;
+    }
+
+    const accountKeys = buildLookupKeys(
+      candidate.playerId,
+      candidate.userId,
+      candidate.username,
+      candidate.name,
+    );
+
+    return [...playerKeys].some((key) => accountKeys.has(key));
+  });
+
+  return account?.profilePhotoDataUrl ?? "";
+}
+
+function buildLookupKeys(...values: Array<string | undefined>) {
+  return new Set(
+    values
+      .flatMap((value) => {
+        if (!value) {
+          return [];
+        }
+
+        return [value, value.replace(/[-_]+/g, " ")];
+      })
+      .map(normalizeLookup)
+      .filter(Boolean),
+  );
+}
+
+function normalizeLookup(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }

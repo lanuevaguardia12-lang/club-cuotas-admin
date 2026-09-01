@@ -178,6 +178,7 @@ interface PlayerRecord {
   category: string;
   dni: string;
   jerseyNumber: string;
+  profilePhotoDataUrl: string;
   birthDate: string;
   position: string;
   secondPosition: string;
@@ -420,6 +421,7 @@ const playerDirectoryHeaders = [
   "categoria",
   "dni",
   "numero_camiseta",
+  "foto_perfil",
   "fecha_nacimiento",
   "posicion",
   "segunda_posicion",
@@ -804,6 +806,7 @@ export class GoogleSheetsService implements IDataService {
           notes: existingPlayer.notes,
           phone: input.phone,
           position: input.position,
+          profilePhotoDataUrl: input.profilePhotoDataUrl,
           secondPosition: input.secondPosition,
           status: existingPlayer.status,
         });
@@ -4104,6 +4107,9 @@ function mapRowsToPlayers(rows: unknown[][]): PlayerRecord[] {
         "shirt_number",
         "numero",
       ]),
+      profilePhotoDataUrl: sanitizeProfilePhotoDataUrl(
+        pick(record, ["foto_perfil", "profile_photo", "profile_photo_data_url"]),
+      ),
       birthDate:
         parseDate(
           pick(record, [
@@ -4207,6 +4213,9 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
           "shirt_number",
           "numero",
         ]),
+        profilePhotoDataUrl: sanitizeProfilePhotoDataUrl(
+          pick(record, ["foto_perfil", "profile_photo", "profile_photo_data_url"]),
+        ),
         birthDate:
           parseDate(
             pick(record, [
@@ -4685,6 +4694,10 @@ function normalizePlayerInput(
     category: input.category?.trim() || existing?.category || "Plantel",
     dni: input.dni?.trim() ?? existing?.dni ?? "",
     jerseyNumber: input.jerseyNumber?.trim() ?? existing?.jerseyNumber ?? "",
+    profilePhotoDataUrl:
+      input.profilePhotoDataUrl === undefined
+        ? (existing?.profilePhotoDataUrl ?? "")
+        : sanitizeProfilePhotoDataUrl(input.profilePhotoDataUrl),
     birthDate: input.birthDate
       ? (parseDate(input.birthDate) ?? existing?.birthDate ?? "")
       : (existing?.birthDate ?? ""),
@@ -4732,6 +4745,9 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     dorsal: player.jerseyNumber,
     jersey_number: player.jerseyNumber,
     shirt_number: player.jerseyNumber,
+    foto_perfil: player.profilePhotoDataUrl,
+    profile_photo: player.profilePhotoDataUrl,
+    profile_photo_data_url: player.profilePhotoDataUrl,
     fecha_nacimiento: player.birthDate,
     nacimiento: player.birthDate,
     birth_date: player.birthDate,
@@ -5780,7 +5796,7 @@ function buildPlayerOfMatchData({
   voterVotes: PlayerOfMatchVote[];
 }): PlayerOfMatchData {
   const votesByMatchId = new Map(voterVotes.map((vote) => [vote.matchId, vote]));
-  const playerPhotoMap = buildPlayerOfMatchPhotoMap(matches, accountProfiles);
+  const playerPhotoMap = buildPlayerOfMatchPhotoMap(matches, accountProfiles, players);
   const formattedMatches = [...matches]
     .sort((left, right) => right.date.localeCompare(left.date))
     .map<PlayerOfMatchMatch>((match) => {
@@ -5867,7 +5883,7 @@ function buildPlayerOfMatchRankings({
     ...players.map((player) => player.name),
     ...matches.flatMap((match) => match.players),
   ];
-  const photoMap = buildPlayerPhotoMap(playerNames, accountProfiles);
+  const photoMap = buildPlayerPhotoMap(playerNames, accountProfiles, players);
   const playersByNameKey = new Map(
     players.map((player) => [normalizeClubPlayerName(player.name), player]),
   );
@@ -6131,35 +6147,53 @@ function buildPlayerOfMatchResults(
 function buildPlayerOfMatchPhotoMap(
   matches: MatchRecord[],
   accountProfiles: AccountProfileRecord[],
+  players: PlayerRecord[],
 ) {
   return buildPlayerPhotoMap(
     matches.flatMap((match) => match.players),
     accountProfiles,
+    players,
   );
 }
 
 function buildPlayerPhotoMap(
   playerNames: string[],
   accountProfiles: AccountProfileRecord[],
+  players: PlayerRecord[] = [],
 ) {
   const playerKeys = new Set(playerNames.map(normalizeClubPlayerName).filter(Boolean));
   const photos = new Map<string, string>();
+
+  players.forEach((player) => {
+    if (!player.profilePhotoDataUrl) {
+      return;
+    }
+
+    const candidates = buildProfilePhotoCandidates([
+      player.name,
+      player.id,
+      createClubPlayerId(player.name),
+    ]);
+
+    candidates.forEach((candidate) => {
+      if (playerKeys.has(candidate) && !photos.has(candidate)) {
+        photos.set(candidate, player.profilePhotoDataUrl);
+      }
+    });
+  });
 
   accountProfiles.forEach((profile) => {
     if (!profile.profilePhotoDataUrl) {
       return;
     }
 
-    const candidates = [
+    const candidates = buildProfilePhotoCandidates([
       profile.name,
       profile.userId,
       profile.username,
       createClubPlayerId(profile.name),
       createClubPlayerId(profile.userId),
       createClubPlayerId(profile.username),
-    ].flatMap((value) => [
-      normalizeClubPlayerName(value),
-      normalizeClubPlayerName(value.replace(/[-_]+/g, " ")),
     ]);
 
     candidates.forEach((candidate) => {
@@ -6170,6 +6204,13 @@ function buildPlayerPhotoMap(
   });
 
   return photos;
+}
+
+function buildProfilePhotoCandidates(values: string[]) {
+  return values.flatMap((value) => [
+    normalizeClubPlayerName(value),
+    normalizeClubPlayerName(value.replace(/[-_]+/g, " ")),
+  ]);
 }
 
 function getPlayerOfMatchVotingWindow(match: MatchRecord) {
@@ -8585,6 +8626,7 @@ function buildPlayerTableRows(
           dni: "",
           birthDate: "",
           jerseyNumber: "",
+          profilePhotoDataUrl: "",
           position: "",
           secondPosition: "",
           phone: "-",
@@ -8655,6 +8697,7 @@ function buildPlayerFromFees(
     dni: "",
     birthDate: "",
     jerseyNumber: "",
+    profilePhotoDataUrl: "",
     position: "",
     secondPosition: "",
     phone: "-",

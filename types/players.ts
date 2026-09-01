@@ -10,6 +10,7 @@ export interface PlayerDirectoryItem {
   category: string;
   dni: string;
   jerseyNumber: string;
+  profilePhotoDataUrl: string;
   birthDate: string;
   position: string;
   secondPosition: string;
@@ -38,6 +39,7 @@ export interface UpsertPlayerInput {
   category?: string;
   dni?: string;
   jerseyNumber?: string;
+  profilePhotoDataUrl?: string;
   birthDate?: string;
   position?: string;
   secondPosition?: string;

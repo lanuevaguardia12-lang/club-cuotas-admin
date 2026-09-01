@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  Camera,
   Mail,
   Pencil,
   Phone,
@@ -11,10 +12,11 @@ import {
   Search,
   Trash2,
   UsersRound,
+  UserRound,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -34,7 +36,10 @@ interface PlayerDirectoryContentProps {
   canWrite: boolean;
   canRestoreRoster: boolean;
   data: PlayerDirectoryData;
+  playerProfilePhotos?: Record<string, string>;
 }
+
+const MAX_PROFILE_PHOTO_LENGTH = 45000;
 
 const playerSchema = z.object({
   id: z.string().optional(),
@@ -44,6 +49,15 @@ const playerSchema = z.object({
   category: z.string().trim().max(80).optional(),
   dni: z.string().trim().max(20).optional(),
   jerseyNumber: z.string().trim().max(4).optional(),
+  profilePhotoDataUrl: z
+    .string()
+    .trim()
+    .max(MAX_PROFILE_PHOTO_LENGTH, "La foto es demasiado grande.")
+    .refine(
+      (value) => !value || /^data:image\/(png|jpeg|webp);base64,/.test(value),
+      "La foto debe ser una imagen válida.",
+    )
+    .optional(),
   birthDate: z.string().trim().max(20).optional(),
   position: z
     .string()
@@ -64,8 +78,10 @@ export function PlayerDirectoryContent({
   canRestoreRoster,
   canWrite,
   data,
+  playerProfilePhotos = {},
 }: PlayerDirectoryContentProps) {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
@@ -77,10 +93,13 @@ export function PlayerDirectoryContent({
     handleSubmit,
     register,
     reset,
+    setValue,
+    watch,
   } = useForm<PlayerFormValues>({
     resolver: zodResolver(playerSchema),
     defaultValues: getDefaultValues(),
   });
+  const watchedProfilePhotoDataUrl = watch("profilePhotoDataUrl") ?? "";
 
   const filteredPlayers = useMemo(() => {
     const normalizedQuery = normalize(query);
@@ -95,6 +114,7 @@ export function PlayerDirectoryContent({
           player.category,
           player.dni,
           player.jerseyNumber,
+          getPlayerPhotoUrl(player, playerProfilePhotos),
           player.birthDate,
           player.position,
           player.secondPosition,
@@ -105,7 +125,7 @@ export function PlayerDirectoryContent({
 
       return matchesQuery;
     });
-  }, [data.players, query]);
+  }, [data.players, playerProfilePhotos, query]);
 
   const withContact = data.players.filter(
     (player) => player.phone || player.email,
@@ -138,6 +158,7 @@ export function PlayerDirectoryContent({
       category: player.category,
       dni: player.dni,
       jerseyNumber: player.jerseyNumber,
+      profilePhotoDataUrl: getPlayerPhotoUrl(player, playerProfilePhotos),
       birthDate: player.birthDate,
       position: player.position,
       secondPosition: player.secondPosition,
@@ -148,6 +169,27 @@ export function PlayerDirectoryContent({
   function handleCancelEdit() {
     setEditingId("");
     reset(getDefaultValues());
+  }
+
+  async function handlePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setMessage("");
+    setLoadingMessage("Procesando foto...");
+
+    try {
+      const dataUrl = await resizeImage(file);
+      setValue("profilePhotoDataUrl", dataUrl, { shouldDirty: true });
+    } catch {
+      setMessage("No se pudo cargar la foto.");
+    } finally {
+      setLoadingMessage("");
+      event.target.value = "";
+    }
   }
 
   async function handleDelete(player: PlayerDirectoryItem) {
@@ -260,6 +302,61 @@ export function PlayerDirectoryContent({
           <CardContent>
             <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)}>
               <input type="hidden" {...register("id")} />
+              <input type="hidden" {...register("profilePhotoDataUrl")} />
+
+              <div className="grid gap-2">
+                <span className="text-sm font-medium">Foto de perfil</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="bg-muted grid size-20 shrink-0 place-items-center overflow-hidden rounded-full border">
+                    {watchedProfilePhotoDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={watchedProfilePhotoDataUrl}
+                        alt="Foto de perfil"
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <UserRound className="text-muted-foreground size-8" />
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      disabled={!canWrite}
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!canWrite}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Camera />
+                      Cargar foto
+                    </Button>
+                    {watchedProfilePhotoDataUrl ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={!canWrite}
+                        onClick={() =>
+                          setValue("profilePhotoDataUrl", "", { shouldDirty: true })
+                        }
+                      >
+                        Quitar
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {errors.profilePhotoDataUrl?.message ? (
+                  <span className="text-destructive text-sm">
+                    {errors.profilePhotoDataUrl.message}
+                  </span>
+                ) : null}
+              </div>
 
               <Field label="Nombre y apellido" error={errors.name?.message}>
                 <input
@@ -677,6 +774,7 @@ function getDefaultValues(): PlayerFormValues {
     category: "Plantel",
     dni: "",
     jerseyNumber: "",
+    profilePhotoDataUrl: "",
     birthDate: "",
     position: "",
     secondPosition: "",
@@ -690,10 +788,59 @@ function formatPlayerPositions(player: PlayerDirectoryItem) {
   return positions.length > 0 ? positions.join(" / ") : "Sin posición";
 }
 
+function getPlayerPhotoUrl(
+  player: PlayerDirectoryItem,
+  playerProfilePhotos: Record<string, string>,
+) {
+  return player.profilePhotoDataUrl || playerProfilePhotos[player.id] || "";
+}
+
 function normalize(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+async function resizeImage(file: File) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(dataUrl);
+  const canvas = document.createElement("canvas");
+  const size = 256;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Canvas no disponible.");
+  }
+
+  const scale = Math.max(size / image.width, size / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  const x = (size - width) / 2;
+  const y = (size - height) / 2;
+
+  context.drawImage(image, x, y, width, height);
+
+  return canvas.toDataURL("image/jpeg", 0.78);
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
 }

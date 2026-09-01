@@ -9,6 +9,10 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { LNG_DEFAULT_ROSTER } from "@/lib/default-roster";
 import { isPlayerPosition } from "@/lib/player-positions";
 import { getDataService } from "@/services/data-service";
+import type { IDataService } from "@/services/IDataService";
+import type { AccountUser } from "@/types/account";
+
+const MAX_PROFILE_PHOTO_LENGTH = 45000;
 
 const playerSchema = z.object({
   id: z.string().trim().optional(),
@@ -18,6 +22,15 @@ const playerSchema = z.object({
   category: z.string().trim().max(80).optional(),
   dni: z.string().trim().max(20).optional(),
   jerseyNumber: z.string().trim().max(4).optional(),
+  profilePhotoDataUrl: z
+    .string()
+    .trim()
+    .max(MAX_PROFILE_PHOTO_LENGTH, "La foto es demasiado grande.")
+    .refine(
+      (value) => !value || /^data:image\/(png|jpeg|webp);base64,/.test(value),
+      "La foto debe ser una imagen válida.",
+    )
+    .optional(),
   birthDate: z.string().trim().max(20).optional(),
   position: z
     .string()
@@ -43,6 +56,12 @@ export async function savePlayer(input: unknown) {
     ...parsed,
     email: parsed.email || undefined,
   });
+  await syncPlayerAccountPhoto(
+    dataService,
+    parsed.id,
+    parsed.name,
+    parsed.profilePhotoDataUrl,
+  );
 
   if (user) {
     await dataService
@@ -60,10 +79,94 @@ export async function savePlayer(input: unknown) {
   }
 
   revalidatePath("/players");
+  revalidatePath("/account");
+  revalidatePath("/squad");
+  revalidatePath("/player-of-match");
   revalidatePath("/");
   revalidatePath("/fee-calculator");
 
   return { ok: true };
+}
+
+async function syncPlayerAccountPhoto(
+  dataService: Pick<IDataService, "getAccountUsers" | "updateAccountProfile">,
+  playerId: string | undefined,
+  playerName: string,
+  profilePhotoDataUrl: string | undefined,
+) {
+  if (profilePhotoDataUrl === undefined) {
+    return;
+  }
+
+  const account = await dataService
+    .getAccountUsers()
+    .then((accounts) => findLinkedPlayerAccount(accounts, playerId, playerName))
+    .catch(() => undefined);
+
+  if (!account) {
+    return;
+  }
+
+  await dataService
+    .updateAccountProfile({
+      birthDate: account.birthDate,
+      email: account.email || undefined,
+      name: playerName,
+      phone: account.phone || undefined,
+      playerId: account.playerId,
+      profilePhotoDataUrl,
+      role: account.role,
+      userId: account.userId,
+      username: account.username,
+    })
+    .catch(() => undefined);
+}
+
+function findLinkedPlayerAccount(
+  accounts: AccountUser[],
+  playerId: string | undefined,
+  playerName: string,
+) {
+  const playerKeys = buildLookupKeys(playerId, playerName);
+
+  return accounts.find((account) => {
+    if (account.role !== "player") {
+      return false;
+    }
+
+    const accountKeys = buildLookupKeys(
+      account.playerId,
+      account.userId,
+      account.username,
+      account.name,
+    );
+
+    return [...playerKeys].some((key) => accountKeys.has(key));
+  });
+}
+
+function buildLookupKeys(...values: Array<string | undefined>) {
+  return new Set(
+    values
+      .flatMap((value) => {
+        if (!value) {
+          return [];
+        }
+
+        return [value, value.replace(/[-_]+/g, " ")];
+      })
+      .map(normalizeLookup)
+      .filter(Boolean),
+  );
+}
+
+function normalizeLookup(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 export async function deletePlayer(playerId: string) {

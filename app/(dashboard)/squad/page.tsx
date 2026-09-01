@@ -192,6 +192,10 @@ function getPlayerPhotoUrl(
   player: PlayerDirectoryItem,
   photosByPlayerKey: Map<string, string>,
 ) {
+  if (player.profilePhotoDataUrl) {
+    return player.profilePhotoDataUrl;
+  }
+
   const candidates = [player.id, player.name, createPlayerSlug(player.name)];
 
   for (const candidate of candidates) {
