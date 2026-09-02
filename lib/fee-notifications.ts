@@ -177,11 +177,11 @@ function buildEmptyResult(
   };
 }
 
-function buildDefinedFeeReferenceId(playerId: string, period: string) {
+export function buildDefinedFeeReferenceId(playerId: string, period: string) {
   return `fee-defined:${playerId}:${period}`;
 }
 
-function hasAlreadySentDefinedFeeNotification(
+export function hasAlreadySentDefinedFeeNotification(
   referenceIds: Set<string>,
   playerId: string,
   period: string,

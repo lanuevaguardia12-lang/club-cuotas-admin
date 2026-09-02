@@ -7,11 +7,11 @@
   "crons": [
     {
       "path": "/api/cron/player-fee-reminders",
-      "schedule": "0 18 */4 * *"
+      "schedule": "0 18 5,9,13,17,21,25,29 * *"
     },
     {
       "path": "/api/cron/player-fee-defined",
-      "schedule": "0 12 1 * *"
+      "schedule": "0 18 1 * *"
     },
     {
       "path": "/api/cron/player-of-match-reminders",
