@@ -28,6 +28,7 @@ const webhookEndpoints = [
   ["GET", "/api/cron/player-fee-reminders", "Cron de cuotas impagas"],
   ["GET", "/api/cron/player-of-match-reminders", "Cron de respaldo MVP"],
   ["GET", "/api/cron/upcoming-match-reminders", "Cron de proximo partido"],
+  ["GET", "/api/cron/coach-records-email", "Cron mensual de desglose DT"],
 ];
 
 export default async function ApiDocsPage() {

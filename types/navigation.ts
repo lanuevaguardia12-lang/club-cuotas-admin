@@ -8,6 +8,7 @@ export type NavigationIcon =
   | "fixture"
   | "players"
   | "cashFlow"
+  | "coachRecords"
   | "feeCalculator"
   | "users"
   | "reports"

@@ -24,6 +24,7 @@ import type {
   UpdateAccountProfileInput,
 } from "@/types/account";
 import type { AuthUser } from "@/types/auth";
+import type { CoachRecordMatch, CoachRecordsData } from "@/types/coach-records";
 import type {
   AnnualComparisonPoint,
   CashFlowConceptBreakdownPoint,
@@ -488,6 +489,11 @@ const accountProfileHeaders = [
 
 const MAX_PROFILE_PHOTO_DATA_URL_LENGTH = 45000;
 const PROFILE_PHOTO_DATA_URL_PATTERN = /^data:image\/(png|jpeg|webp);base64,/;
+const COACH_RECORDS_EMAIL_TO =
+  process.env.COACH_RECORDS_EMAIL_TO ?? "lanuevaguardia12@gmail.com";
+const COACH_RECORDS_EMAIL_CC = parseCommaSeparatedValues(
+  process.env.COACH_RECORDS_EMAIL_CC,
+);
 
 const playerAttendanceSnapshotHeaders = [
   "id",
@@ -518,6 +524,13 @@ const fixtureOverrideHeaders = [
   "actualizado_por",
   "actualizado_en",
 ];
+
+function parseCommaSeparatedValues(value: string | undefined) {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export class GoogleSheetsService implements IDataService {
   private readonly config: GoogleSheetsConfig;
@@ -1506,6 +1519,44 @@ export class GoogleSheetsService implements IDataService {
         refundPolicy: getDefaultRefundPolicy(),
         matches: [],
         expenseCredits: [],
+        status: "error",
+        message: serviceError.message,
+        cachedAt,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+      });
+    }
+  }
+
+  async getCoachRecordsData(period = getCurrentPeriod()): Promise<CoachRecordsData> {
+    const cachedAt = new Date().toISOString();
+
+    try {
+      this.assertConfigured();
+      assertValidPeriod(period);
+
+      const { costsRows, actualsRows, matchRows } = await this.readFeeCalculatorRows();
+      const costs = mapRowsToFeeCalculatorCosts(costsRows);
+      const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
+      const matches = mapRowsToMatches(matchRows);
+
+      return buildCoachRecordsData({
+        period,
+        costs,
+        actuals,
+        matches,
+        status: "ready",
+        message: "Registros DT obtenidos desde Google Sheets.",
+        cachedAt,
+        revalidateSeconds: this.config.cacheTtlSeconds,
+      });
+    } catch (error) {
+      const serviceError = normalizeGoogleSheetsError(error);
+
+      return buildCoachRecordsData({
+        period,
+        costs: [],
+        actuals: [],
+        matches: [],
         status: "error",
         message: serviceError.message,
         cachedAt,
@@ -6678,6 +6729,207 @@ function buildFeeCalculatorData({
       revalidateSeconds,
     },
   };
+}
+
+function buildCoachRecordsData({
+  period,
+  costs,
+  actuals,
+  matches,
+  status,
+  message,
+  cachedAt,
+  revalidateSeconds,
+}: {
+  period: string;
+  costs: FeeCalculatorCost[];
+  actuals: FeeCalculatorActual[];
+  matches: MatchRecord[];
+  status: CoachRecordsData["source"]["status"];
+  message: string;
+  cachedAt: string;
+  revalidateSeconds: number;
+}): CoachRecordsData {
+  const paymentPeriod = addMonthsToPeriod(period, 1);
+  const coachMatches = matches
+    .filter((match) => match.period === period && match.coachAttended)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const coachCost = findCoachCostForReportPeriod(costs, period);
+  const effectiveActuals = coachCost
+    ? mergeInferredFeeCalculatorActuals([coachCost], actuals, matches, period, false)
+    : actuals;
+  const inferredHours = coachMatches.length * 3;
+  const actualHours = coachCost
+    ? findActualUnitsForCost(coachCost, costs, effectiveActuals, period)
+    : undefined;
+  const totalHours =
+    typeof actualHours === "number" && Number.isFinite(actualHours)
+      ? actualHours
+      : inferredHours;
+  const hourlyRate = coachCost?.amount ?? 0;
+  const actualAmount = coachCost
+    ? findActualAmountForCost(coachCost, costs, effectiveActuals, period)
+    : undefined;
+  const totalCost =
+    typeof actualAmount === "number" && Number.isFinite(actualAmount)
+      ? actualAmount
+      : hourlyRate * totalHours;
+  const recordMatches = coachMatches.map((match): CoachRecordMatch => {
+    const competitionLabel = formatCoachRecordCompetition(match.sourceType);
+
+    return {
+      competitionKind: match.sourceType,
+      competitionLabel,
+      date: match.date,
+      hours: 3,
+      id: match.id,
+      rival: match.rival,
+      venue: formatCoachRecordVenue(match.venue),
+    };
+  });
+  const emailSubject = `DESGLOSE DT - ${formatPeriodLabel(period).toLocaleUpperCase("es-AR")}`;
+  const emailBody = buildCoachRecordsEmailBody({
+    hourlyRate,
+    matches: recordMatches,
+    paymentPeriod,
+    period,
+    totalCost,
+    totalHours,
+  });
+  const sourceStatus =
+    status === "ready" && recordMatches.length === 0 ? ("empty" as const) : status;
+
+  return {
+    costName: coachCost?.name ?? "",
+    emailBody,
+    emailCc: COACH_RECORDS_EMAIL_CC,
+    emailSubject,
+    emailTo: COACH_RECORDS_EMAIL_TO,
+    emptyState: {
+      title:
+        sourceStatus === "empty"
+          ? "Sin registros DT para este mes"
+          : "No se pudo obtener el desglose DT",
+      description:
+        sourceStatus === "empty"
+          ? "No hay partidos cargados con asistencia del DT en el mes seleccionado."
+          : message,
+    },
+    hourlyRate,
+    matches: recordMatches,
+    paymentPeriod,
+    period,
+    source: {
+      provider: "google-sheets",
+      status: sourceStatus,
+      message,
+      cachedAt,
+      revalidateSeconds,
+    },
+    totalCost,
+    totalHours,
+  };
+}
+
+function findCoachCostForReportPeriod(costs: FeeCalculatorCost[], period: string) {
+  const paymentPeriod = addMonthsToPeriod(period, 1);
+  const coachCosts = costs.filter((cost) => getAutoActualCostKind(cost) === "coach");
+
+  return (
+    coachCosts.find((cost) => isCostActiveForPeriod(cost, period)) ??
+    coachCosts.find((cost) => isCostActiveForPeriod(cost, paymentPeriod)) ??
+    [...coachCosts]
+      .filter((cost) => cost.startPeriod <= paymentPeriod)
+      .sort((left, right) => right.startPeriod.localeCompare(left.startPeriod))[0] ??
+    coachCosts[0]
+  );
+}
+
+function buildCoachRecordsEmailBody({
+  hourlyRate,
+  matches,
+  paymentPeriod,
+  period,
+  totalCost,
+  totalHours,
+}: {
+  hourlyRate: number;
+  matches: CoachRecordMatch[];
+  paymentPeriod: string;
+  period: string;
+  totalCost: number;
+  totalHours: number;
+}) {
+  const matchLines =
+    matches.length > 0
+      ? matches
+          .map((match) => `${formatCoachRecordDate(match.date)} - ${match.rival}`)
+          .join("\n")
+      : "No hay partidos con asistencia del DT registrados para este mes.";
+
+  return [
+    "Buenas,",
+    "",
+    "Les envío el desglose del DT.",
+    "",
+    `Mes trabajado: ${formatPeriodLabel(period)}`,
+    `Mes de pago: ${formatPeriodLabel(paymentPeriod)}`,
+    "",
+    matchLines,
+    "",
+    `Cantidad de horas reales: ${formatNumberForReport(totalHours)}`,
+    `Valor hora DT: ${formatCurrency(hourlyRate)}`,
+    `Costo total DT: ${formatCurrency(totalCost)}`,
+  ].join("\n");
+}
+
+function formatCoachRecordDate(value: string) {
+  const parsedDate = parseDate(value);
+
+  if (!parsedDate) {
+    return value;
+  }
+
+  const [year, month, day] = parsedDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12);
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatCoachRecordCompetition(kind?: LeagueCompetitionKind) {
+  const labels: Record<LeagueCompetitionKind, string> = {
+    cup: "Copa",
+    friendly: "Amistoso",
+    league: "Liga",
+  };
+
+  return kind ? labels[kind] : "Partido";
+}
+
+function formatCoachRecordVenue(value: string) {
+  const normalized = normalizeText(value);
+
+  if (normalized === "local") {
+    return "Local";
+  }
+
+  if (normalized === "visitante") {
+    return "Visitante";
+  }
+
+  return value || "-";
+}
+
+function formatNumberForReport(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
+  }).format(value);
 }
 
 function buildPlayerFeeCalculation({

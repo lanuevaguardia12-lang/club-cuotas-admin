@@ -4,6 +4,7 @@ import { DEFAULT_APP_SETTINGS } from "@/lib/app-settings";
 import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type { AuthUser } from "@/types/auth";
+import type { CoachRecordsData } from "@/types/coach-records";
 import type { CashFlowData, DashboardData, PlayerProfile } from "@/types/dashboard";
 import type { ExportData, ExportDataset } from "@/types/export";
 import type { FeeCalculatorData } from "@/types/fee-calculator";
@@ -257,6 +258,36 @@ export class DatabaseService implements IDataService {
         cachedAt: new Date().toISOString(),
         revalidateSeconds: 0,
       },
+    };
+  }
+
+  async getCoachRecordsData(
+    period = new Date().toISOString().slice(0, 7),
+  ): Promise<CoachRecordsData> {
+    return {
+      costName: "",
+      emailBody: "",
+      emailCc: [],
+      emailSubject: `DESGLOSE DT - ${period}`,
+      emailTo: "lanuevaguardia12@gmail.com",
+      emptyState: {
+        title: "Registros DT pendientes",
+        description:
+          "El contrato IDataService ya esta listo para calcular registros DT en PostgreSQL.",
+      },
+      hourlyRate: 0,
+      matches: [],
+      paymentPeriod: period,
+      period,
+      source: {
+        provider: "postgresql",
+        status: "error",
+        message: "DatabaseService todavia no esta implementado.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+      totalCost: 0,
+      totalHours: 0,
     };
   }
 

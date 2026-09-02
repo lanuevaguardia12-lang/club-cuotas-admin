@@ -15,6 +15,7 @@ import type {
   UpsertCashFlowTransactionInput,
   UpdatePlayerFeeStatusInput,
 } from "@/types/dashboard";
+import type { CoachRecordsData } from "@/types/coach-records";
 import type { ExportData, ExportDataset } from "@/types/export";
 import type {
   FeeCalculatorData,
@@ -63,6 +64,7 @@ export interface IDataService {
   getAccountAuthByUsername(username: string): Promise<AccountAuthOverride | null>;
   getDashboardData(period?: string): Promise<DashboardData>;
   getCashFlowData(period?: string): Promise<CashFlowData>;
+  getCoachRecordsData(period?: string): Promise<CoachRecordsData>;
   upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;
   deleteCashFlowTransaction(transactionId: string): Promise<void>;
   getPlayersData(): Promise<PlayerDirectoryData>;

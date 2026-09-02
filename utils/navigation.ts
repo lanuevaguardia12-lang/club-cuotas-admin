@@ -58,6 +58,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "fee-calculator:manage",
   },
   {
+    label: "Registros DT",
+    href: "/coach-records",
+    icon: "coachRecords",
+    permission: "coach-records:manage",
+  },
+  {
     label: "Pagos",
     href: "/payments",
     icon: "payments",
@@ -109,6 +115,7 @@ const adminNavigationHrefs = new Set([
   "/players",
   "/cash-flow",
   "/fee-calculator",
+  "/coach-records",
   "/payments",
   "/audit",
   "/api-docs",
