@@ -311,13 +311,29 @@ function drawTimePill(
   context.stroke();
   context.restore();
 
-  drawCenteredText(context, `${time} HS`, width / 2, y + (compact ? 45 : 52), {
-    color: "#f4ce0f",
-    font: compact
-      ? "900 34px Arial Black, sans-serif"
-      : "900 40px Arial Black, sans-serif",
-    letterSpacing: 2,
-  });
+  drawCenteredText(
+    context,
+    formatMatchTimeForPlate(time),
+    width / 2,
+    y + (compact ? 45 : 52),
+    {
+      color: "#f4ce0f",
+      font: compact
+        ? "900 34px Arial Black, sans-serif"
+        : "900 40px Arial Black, sans-serif",
+      letterSpacing: 2,
+    },
+  );
+}
+
+function formatMatchTimeForPlate(time: string) {
+  const trimmed = time.trim();
+
+  if (!trimmed || /confirmar/i.test(trimmed)) {
+    return "Horario a confirmar";
+  }
+
+  return `${trimmed.replace(/\s*(?:h|hs|hrs)\.?$/i, "").trim()} HS`;
 }
 
 function drawMatchup(
@@ -344,13 +360,12 @@ function drawMatchup(
     y: number;
   },
 ) {
-  const cardHeight = compact ? 540 : 660;
+  const cardHeight = compact ? 590 : 680;
   const cardX = compact ? 74 : 82;
   const cardWidth = width - cardX * 2;
-  const teamNameY = y + (compact ? 92 : 128);
-  const teamRoleY = y + (compact ? 214 : 284);
-  const versusY = y + (compact ? 314 : 392);
-  const recentFormY = y + (compact ? 382 : 488);
+  const teamNameY = y + (compact ? 84 : 100);
+  const versusY = y + (compact ? 158 : 166);
+  const recentFormY = y + (compact ? 388 : 450);
 
   context.save();
   const cardGradient = context.createLinearGradient(
@@ -374,7 +389,6 @@ function drawMatchup(
     align: "left",
     compact,
     label: localTeam,
-    roleY: teamRoleY,
     role: `Local · ${localPosition}`,
     x: cardX + (compact ? 58 : 68),
     y: teamNameY,
@@ -384,7 +398,6 @@ function drawMatchup(
     align: "right",
     compact,
     label: visitorTeam,
-    roleY: teamRoleY,
     role: `Visita · ${visitorPosition}`,
     x: cardX + cardWidth - (compact ? 58 : 68),
     y: teamNameY,
@@ -393,8 +406,8 @@ function drawMatchup(
   drawCenteredText(context, "VS", width / 2, versusY, {
     color: "#f4ce0f",
     font: compact
-      ? "900 88px Arial Black, Impact, sans-serif"
-      : "900 118px Arial Black, Impact, sans-serif",
+      ? "900 106px Arial Black, Impact, sans-serif"
+      : "900 136px Arial Black, Impact, sans-serif",
     shadowBlur: 28,
     shadowColor: "rgba(244,206,15,0.22)",
   });
@@ -422,7 +435,6 @@ function drawTeamBlock(
     align,
     compact,
     label,
-    roleY,
     role,
     x,
     y,
@@ -430,17 +442,20 @@ function drawTeamBlock(
     align: "left" | "right";
     compact: boolean;
     label: string;
-    roleY: number;
     role: string;
     x: number;
     y: number;
   },
 ) {
-  const maxWidth = compact ? 318 : 350;
-  const fontSize = compact
-    ? getTeamNameFontSize(label, 38)
-    : getTeamNameFontSize(label, 44);
-  const lineHeight = compact ? 44 : 52;
+  const maxWidth = compact ? 250 : 260;
+  const fontSize = getFittedTeamNameFontSize(
+    context,
+    label,
+    compact ? 38 : 44,
+    maxWidth,
+    compact ? 28 : 32,
+  );
+  const lineHeight = Math.round(fontSize * 1.18);
   const lines = getClampedLines(
     context,
     label.toUpperCase(),
@@ -457,9 +472,26 @@ function drawTeamBlock(
     context.fillText(line, x, y + index * lineHeight, maxWidth);
   });
 
-  context.fillStyle = "rgba(255,255,255,0.74)";
-  context.font = compact ? "800 28px Arial, sans-serif" : "800 32px Arial, sans-serif";
-  context.fillText(role, x, roleY, maxWidth);
+  const roleY = y + lines.length * lineHeight + (compact ? 14 : 18);
+  const roleFont = compact ? "800 26px Arial, sans-serif" : "800 30px Arial, sans-serif";
+  const roleHeight = compact ? 40 : 46;
+  context.font = roleFont;
+  const roleWidth = Math.min(
+    maxWidth,
+    context.measureText(role).width + (compact ? 30 : 36),
+  );
+  const roleX = align === "left" ? x : x - roleWidth;
+
+  context.fillStyle = "rgba(1,47,119,0.46)";
+  context.strokeStyle = "rgba(255,255,255,0.2)";
+  context.lineWidth = 2;
+  roundedRect(context, roleX, roleY, roleWidth, roleHeight, roleHeight / 2);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = "rgba(255,255,255,0.86)";
+  context.textAlign = "center";
+  context.fillText(role, roleX + roleWidth / 2, roleY + (compact ? 28 : 32), roleWidth);
   context.restore();
 }
 
@@ -647,6 +679,41 @@ function getTeamNameFontSize(label: string, baseSize: number) {
   }
 
   return baseSize;
+}
+
+function getFittedTeamNameFontSize(
+  context: CanvasRenderingContext2D,
+  label: string,
+  baseSize: number,
+  maxWidth: number,
+  minSize: number,
+) {
+  let fontSize = getTeamNameFontSize(label, baseSize);
+  const longestWord = label
+    .toUpperCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)[0];
+
+  if (!longestWord) {
+    return fontSize;
+  }
+
+  context.save();
+
+  while (fontSize > minSize) {
+    context.font = `900 ${fontSize}px Arial Black, sans-serif`;
+
+    if (context.measureText(longestWord).width <= maxWidth) {
+      break;
+    }
+
+    fontSize -= 2;
+  }
+
+  context.restore();
+
+  return fontSize;
 }
 
 function getClampedLines(
