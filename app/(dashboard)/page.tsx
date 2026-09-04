@@ -80,12 +80,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   if (user.role === "player" || user.role === "fan" || user.role === "coach") {
     const canRegisterPlayers = user.role === "coach";
-    const [fixture, playerProfile, playerOfMatchData] = await Promise.all([
+    const [fixture, playerProfile, playerOfMatchData, teamsData] = await Promise.all([
       fixturePromise,
       user.role === "player" ? findPlayerProfileForUser(user) : null,
       canRegisterPlayers
         ? dataService.getPlayerOfMatchData(user.id, user.playerId).catch(() => null)
         : null,
+      dataService.getTeamsData().catch(() => ({ teams: [] })),
     ]);
     const isFan = user.role === "fan";
     const isCoach = user.role === "coach";
@@ -120,17 +121,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           playerProfile={playerProfile}
           registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
           registrationStatusByMatchKey={registrationStatusByMatchKey}
+          teamProfiles={teamsData.teams}
           teamStatsMatches={teamStatsMatches}
         />
       </main>
     );
   }
 
-  const [dashboard, fixture, playerOptions, coachName] = await Promise.all([
+  const [dashboard, fixture, playerOptions, coachName, teamsData] = await Promise.all([
     dataService.getDashboardData(period),
     fixturePromise,
     getFixturePlayerOptions(dataService),
     getCurrentCoachName(dataService),
+    dataService.getTeamsData().catch(() => ({ teams: [] })),
   ]);
   const teamStatsMatches = await getTeamStatsMatches(fixture);
 
@@ -178,6 +181,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         coachName={coachName}
         fixture={fixture}
         playerOptions={playerOptions}
+        teamProfiles={teamsData.teams}
         teamStatsMatches={teamStatsMatches}
       />
 

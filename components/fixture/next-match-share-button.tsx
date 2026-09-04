@@ -5,12 +5,14 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { getTeamDisplayName } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type {
   LeagueCompetitionKind,
   LeagueFixtureMatch,
   LeagueStandingRow,
 } from "@/types/fixture";
+import type { TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -26,6 +28,7 @@ interface NextMatchShareButtonProps {
   matches?: LeagueFixtureMatch[];
   standings?: LeagueStandingRow[];
   teamName: string;
+  teamProfiles?: TeamProfile[];
 }
 
 export function NextMatchShareButton({
@@ -34,6 +37,7 @@ export function NextMatchShareButton({
   matches = [],
   standings = [],
   teamName,
+  teamProfiles = [],
 }: NextMatchShareButtonProps) {
   const [pendingFormat, setPendingFormat] = useState<NextMatchShareFormat | null>(null);
   const [message, setMessage] = useState("");
@@ -44,7 +48,13 @@ export function NextMatchShareButton({
     setMessage("");
 
     try {
-      const blob = await createNextMatchBlob(match, format, matches, standings);
+      const blob = await createNextMatchBlob(
+        match,
+        format,
+        matches,
+        standings,
+        teamProfiles,
+      );
       const formatLabel = format === "story" ? "story" : "publicacion";
       const fileName = `proximo-partido-${formatLabel}-${slugify(getMatchRival(match, teamName))}.png`;
       const file = new File([blob], fileName, { type: "image/png" });
@@ -52,7 +62,10 @@ export function NextMatchShareButton({
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           files: [file],
-          text: `Proximo partido: ${match.localTeam} vs ${match.visitorTeam}`,
+          text: `Proximo partido: ${getTeamDisplayName(
+            teamProfiles,
+            match.localTeam,
+          )} vs ${getTeamDisplayName(teamProfiles, match.visitorTeam)}`,
           title: "Proximo partido",
         });
         setMessage("Placa lista para compartir.");
@@ -117,6 +130,7 @@ async function createNextMatchBlob(
   format: NextMatchShareFormat,
   matches: LeagueFixtureMatch[],
   standings: LeagueStandingRow[],
+  teamProfiles: TeamProfile[],
 ) {
   const canvas = document.createElement("canvas");
 
@@ -129,7 +143,7 @@ async function createNextMatchBlob(
     throw new Error("Tu navegador no pudo preparar la imagen.");
   }
 
-  await drawNextMatchPlate(context, match, format, matches, standings);
+  await drawNextMatchPlate(context, match, format, matches, standings, teamProfiles);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -148,6 +162,7 @@ async function drawNextMatchPlate(
   format: NextMatchShareFormat,
   matches: LeagueFixtureMatch[],
   standings: LeagueStandingRow[],
+  teamProfiles: TeamProfile[],
 ) {
   const width = format === "story" ? STORY_WIDTH : POST_WIDTH;
   const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
@@ -155,14 +170,18 @@ async function drawNextMatchPlate(
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
   const localRecentMatches = getLastPlayedMatchesForTeam(matches, match.localTeam, match)
     .slice(0, 3)
-    .map((recentMatch) => getTeamMatchOutcome(recentMatch, match.localTeam));
+    .map((recentMatch) =>
+      withDisplayRival(getTeamMatchOutcome(recentMatch, match.localTeam), teamProfiles),
+    );
   const visitorRecentMatches = getLastPlayedMatchesForTeam(
     matches,
     match.visitorTeam,
     match,
   )
     .slice(0, 3)
-    .map((recentMatch) => getTeamMatchOutcome(recentMatch, match.visitorTeam));
+    .map((recentMatch) =>
+      withDisplayRival(getTeamMatchOutcome(recentMatch, match.visitorTeam), teamProfiles),
+    );
 
   drawBackground(context, width, height);
 
@@ -212,10 +231,10 @@ async function drawNextMatchPlate(
     compact,
     localPosition: getTeamPositionLabel(standings, match.localTeam),
     localRecentMatches,
-    localTeam: match.localTeam,
+    localTeam: getTeamDisplayName(teamProfiles, match.localTeam),
     visitorPosition: getTeamPositionLabel(standings, match.visitorTeam),
     visitorRecentMatches,
-    visitorTeam: match.visitorTeam,
+    visitorTeam: getTeamDisplayName(teamProfiles, match.visitorTeam),
     width,
     y: compact ? 580 : 790,
   });
@@ -363,9 +382,20 @@ function drawMatchup(
   const cardHeight = compact ? 590 : 680;
   const cardX = compact ? 74 : 82;
   const cardWidth = width - cardX * 2;
-  const teamNameY = y + (compact ? 84 : 100);
-  const versusY = y + (compact ? 158 : 166);
-  const recentFormY = y + (compact ? 388 : 450);
+  const sidePadding = compact ? 58 : 68;
+  const teamMaxWidth = compact ? 290 : 315;
+  const teamFontSize = getSharedTeamNameFontSize(
+    context,
+    [localTeam, visitorTeam],
+    compact ? 42 : 48,
+    teamMaxWidth,
+    compact ? 30 : 34,
+  );
+  const teamLineHeight = Math.round(teamFontSize * 1.12);
+  const teamNameY = y + (compact ? 88 : 104);
+  const roleY = y + (compact ? 216 : 250);
+  const versusY = y + (compact ? 196 : 232);
+  const recentFormY = y + (compact ? 398 : 468);
 
   context.save();
   const cardGradient = context.createLinearGradient(
@@ -389,8 +419,12 @@ function drawMatchup(
     align: "left",
     compact,
     label: localTeam,
+    lineHeight: teamLineHeight,
+    maxWidth: teamMaxWidth,
     role: `Local · ${localPosition}`,
-    x: cardX + (compact ? 58 : 68),
+    roleY,
+    fontSize: teamFontSize,
+    x: cardX + sidePadding,
     y: teamNameY,
   });
 
@@ -398,8 +432,12 @@ function drawMatchup(
     align: "right",
     compact,
     label: visitorTeam,
+    lineHeight: teamLineHeight,
+    maxWidth: teamMaxWidth,
     role: `Visita · ${visitorPosition}`,
-    x: cardX + cardWidth - (compact ? 58 : 68),
+    roleY,
+    fontSize: teamFontSize,
+    x: cardX + cardWidth - sidePadding,
     y: teamNameY,
   });
 
@@ -416,7 +454,7 @@ function drawMatchup(
     align: "left",
     compact,
     outcomes: localRecentMatches,
-    x: cardX + (compact ? 58 : 68),
+    x: cardX + sidePadding,
     y: recentFormY,
   });
 
@@ -424,7 +462,7 @@ function drawMatchup(
     align: "right",
     compact,
     outcomes: visitorRecentMatches,
-    x: cardX + cardWidth - (compact ? 58 : 68),
+    x: cardX + cardWidth - sidePadding,
     y: recentFormY,
   });
 }
@@ -434,28 +472,27 @@ function drawTeamBlock(
   {
     align,
     compact,
+    fontSize,
     label,
+    lineHeight,
+    maxWidth,
     role,
+    roleY,
     x,
     y,
   }: {
     align: "left" | "right";
     compact: boolean;
+    fontSize: number;
     label: string;
+    lineHeight: number;
+    maxWidth: number;
     role: string;
+    roleY: number;
     x: number;
     y: number;
   },
 ) {
-  const maxWidth = compact ? 250 : 260;
-  const fontSize = getFittedTeamNameFontSize(
-    context,
-    label,
-    compact ? 38 : 44,
-    maxWidth,
-    compact ? 28 : 32,
-  );
-  const lineHeight = Math.round(fontSize * 1.18);
   const lines = getClampedLines(
     context,
     label.toUpperCase(),
@@ -472,7 +509,6 @@ function drawTeamBlock(
     context.fillText(line, x, y + index * lineHeight, maxWidth);
   });
 
-  const roleY = y + lines.length * lineHeight + (compact ? 14 : 18);
   const roleFont = compact ? "800 26px Arial, sans-serif" : "800 30px Arial, sans-serif";
   const roleHeight = compact ? 40 : 46;
   context.font = roleFont;
@@ -705,6 +741,40 @@ function getFittedTeamNameFontSize(
     context.font = `900 ${fontSize}px Arial Black, sans-serif`;
 
     if (context.measureText(longestWord).width <= maxWidth) {
+      break;
+    }
+
+    fontSize -= 2;
+  }
+
+  context.restore();
+
+  return fontSize;
+}
+
+function getSharedTeamNameFontSize(
+  context: CanvasRenderingContext2D,
+  labels: string[],
+  baseSize: number,
+  maxWidth: number,
+  minSize: number,
+) {
+  let fontSize = Math.min(
+    ...labels.map((label) =>
+      getFittedTeamNameFontSize(context, label, baseSize, maxWidth, minSize),
+    ),
+  );
+
+  context.save();
+
+  while (fontSize > minSize) {
+    context.font = `900 ${fontSize}px Arial Black, sans-serif`;
+
+    const everyLabelFits = labels.every(
+      (label) => wrapText(context, label.toUpperCase(), maxWidth).length <= 2,
+    );
+
+    if (everyLabelFits) {
       break;
     }
 
@@ -950,6 +1020,20 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
     kind,
     label,
     rival,
+  };
+}
+
+function withDisplayRival(
+  outcome: MatchOutcome,
+  teamProfiles: TeamProfile[],
+): MatchOutcome {
+  if (!outcome.rival || outcome.rival === "-") {
+    return outcome;
+  }
+
+  return {
+    ...outcome,
+    rival: getTeamDisplayName(teamProfiles, outcome.rival),
   };
 }
 

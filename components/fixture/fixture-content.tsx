@@ -29,6 +29,7 @@ import {
   buildMatchRegistrationFormUrl,
   getMatchRegistrationPeriod,
 } from "@/lib/match-registration-form";
+import { getTeamCrestDataUrl, getTeamDisplayName } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type {
   FixturePlayerOption,
@@ -39,6 +40,7 @@ import type {
   LeagueScorerRow,
   LeagueStandingRow,
 } from "@/types/fixture";
+import type { TeamProfile } from "@/types/teams";
 
 interface FixtureContentProps {
   activeTab?: string;
@@ -51,6 +53,7 @@ interface FixtureContentProps {
   playerOptions?: FixturePlayerOption[];
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
   selectedRoundKeys?: string[];
+  teamProfiles?: TeamProfile[];
 }
 
 type FixtureTab = "resumen" | "posiciones" | "goleadores" | "fixture";
@@ -66,6 +69,7 @@ export function FixtureContent({
   playerOptions = [],
   registrationPlayerNamesByPeriod = {},
   selectedRoundKeys = [],
+  teamProfiles = [],
 }: FixtureContentProps) {
   const tab = normalizeFixtureTab(activeTab);
   const hasPublishedResults = data.matches.some((match) => match.status === "played");
@@ -95,6 +99,7 @@ export function FixtureContent({
         <SummaryTab
           canShareAlternateResultFormats={canShareAlternateResultFormats}
           data={data}
+          teamProfiles={teamProfiles}
         />
       ) : null}
       {tab === "posiciones" ? <StandingsTable data={data} /> : null}
@@ -111,6 +116,7 @@ export function FixtureContent({
           registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
           rounds={data.rounds}
           selectedRoundKeys={selectedRoundKeys}
+          teamProfiles={teamProfiles}
         />
       ) : null}
     </div>
@@ -155,6 +161,7 @@ function FixtureTabNav({
 function SummaryTab({
   canShareAlternateResultFormats = false,
   data,
+  teamProfiles = [],
 }: FixtureContentProps) {
   const nextMatch =
     data.nextMatches[0] ?? data.clubMatches.find((match) => match.status === "pending");
@@ -210,6 +217,7 @@ function SummaryTab({
                 match={nextMatch}
                 matches={recentFormMatches}
                 rows={data.standings}
+                teamProfiles={teamProfiles}
               />
             ) : (
               <p className="text-muted-foreground text-sm">
@@ -233,6 +241,7 @@ function SummaryTab({
               canShareAlternateResultFormats={canShareAlternateResultFormats}
               match={lastMatch}
               rows={data.standings}
+              teamProfiles={teamProfiles}
             />
           ) : (
             <EmptyInline
@@ -250,10 +259,12 @@ function NextMatchCard({
   match,
   matches,
   rows,
+  teamProfiles,
 }: {
   match: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   rows: LeagueStandingRow[];
+  teamProfiles: TeamProfile[];
 }) {
   const showPositions = match.competitionKind === "league";
   const localPosition = showPositions
@@ -290,11 +301,16 @@ function NextMatchCard({
           align="right"
           position={localPosition}
           teamName={match.localTeam}
+          teamProfiles={teamProfiles}
         />
         <div className="flex justify-center">
           <MatchScore match={match} />
         </div>
-        <PositionTeamLine position={visitorPosition} teamName={match.visitorTeam} />
+        <PositionTeamLine
+          position={visitorPosition}
+          teamName={match.visitorTeam}
+          teamProfiles={teamProfiles}
+        />
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -302,11 +318,13 @@ function NextMatchCard({
           teamName={match.localTeam}
           matches={matches}
           beforeMatch={match}
+          teamProfiles={teamProfiles}
         />
         <TeamRecentForm
           teamName={match.visitorTeam}
           matches={matches}
           beforeMatch={match}
+          teamProfiles={teamProfiles}
         />
       </div>
       <MatchGoalsList match={match} />
@@ -315,6 +333,7 @@ function NextMatchCard({
         matches={matches}
         standings={rows}
         teamName={APP_TEAM_NAME}
+        teamProfiles={teamProfiles}
       />
     </div>
   );
@@ -324,12 +343,15 @@ function PositionTeamLine({
   align = "left",
   position,
   teamName,
+  teamProfiles,
 }: {
   align?: "left" | "right";
   position?: string;
   teamName: string;
+  teamProfiles: TeamProfile[];
 }) {
   const isClub = teamName === APP_TEAM_NAME;
+  const displayName = getTeamDisplayName(teamProfiles, teamName);
 
   return (
     <div
@@ -342,9 +364,11 @@ function PositionTeamLine({
       <div
         className={cn("flex items-center gap-2", align === "right" && "flex-row-reverse")}
       >
-        <TeamAvatar teamName={teamName} />
+        <TeamAvatar teamName={teamName} teamProfiles={teamProfiles} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{teamName}</p>
+          <p className="truncate text-sm font-semibold" title={teamName}>
+            {displayName}
+          </p>
           {position ? <p className="mt-1 text-xs opacity-75">{position}</p> : null}
         </div>
       </div>
@@ -356,10 +380,12 @@ function TeamRecentForm({
   beforeMatch,
   matches,
   teamName,
+  teamProfiles,
 }: {
   beforeMatch: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   teamName: string;
+  teamProfiles: TeamProfile[];
 }) {
   const recentMatches = getLastPlayedMatchesForTeam(matches, teamName, beforeMatch).slice(
     0,
@@ -369,7 +395,7 @@ function TeamRecentForm({
   return (
     <div className="grid gap-2">
       <p className="text-muted-foreground text-xs font-semibold uppercase">
-        Últimos de {teamName}
+        Últimos de {getTeamDisplayName(teamProfiles, teamName)}
       </p>
       {recentMatches.length > 0 ? (
         <div className="grid grid-cols-2 gap-3">
@@ -384,7 +410,10 @@ function TeamRecentForm({
                   getOutcomeClassName(outcome.kind),
                 )}
               >
-                {outcome.label} vs {outcome.rival}
+                {outcome.label} vs{" "}
+                {outcome.rival
+                  ? getTeamDisplayName(teamProfiles, outcome.rival)
+                  : outcome.rival}
               </span>
             );
           })}
@@ -400,10 +429,12 @@ function PlayedMatchCard({
   canShareAlternateResultFormats,
   match,
   rows,
+  teamProfiles,
 }: {
   canShareAlternateResultFormats: boolean;
   match: LeagueFixtureMatch;
   rows: LeagueStandingRow[];
+  teamProfiles: TeamProfile[];
 }) {
   const showPositions = match.competitionKind === "league";
   const localPosition = showPositions
@@ -435,17 +466,26 @@ function PlayedMatchCard({
         </div>
       </div>
       <div className="grid gap-2">
-        <PositionTeamLine position={localPosition} teamName={match.localTeam} />
+        <PositionTeamLine
+          position={localPosition}
+          teamName={match.localTeam}
+          teamProfiles={teamProfiles}
+        />
         <div className="flex justify-center">
           <MatchScore match={match} />
         </div>
-        <PositionTeamLine position={visitorPosition} teamName={match.visitorTeam} />
+        <PositionTeamLine
+          position={visitorPosition}
+          teamName={match.visitorTeam}
+          teamProfiles={teamProfiles}
+        />
       </div>
       <MatchGoalsList match={match} />
       <MatchResultShareButton
         match={match}
         showAdminFormats={canShareAlternateResultFormats}
         teamName={APP_TEAM_NAME}
+        teamProfiles={teamProfiles}
       />
     </div>
   );
@@ -641,6 +681,7 @@ function FixtureRounds({
   registrationPlayerNamesByPeriod,
   rounds,
   selectedRoundKeys,
+  teamProfiles,
 }: {
   canManage: boolean;
   canRegisterPlayers: boolean;
@@ -652,6 +693,7 @@ function FixtureRounds({
   registrationPlayerNamesByPeriod: Record<string, string[]>;
   rounds: LeagueFixtureRound[];
   selectedRoundKeys: string[];
+  teamProfiles: TeamProfile[];
 }) {
   const visibleRoundKeys = new Set(selectedRoundKeys);
   const filteredRounds =
@@ -746,6 +788,7 @@ function FixtureRounds({
                     playerOptions={playerOptions}
                     registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
                     standings={data.standings}
+                    teamProfiles={teamProfiles}
                   />
                 ))}
               </div>
@@ -784,6 +827,7 @@ function FullMatchRow({
   playerOptions,
   registrationPlayerNamesByPeriod,
   standings,
+  teamProfiles,
 }: {
   canManage: boolean;
   canRegisterPlayers: boolean;
@@ -795,6 +839,7 @@ function FullMatchRow({
   playerOptions: FixturePlayerOption[];
   registrationPlayerNamesByPeriod: Record<string, string[]>;
   standings: LeagueStandingRow[];
+  teamProfiles: TeamProfile[];
 }) {
   const canEditSchedule = canManage && match.isClubMatch;
   const registrationPlayerNames =
@@ -816,12 +861,12 @@ function FullMatchRow({
         {match.time || "-"}
       </div>
 
-      <MatchTeamsCard match={match} />
+      <MatchTeamsCard match={match} teamProfiles={teamProfiles} />
 
       <div className="hidden grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1fr)] items-center gap-2 md:grid">
-        <TeamName name={match.localTeam} align="right" />
+        <TeamName name={match.localTeam} align="right" teamProfiles={teamProfiles} />
         <MatchScore match={match} />
-        <TeamName name={match.visitorTeam} />
+        <TeamName name={match.visitorTeam} teamProfiles={teamProfiles} />
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
@@ -888,6 +933,7 @@ function FullMatchRow({
             match={match}
             showAdminFormats={canShareAlternateResultFormats}
             teamName={APP_TEAM_NAME}
+            teamProfiles={teamProfiles}
           />
         </div>
       ) : null}
@@ -899,6 +945,7 @@ function FullMatchRow({
             matches={matches}
             standings={standings}
             teamName={APP_TEAM_NAME}
+            teamProfiles={teamProfiles}
           />
         </div>
       ) : null}
@@ -919,9 +966,11 @@ function FullMatchRow({
 function MatchTeamsCard({
   className,
   match,
+  teamProfiles,
 }: {
   className?: string;
   match: LeagueFixtureMatch;
+  teamProfiles: TeamProfile[];
 }) {
   return (
     <div className={cn("grid min-w-0 gap-2 md:hidden", className)}>
@@ -931,6 +980,7 @@ function MatchTeamsCard({
         score={match.localScore}
         showScore={match.status === "played"}
         teamName={match.localTeam}
+        teamProfiles={teamProfiles}
       />
       <div className="text-muted-foreground flex items-center justify-center">
         <MatchScore match={match} />
@@ -941,6 +991,7 @@ function MatchTeamsCard({
         score={match.visitorScore}
         showScore={match.status === "played"}
         teamName={match.visitorTeam}
+        teamProfiles={teamProfiles}
       />
     </div>
   );
@@ -952,14 +1003,17 @@ function MatchTeamLine({
   score,
   showScore,
   teamName,
+  teamProfiles,
 }: {
   label: string;
   penaltyScore?: number;
   score?: number;
   showScore: boolean;
   teamName: string;
+  teamProfiles: TeamProfile[];
 }) {
   const isClub = teamName === APP_TEAM_NAME;
+  const displayName = getTeamDisplayName(teamProfiles, teamName);
 
   return (
     <div
@@ -969,9 +1023,11 @@ function MatchTeamLine({
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <TeamAvatar teamName={teamName} />
+        <TeamAvatar teamName={teamName} teamProfiles={teamProfiles} />
         <div className="min-w-0">
-          <p className="truncate font-semibold">{teamName}</p>
+          <p className="truncate font-semibold" title={teamName}>
+            {displayName}
+          </p>
           <p className="text-xs opacity-75">{label}</p>
         </div>
       </div>
@@ -1296,8 +1352,17 @@ function getFixtureMatchSortValue(match: LeagueFixtureMatch) {
   return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
 }
 
-function TeamName({ align = "left", name }: { align?: "left" | "right"; name: string }) {
+function TeamName({
+  align = "left",
+  name,
+  teamProfiles,
+}: {
+  align?: "left" | "right";
+  name: string;
+  teamProfiles: TeamProfile[];
+}) {
   const isClub = name === APP_TEAM_NAME;
+  const displayName = getTeamDisplayName(teamProfiles, name);
 
   return (
     <span
@@ -1308,14 +1373,39 @@ function TeamName({ align = "left", name }: { align?: "left" | "right"; name: st
       )}
       title={name}
     >
-      {align === "right" ? null : <TeamAvatar teamName={name} />}
-      <span className="min-w-0 truncate">{name}</span>
-      {align === "right" ? <TeamAvatar teamName={name} /> : null}
+      {align === "right" ? null : (
+        <TeamAvatar teamName={name} teamProfiles={teamProfiles} />
+      )}
+      <span className="min-w-0 truncate">{displayName}</span>
+      {align === "right" ? (
+        <TeamAvatar teamName={name} teamProfiles={teamProfiles} />
+      ) : null}
     </span>
   );
 }
 
-function TeamAvatar({ teamName }: { teamName: string }) {
+function TeamAvatar({
+  teamName,
+  teamProfiles,
+}: {
+  teamName: string;
+  teamProfiles: TeamProfile[];
+}) {
+  const crestDataUrl = getTeamCrestDataUrl(teamProfiles, teamName);
+
+  if (crestDataUrl) {
+    return (
+      <span className="bg-card inline-grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt={`Escudo de ${teamName}`}
+          className="size-full object-contain"
+          src={crestDataUrl}
+        />
+      </span>
+    );
+  }
+
   if (teamName === APP_TEAM_NAME) {
     return <BrandMark className="size-8 rounded-full bg-white" />;
   }

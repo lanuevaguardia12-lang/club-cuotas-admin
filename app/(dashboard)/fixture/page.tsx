@@ -54,9 +54,10 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
     year: params.year,
   });
   const dataService = getDataService();
-  const fixtureScheduleOverrides = await dataService
-    .getFixtureMatchScheduleOverrides()
-    .catch(() => []);
+  const [fixtureScheduleOverrides, teamsData] = await Promise.all([
+    dataService.getFixtureMatchScheduleOverrides().catch(() => []),
+    dataService.getTeamsData().catch(() => ({ teams: [] })),
+  ]);
   const data = applyLeagueFixtureScheduleOverrides(rawData, fixtureScheduleOverrides);
   const canManageFixture = user.role === "admin";
   const canRegisterPlayers = user.role === "coach";
@@ -115,6 +116,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
         playerOptions={playerOptions}
         registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
         selectedRoundKeys={toArray(params.round)}
+        teamProfiles={teamsData.teams}
       />
     </main>
   );

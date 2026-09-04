@@ -46,6 +46,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "players:read",
   },
   {
+    label: "Equipos",
+    href: "/teams",
+    icon: "teams",
+    permission: "teams:manage",
+  },
+  {
     label: "Cash Flow",
     href: "/cash-flow",
     icon: "cashFlow",
@@ -113,6 +119,7 @@ const adminNavigationHrefs = new Set([
   "/player-of-match",
   "/fixture",
   "/players",
+  "/teams",
   "/cash-flow",
   "/fee-calculator",
   "/coach-records",

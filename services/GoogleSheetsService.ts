@@ -11,6 +11,12 @@ import {
   parseBooleanValue,
 } from "@/lib/app-settings";
 import { APP_TEAM_NAME, getLeagueClubMatchesForYear } from "@/lib/league-fixture";
+import {
+  createTeamProfileId,
+  getDefaultTeamShortName,
+  normalizeTeamProfileKey,
+  sanitizeTeamShortName,
+} from "@/lib/team-profiles";
 import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type {
@@ -120,6 +126,7 @@ import type {
   PlayerDirectoryStatus,
   UpsertPlayerInput,
 } from "@/types/players";
+import type { TeamProfile, TeamsData, UpsertTeamProfileInput } from "@/types/teams";
 
 type RevalidateTagWithProfile = (
   tag: string,
@@ -154,6 +161,7 @@ interface GoogleSheetsConfig {
   remindersRange: string;
   paymentsRange: string;
   pushSubscriptionsRange: string;
+  teamsRange: string;
   playerOfMatchVotesRange: string;
   playerOfMatchOverridesRange: string;
   fixtureOverridesRange: string;
@@ -280,6 +288,7 @@ const DEFAULT_NOTIFICATIONS_RANGE = "Notificaciones!A:Z";
 const DEFAULT_REMINDERS_RANGE = "Recordatorios!A:Z";
 const DEFAULT_PAYMENTS_RANGE = "Pagos!A:Z";
 const DEFAULT_PUSH_SUBSCRIPTIONS_RANGE = "PushSubscriptions!A:Z";
+const DEFAULT_TEAMS_RANGE = "Equipos!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE = "JugadorPartidoVotos!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_OVERRIDES_RANGE = "JugadorPartidoAjustes!A:Z";
 const DEFAULT_FIXTURE_OVERRIDES_RANGE = "FixtureAjustes!A:Z";
@@ -371,6 +380,8 @@ const pushSubscriptionHeaders = [
   "creado_en",
   "actualizado_en",
 ];
+
+const teamProfileHeaders = ["id", "nombre", "nombre_corto", "escudo", "actualizado_en"];
 
 const playerOfMatchVoteHeaders = [
   "id",
@@ -595,6 +606,8 @@ export class GoogleSheetsService implements IDataService {
         config.pushSubscriptionsRange ??
         process.env.GOOGLE_SHEETS_PUSH_SUBSCRIPTIONS_RANGE ??
         DEFAULT_PUSH_SUBSCRIPTIONS_RANGE,
+      teamsRange:
+        config.teamsRange ?? process.env.GOOGLE_SHEETS_TEAMS_RANGE ?? DEFAULT_TEAMS_RANGE,
       playerOfMatchVotesRange:
         config.playerOfMatchVotesRange ??
         process.env.GOOGLE_SHEETS_PLAYER_OF_MATCH_VOTES_RANGE ??
@@ -1496,6 +1509,133 @@ export class GoogleSheetsService implements IDataService {
     });
 
     invalidatePlayersCache();
+  }
+
+  async getTeamsData(): Promise<TeamsData> {
+    const cachedAt = new Date().toISOString();
+
+    try {
+      this.assertConfigured();
+
+      const rows = await this.readCachedTeamProfileRows();
+      const teams = mapRowsToTeamProfiles(rows);
+
+      return {
+        teams,
+        emptyState: {
+          title: teams.length === 0 ? "Sin equipos cargados" : "Equipos",
+          description:
+            teams.length === 0
+              ? "Cargá nombres cortos y escudos para mejorar las placas y cards del fixture."
+              : "Equipos administrados desde la app.",
+        },
+        source: {
+          provider: "google-sheets",
+          status: teams.length === 0 ? "empty" : "ready",
+          message:
+            teams.length === 0
+              ? "Google Sheets conectado, sin equipos cargados."
+              : "Equipos obtenidos desde Google Sheets.",
+          cachedAt,
+          revalidateSeconds: this.config.cacheTtlSeconds,
+        },
+      };
+    } catch (error) {
+      const serviceError = normalizeGoogleSheetsError(error);
+
+      return {
+        teams: [],
+        emptyState: {
+          title: "No se pudieron obtener equipos",
+          description: serviceError.message,
+        },
+        source: {
+          provider: "google-sheets",
+          status: "error",
+          message: serviceError.message,
+          cachedAt,
+          revalidateSeconds: this.config.cacheTtlSeconds,
+        },
+      };
+    }
+  }
+
+  async upsertTeamProfile(input: UpsertTeamProfileInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const teamsRange = this.config.teamsRange;
+    const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, teamsRange);
+    const sheets = this.createSheetsClient();
+    const sheetPrefix = getSheetPrefix(teamsRange);
+    const now = new Date().toISOString();
+
+    await this.ensureSheetForRange(teamsRange, spreadsheetId);
+
+    if (rows.length === 0) {
+      const team = normalizeTeamProfileInput(input, now);
+      const lastColumn = toColumnName(teamProfileHeaders.length - 1);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A:${lastColumn}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            teamProfileHeaders,
+            buildTeamProfileWritableRow(teamProfileHeaders, team),
+          ],
+        },
+      });
+      invalidateTeamsCache();
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = rows;
+    let headers = normalizeWritableHeaders(headerRow, teamProfileHeaders);
+    headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      sheetPrefix,
+      headers,
+      teamProfileHeaders,
+    );
+    const targetId = input.id?.trim() || createTeamProfileId(input.name) || "equipo";
+    const targetRowIndex = findTeamProfileRowIndex(
+      headers,
+      dataRows,
+      targetId,
+      input.name,
+    );
+    const existing =
+      targetRowIndex >= 0
+        ? mapRowsToTeamProfiles([headers, dataRows[targetRowIndex]])[0]
+        : undefined;
+    const team = normalizeTeamProfileInput(input, now, targetId, existing);
+
+    if (targetRowIndex >= 0) {
+      const spreadsheetRow = targetRowIndex + 2;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(headers.length - 1)}${spreadsheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [buildTeamProfileWritableRow(headers, team)],
+        },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: teamsRange,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [buildTeamProfileWritableRow(headers, team)],
+        },
+      });
+    }
+
+    invalidateTeamsCache();
   }
 
   async getFeeCalculatorData(period = getCurrentPeriod()): Promise<FeeCalculatorData> {
@@ -3310,6 +3450,20 @@ export class GoogleSheetsService implements IDataService {
     )();
   }
 
+  private async readCachedTeamProfileRows() {
+    const spreadsheetId = this.getAppSpreadsheetId();
+
+    return unstable_cache(
+      async () =>
+        this.readOptionalValuesFromSpreadsheet(spreadsheetId, this.config.teamsRange),
+      ["google-sheets-teams", spreadsheetId, this.config.teamsRange],
+      {
+        revalidate: this.config.cacheTtlSeconds,
+        tags: ["google-sheets", "google-sheets:teams"],
+      },
+    )();
+  }
+
   private async readCachedCashFlowRows() {
     const spreadsheetId = this.config.spreadsheetId;
 
@@ -4300,6 +4454,54 @@ function mapRowsToPlayerDirectoryItems(rows: unknown[][]): PlayerDirectoryItem[]
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
 }
 
+function mapRowsToTeamProfiles(rows: unknown[][]): TeamProfile[] {
+  return rowsToRecords(rows)
+    .map((record, index) => {
+      const name = pick(record, [
+        "nombre",
+        "name",
+        "equipo",
+        "team",
+        "team_name",
+        "nombre_equipo",
+      ]).trim();
+
+      if (!name) {
+        return null;
+      }
+
+      const id =
+        pick(record, ["id", "equipo_id", "team_id"]) ||
+        createTeamProfileId(name) ||
+        `team-${index + 1}`;
+      const shortName =
+        sanitizeTeamShortName(
+          pick(record, [
+            "nombre_corto",
+            "short_name",
+            "alias",
+            "display_name",
+            "nombre_placa",
+          ]),
+        ) || getDefaultTeamShortName(name);
+
+      return {
+        id,
+        name,
+        shortName,
+        crestDataUrl: sanitizeTeamCrestDataUrl(
+          pick(record, ["escudo", "crest", "logo", "shield", "foto"]),
+        ),
+        updatedAt:
+          parseDateTime(
+            pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
+          ) ?? "",
+      } satisfies TeamProfile;
+    })
+    .filter((team): team is TeamProfile => Boolean(team))
+    .sort((left, right) => left.name.localeCompare(right.name, "es"));
+}
+
 function mapRowsToAccountProfiles(rows: unknown[][]): AccountProfileRecord[] {
   return rowsToRecords(rows).flatMap((record): AccountProfileRecord[] => {
     const userId = pick(record, ["user_id", "usuario_id"]);
@@ -4350,6 +4552,10 @@ function sanitizeProfilePhotoDataUrl(value?: string) {
   }
 
   return dataUrl;
+}
+
+function sanitizeTeamCrestDataUrl(value?: string) {
+  return sanitizeProfilePhotoDataUrl(value);
 }
 
 function mapRowsToPlayerAttendanceSnapshots(
@@ -4723,6 +4929,40 @@ function findPlayerDirectoryRowIndex(
   );
 }
 
+function findTeamProfileRowIndex(
+  headers: string[],
+  rows: unknown[][],
+  teamId: string,
+  teamName = "",
+) {
+  const idIndex = findHeaderIndex(headers, ["id", "equipo_id", "team_id"]);
+  const nameIndex = findHeaderIndex(headers, [
+    "nombre",
+    "name",
+    "equipo",
+    "team",
+    "team_name",
+    "nombre_equipo",
+  ]);
+  const normalizedName = normalizeTeamProfileKey(teamName);
+
+  if (idIndex >= 0) {
+    const byId = rows.findIndex((row) => String(row[idIndex] ?? "").trim() === teamId);
+
+    if (byId >= 0) {
+      return byId;
+    }
+  }
+
+  if (nameIndex < 0 || !normalizedName) {
+    return -1;
+  }
+
+  return rows.findIndex(
+    (row) => normalizeTeamProfileKey(String(row[nameIndex] ?? "")) === normalizedName,
+  );
+}
+
 function normalizePlayerInput(
   input: UpsertPlayerInput,
   existingIds: Set<string>,
@@ -4828,6 +5068,61 @@ function buildPlayerDirectoryWritableRow(headers: string[], player: PlayerDirect
     created_at: player.createdAt,
     actualizado_en: player.updatedAt,
     updated_at: player.updatedAt,
+  };
+
+  return headers.map((header) => values[normalizeHeader(header)] ?? "");
+}
+
+function normalizeTeamProfileInput(
+  input: UpsertTeamProfileInput,
+  now: string,
+  targetId?: string,
+  existing?: TeamProfile,
+): TeamProfile {
+  const name = input.name.trim();
+  const id = targetId || input.id?.trim() || createTeamProfileId(name) || "equipo";
+  const shortName =
+    sanitizeTeamShortName(input.shortName ?? "") ||
+    existing?.shortName ||
+    getDefaultTeamShortName(name);
+
+  return {
+    id,
+    name,
+    shortName,
+    crestDataUrl:
+      input.crestDataUrl === undefined
+        ? (existing?.crestDataUrl ?? "")
+        : sanitizeTeamCrestDataUrl(input.crestDataUrl),
+    updatedAt: now,
+  };
+}
+
+function buildTeamProfileWritableRow(headers: string[], team: TeamProfile) {
+  const values: Record<string, string> = {
+    id: team.id,
+    equipo_id: team.id,
+    team_id: team.id,
+    nombre: team.name,
+    name: team.name,
+    equipo: team.name,
+    team: team.name,
+    team_name: team.name,
+    nombre_equipo: team.name,
+    nombre_corto: team.shortName,
+    short_name: team.shortName,
+    alias: team.shortName,
+    display_name: team.shortName,
+    nombre_placa: team.shortName,
+    escudo: team.crestDataUrl,
+    crest: team.crestDataUrl,
+    logo: team.crestDataUrl,
+    shield: team.crestDataUrl,
+    foto: team.crestDataUrl,
+    actualizado_en: team.updatedAt,
+    updated_at: team.updatedAt,
+    updated: team.updatedAt,
+    modificado: team.updatedAt,
   };
 
   return headers.map((header) => values[normalizeHeader(header)] ?? "");
@@ -10943,6 +11238,7 @@ function normalizeAuditEntityType(value: string): AuditEntityType {
     "auth",
     "settings",
     "player",
+    "team",
     "fee",
     "cash-flow",
     "notification",
@@ -11305,6 +11601,12 @@ function invalidatePlayersCache() {
   revalidateGoogleSheetsTag("google-sheets:fee-calculator");
   revalidateGoogleSheetsTag("google-sheets:player-profile");
   revalidateGoogleSheetsTag("google-sheets:cash-flow");
+}
+
+function invalidateTeamsCache() {
+  revalidateGoogleSheetsTag("google-sheets");
+  revalidateGoogleSheetsTag("google-sheets:teams");
+  revalidateGoogleSheetsTag("google-sheets:fixture");
 }
 
 function invalidateFeeCalculatorCache() {

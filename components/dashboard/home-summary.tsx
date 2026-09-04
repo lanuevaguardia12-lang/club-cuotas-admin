@@ -29,6 +29,7 @@ import {
   type MatchRegistrationStatus,
 } from "@/lib/match-registration-form";
 import { formatPeriod, getCurrentPeriod } from "@/lib/player-profile";
+import { getTeamCrestDataUrl, getTeamDisplayName } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { PlayerMonthPaymentStatus, PlayerProfile } from "@/types/dashboard";
 import type {
@@ -36,6 +37,7 @@ import type {
   LeagueFixtureData,
   LeagueFixtureMatch,
 } from "@/types/fixture";
+import type { TeamProfile } from "@/types/teams";
 
 interface HomeSummaryProps {
   canManageConvocations?: boolean;
@@ -48,6 +50,7 @@ interface HomeSummaryProps {
   playerOptions?: FixturePlayerOption[];
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
   registrationStatusByMatchKey?: Record<string, MatchRegistrationStatus>;
+  teamProfiles?: TeamProfile[];
   teamStatsMatches?: LeagueFixtureMatch[];
 }
 
@@ -67,6 +70,7 @@ export function HomeSummary({
   playerOptions = [],
   registrationPlayerNamesByPeriod = {},
   registrationStatusByMatchKey = {},
+  teamProfiles = [],
   teamStatsMatches,
 }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
@@ -146,6 +150,7 @@ export function HomeSummary({
               registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
               registrationStatusByMatchKey={registrationStatusByMatchKey}
               rows={fixture.standings}
+              teamProfiles={teamProfiles}
             />
           ) : (
             <p className="text-muted-foreground text-sm">
@@ -190,6 +195,7 @@ export function HomeSummary({
               registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
               registrationStatusByMatchKey={registrationStatusByMatchKey}
               rows={fixture.standings}
+              teamProfiles={teamProfiles}
             />
           ) : (
             <p className="text-muted-foreground text-sm">
@@ -257,6 +263,7 @@ function HomeMatchCard({
   registrationPlayerNamesByPeriod,
   registrationStatusByMatchKey,
   rows,
+  teamProfiles,
 }: {
   canManageConvocations: boolean;
   canRegisterPlayers: boolean;
@@ -268,6 +275,7 @@ function HomeMatchCard({
   registrationPlayerNamesByPeriod: Record<string, string[]>;
   registrationStatusByMatchKey: Record<string, MatchRegistrationStatus>;
   rows: LeagueFixtureData["standings"];
+  teamProfiles: TeamProfile[];
 }) {
   const localPosition =
     match.competitionKind === "league"
@@ -294,20 +302,31 @@ function HomeMatchCard({
       </div>
       <CompetitionBadge kind={match.competitionKind} />
       <div className="grid gap-2 text-sm">
-        <TeamLine local name={match.localTeam} position={localPosition} />
+        <TeamLine
+          local
+          name={match.localTeam}
+          position={localPosition}
+          teamProfiles={teamProfiles}
+        />
         <div className="text-muted-foreground px-3 text-xs font-bold">vs</div>
-        <TeamLine name={match.visitorTeam} position={visitorPosition} />
+        <TeamLine
+          name={match.visitorTeam}
+          position={visitorPosition}
+          teamProfiles={teamProfiles}
+        />
       </div>
       <div className="border-border grid gap-3 border-t pt-3">
         <RecentTeamMatches
           beforeMatch={match}
           matches={matches}
           teamName={match.localTeam}
+          teamProfiles={teamProfiles}
         />
         <RecentTeamMatches
           beforeMatch={match}
           matches={matches}
           teamName={match.visitorTeam}
+          teamProfiles={teamProfiles}
         />
       </div>
       <NextMatchShareButton
@@ -315,6 +334,7 @@ function HomeMatchCard({
         matches={matches}
         standings={rows}
         teamName={APP_TEAM_NAME}
+        teamProfiles={teamProfiles}
       />
       {canManageConvocations ? (
         <MatchConvocationButton
@@ -355,6 +375,7 @@ function HomePlayedMatchCard({
   registrationPlayerNamesByPeriod,
   registrationStatusByMatchKey,
   rows,
+  teamProfiles,
 }: {
   canRegisterPlayers: boolean;
   canShareAlternateResultFormats: boolean;
@@ -363,6 +384,7 @@ function HomePlayedMatchCard({
   registrationPlayerNamesByPeriod: Record<string, string[]>;
   registrationStatusByMatchKey: Record<string, MatchRegistrationStatus>;
   rows: LeagueFixtureData["standings"];
+  teamProfiles: TeamProfile[];
 }) {
   const localPosition =
     match.competitionKind === "league"
@@ -396,6 +418,7 @@ function HomePlayedMatchCard({
           position={localPosition}
           score={match.localScore}
           showScore
+          teamProfiles={teamProfiles}
         />
         <div className="text-primary px-3 text-center text-sm font-bold">
           {formatMatchScore(match)}
@@ -406,6 +429,7 @@ function HomePlayedMatchCard({
           position={visitorPosition}
           score={match.visitorScore}
           showScore
+          teamProfiles={teamProfiles}
         />
       </div>
       <MatchGoalsList match={match} />
@@ -413,6 +437,7 @@ function HomePlayedMatchCard({
         match={match}
         showAdminFormats={canShareAlternateResultFormats}
         teamName={APP_TEAM_NAME}
+        teamProfiles={teamProfiles}
       />
       <MatchRegistrationAction
         canRegisterPlayers={canRegisterPlayers}
@@ -493,10 +518,12 @@ function RecentTeamMatches({
   beforeMatch,
   matches,
   teamName,
+  teamProfiles,
 }: {
   beforeMatch: LeagueFixtureMatch;
   matches: LeagueFixtureMatch[];
   teamName: string;
+  teamProfiles: TeamProfile[];
 }) {
   const recentMatches = getLastPlayedMatchesForTeam(matches, teamName, beforeMatch).slice(
     0,
@@ -506,7 +533,7 @@ function RecentTeamMatches({
   return (
     <div className="grid min-w-0 gap-2">
       <p className="text-muted-foreground truncate text-xs font-semibold uppercase">
-        Últimos de {teamName}
+        Últimos de {getTeamDisplayName(teamProfiles, teamName)}
       </p>
       {recentMatches.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
@@ -522,7 +549,10 @@ function RecentTeamMatches({
                 )}
               >
                 <span className="truncate">
-                  {outcome.label} vs {outcome.rival}
+                  {outcome.label} vs{" "}
+                  {outcome.rival
+                    ? getTeamDisplayName(teamProfiles, outcome.rival)
+                    : outcome.rival}
                 </span>
               </span>
             );
@@ -559,6 +589,7 @@ function TeamLine({
   position,
   score,
   showScore = false,
+  teamProfiles,
 }: {
   local?: boolean;
   name: string;
@@ -566,8 +597,11 @@ function TeamLine({
   position?: string;
   score?: number;
   showScore?: boolean;
+  teamProfiles: TeamProfile[];
 }) {
   const isClub = name === APP_TEAM_NAME;
+  const displayName = getTeamDisplayName(teamProfiles, name);
+  const crestDataUrl = getTeamCrestDataUrl(teamProfiles, name);
 
   return (
     <div
@@ -576,15 +610,63 @@ function TeamLine({
         isClub ? "bg-primary text-primary-foreground" : "bg-muted/60",
       )}
     >
-      <span className="min-w-0">
-        <span className="block truncate font-semibold">{name}</span>
-        <span className="text-xs opacity-75">
-          {[local ? "Local" : "Visita", position].filter(Boolean).join(" · ")}
+      <span className="flex min-w-0 items-center gap-3">
+        <TeamAvatar name={name} crestDataUrl={crestDataUrl} />
+        <span className="min-w-0">
+          <span className="block truncate font-semibold" title={name}>
+            {displayName}
+          </span>
+          <span className="text-xs opacity-75">
+            {[local ? "Local" : "Visita", position].filter(Boolean).join(" · ")}
+          </span>
         </span>
       </span>
       {showScore ? <TeamScore penaltyScore={penaltyScore} score={score} /> : null}
     </div>
   );
+}
+
+function TeamAvatar({ crestDataUrl, name }: { crestDataUrl: string; name: string }) {
+  if (crestDataUrl) {
+    return (
+      <span className="bg-card inline-grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt={`Escudo de ${name}`}
+          className="size-full object-contain"
+          src={crestDataUrl}
+        />
+      </span>
+    );
+  }
+
+  if (name === APP_TEAM_NAME) {
+    return (
+      <span className="bg-card inline-grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt={`Escudo de ${name}`}
+          className="size-full object-contain"
+          src="/brand/escudo-la-nueva-guardia.png"
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className="bg-muted text-muted-foreground inline-grid size-10 shrink-0 place-items-center rounded-full text-xs font-bold">
+      {getTeamInitials(name)}
+    </span>
+  );
+}
+
+function getTeamInitials(teamName: string) {
+  return teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function TeamScore({ penaltyScore, score }: { penaltyScore?: number; score?: number }) {

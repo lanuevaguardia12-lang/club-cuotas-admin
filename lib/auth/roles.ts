@@ -5,6 +5,7 @@ export type Permission =
   | "account:manage"
   | "players:read"
   | "players:write"
+  | "teams:manage"
   | "cash-flow:read"
   | "cash-flow:write"
   | "coach-records:manage"
@@ -46,6 +47,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "account:manage",
     "players:read",
     "players:write",
+    "teams:manage",
     "cash-flow:read",
     "cash-flow:write",
     "coach-records:manage",
@@ -150,6 +152,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
 
   if (href.startsWith("/players")) {
     return hasPermission(user, "players:read");
+  }
+
+  if (href.startsWith("/teams")) {
+    return hasPermission(user, "teams:manage");
   }
 
   if (href.startsWith("/audit")) {

@@ -47,6 +47,7 @@ import type {
 } from "@/types/player-of-match";
 import type { PlayerDirectoryData, UpsertPlayerInput } from "@/types/players";
 import type { AppSettingsData, UpdateAppSettingsInput } from "@/types/settings";
+import type { TeamsData, UpsertTeamProfileInput } from "@/types/teams";
 
 export interface IDataService {
   getAppSettings(): Promise<AppSettingsData>;
@@ -71,6 +72,8 @@ export interface IDataService {
   upsertPlayer(input: UpsertPlayerInput): Promise<void>;
   replacePlayers(players: UpsertPlayerInput[]): Promise<void>;
   deletePlayer(playerId: string): Promise<void>;
+  getTeamsData(): Promise<TeamsData>;
+  upsertTeamProfile(input: UpsertTeamProfileInput): Promise<void>;
   getFeeCalculatorData(period?: string): Promise<FeeCalculatorData>;
   upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void>;
   deleteFeeCalculatorCost(costId: string): Promise<void>;

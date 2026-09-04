@@ -20,6 +20,7 @@ export type AuditEntityType =
   | "auth"
   | "settings"
   | "player"
+  | "team"
   | "fee"
   | "cash-flow"
   | "notification"

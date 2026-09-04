@@ -12,6 +12,7 @@ import type { PlayerOfMatchData } from "@/types/player-of-match";
 import type { PremiumData, PushSubscriptionRecord } from "@/types/premium";
 import type { PlayerDirectoryData } from "@/types/players";
 import type { AppSettingsData } from "@/types/settings";
+import type { TeamsData } from "@/types/teams";
 
 export class DatabaseService implements IDataService {
   async getAppSettings(): Promise<AppSettingsData> {
@@ -338,6 +339,31 @@ export class DatabaseService implements IDataService {
   }
 
   async deletePlayer(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
+  async getTeamsData(): Promise<TeamsData> {
+    return {
+      teams: [],
+      emptyState: {
+        title: "Equipos pendiente",
+        description:
+          "El contrato IDataService ya esta listo para administrar equipos en PostgreSQL.",
+      },
+      source: {
+        provider: "postgresql",
+        status: "error",
+        message: "DatabaseService todavia no esta implementado.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  async upsertTeamProfile(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",
       "UNSUPPORTED_DATA_SOURCE",

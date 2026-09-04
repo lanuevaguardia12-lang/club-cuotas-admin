@@ -5,8 +5,10 @@ import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { getTeamDisplayName } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { LeagueCompetitionKind, LeagueFixtureMatch } from "@/types/fixture";
+import type { TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -35,6 +37,7 @@ interface MatchResultShareButtonProps {
   match: LeagueFixtureMatch;
   showAdminFormats?: boolean;
   teamName: string;
+  teamProfiles?: TeamProfile[];
 }
 
 export function MatchResultShareButton({
@@ -43,6 +46,7 @@ export function MatchResultShareButton({
   match,
   showAdminFormats = false,
   teamName,
+  teamProfiles = [],
 }: MatchResultShareButtonProps) {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [photoFormatToShare, setPhotoFormatToShare] =
@@ -63,11 +67,12 @@ export function MatchResultShareButton({
     setPreparedPhotoShare(null);
 
     try {
-      const result = getResultView(match, teamName);
+      const result = getResultView(match, teamName, teamProfiles);
       const blob = await createMatchResultBlob(
         match,
         teamName,
         format,
+        teamProfiles,
         selectedBackgroundSrc ?? backgroundImageSrc,
       );
       const formatLabel = getFormatFileLabel(format);
@@ -130,8 +135,14 @@ export function MatchResultShareButton({
       setPendingFormat(format);
       setMessage("");
 
-      const result = getResultView(match, teamName);
-      const blob = await createMatchResultBlob(match, teamName, format, objectUrl);
+      const result = getResultView(match, teamName, teamProfiles);
+      const blob = await createMatchResultBlob(
+        match,
+        teamName,
+        format,
+        teamProfiles,
+        objectUrl,
+      );
       const formatLabel = getFormatFileLabel(format);
       const fileName = `resultado-${formatLabel}-${slugify(result.rivalName)}.png`;
 
@@ -282,6 +293,7 @@ async function createMatchResultBlob(
   match: LeagueFixtureMatch,
   teamName: string,
   format: ResultShareFormat,
+  teamProfiles: TeamProfile[],
   backgroundImageSrc?: string,
 ) {
   const canvas = document.createElement("canvas");
@@ -296,7 +308,14 @@ async function createMatchResultBlob(
     throw new Error("Tu navegador no pudo preparar la imagen.");
   }
 
-  await drawMatchResultPlate(context, match, teamName, format, backgroundImageSrc);
+  await drawMatchResultPlate(
+    context,
+    match,
+    teamName,
+    format,
+    teamProfiles,
+    backgroundImageSrc,
+  );
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -314,6 +333,7 @@ async function drawMatchResultPlate(
   match: LeagueFixtureMatch,
   teamName: string,
   format: ResultShareFormat,
+  teamProfiles: TeamProfile[],
   backgroundImageSrc?: string,
 ) {
   const { height, width } = getCanvasSize(format);
@@ -324,6 +344,7 @@ async function drawMatchResultPlate(
       match,
       teamName,
       format,
+      teamProfiles,
       backgroundImageSrc,
     );
     return;
@@ -331,7 +352,7 @@ async function drawMatchResultPlate(
 
   const compact = format === "post";
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
-  const result = getResultView(match, teamName);
+  const result = getResultView(match, teamName, teamProfiles);
   const scorers = getTeamGoalScorers(match, teamName);
 
   drawBackground(context, width, height);
@@ -425,12 +446,13 @@ async function drawPhotoOverlayMatchResultPlate(
   match: LeagueFixtureMatch,
   teamName: string,
   format: ResultShareFormat,
+  teamProfiles: TeamProfile[],
   backgroundImageSrc?: string,
 ) {
   const { height, width } = getCanvasSize(format);
   const compact = format === "post-photo";
   const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
-  const result = getResultView(match, teamName);
+  const result = getResultView(match, teamName, teamProfiles);
   const scorers = getTeamGoalScorers(match, teamName);
 
   await drawPhotoOverlayBackground(context, width, height, backgroundImageSrc);
@@ -1225,16 +1247,23 @@ interface ResultView {
   visitorScore: number;
 }
 
-function getResultView(match: LeagueFixtureMatch, teamName: string): ResultView {
+function getResultView(
+  match: LeagueFixtureMatch,
+  teamName: string,
+  teamProfiles: TeamProfile[] = [],
+): ResultView {
   const isLocalTeam = sameTeam(match.localTeam, teamName);
 
   return {
     isLocalTeam,
-    localName: match.localTeam,
+    localName: getTeamDisplayName(teamProfiles, match.localTeam),
     localPenaltyScore: match.localPenaltyScore,
     localScore: match.localScore ?? 0,
-    rivalName: isLocalTeam ? match.visitorTeam : match.localTeam,
-    visitorName: match.visitorTeam,
+    rivalName: getTeamDisplayName(
+      teamProfiles,
+      isLocalTeam ? match.visitorTeam : match.localTeam,
+    ),
+    visitorName: getTeamDisplayName(teamProfiles, match.visitorTeam),
     visitorPenaltyScore: match.visitorPenaltyScore,
     visitorScore: match.visitorScore ?? 0,
   };
