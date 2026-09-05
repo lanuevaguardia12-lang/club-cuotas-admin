@@ -20,6 +20,7 @@ import { MatchResultShareButton } from "@/components/fixture/match-result-share-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PaymentFormButton } from "@/components/players/payment-form-button";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
   MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
@@ -74,6 +75,8 @@ export function HomeSummary({
   teamStatsMatches,
 }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
+  const canRegisterLatestQuotaPayment =
+    latestQuota?.status === "unpaid" && latestQuota.quotaStatus === "defined";
   const nextMatch = fixture.nextMatches[0];
   const lastMatch = fixture.lastMatches[0];
   const standingsRows = buildHomeStandingsRows(fixture);
@@ -115,12 +118,30 @@ export function HomeSummary({
                       : "Sin vencimiento cargado"}
               </p>
             </div>
-            <Button asChild className="w-full">
-              <Link href="/mi-cuota">
-                <ExternalLink />
-                Ver mi cuota
-              </Link>
-            </Button>
+            <div
+              className={cn(
+                "grid gap-2",
+                canRegisterLatestQuotaPayment ? "sm:grid-cols-2" : "",
+              )}
+            >
+              {canRegisterLatestQuotaPayment ? (
+                <PaymentFormButton
+                  className="w-full"
+                  period={latestQuota.period}
+                  playerName={playerProfile.name}
+                />
+              ) : null}
+              <Button
+                asChild
+                className="w-full"
+                variant={canRegisterLatestQuotaPayment ? "outline" : "default"}
+              >
+                <Link href="/mi-cuota">
+                  <ExternalLink />
+                  Ver mi cuota
+                </Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : null}

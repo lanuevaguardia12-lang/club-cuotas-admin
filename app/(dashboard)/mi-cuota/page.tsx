@@ -5,7 +5,6 @@ import {
   CalendarClock,
   ChevronDown,
   CheckCircle2,
-  ExternalLink,
   History,
   ListChecks,
   XCircle,
@@ -16,8 +15,8 @@ import {
   FormsRefreshButton,
   MyFeePullToRefresh,
 } from "@/components/players/my-fee-refresh";
+import { PaymentFormButton } from "@/components/players/payment-form-button";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
@@ -50,9 +49,6 @@ const monthStatusVariants: Record<PlayerMonthPaymentStatus, "success" | "danger"
   paid: "success",
   unpaid: "danger",
 };
-
-const PAYMENT_FORM_BASE_URL =
-  "https://docs.google.com/forms/d/e/1FAIpQLScNPtChGadjifgrXFRZjDYsMVaIniB-EIRRvKfT4SAGKhqfuA/viewform";
 
 export default async function MyFeePage({ searchParams }: MyFeePageProps) {
   const user = await getCurrentUser();
@@ -217,40 +213,6 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         year={profile.year}
       />
     </main>
-  );
-}
-
-function PaymentFormButton({
-  className,
-  compact = false,
-  period,
-  playerName,
-}: {
-  className?: string;
-  compact?: boolean;
-  period: string;
-  playerName: string;
-}) {
-  const label = compact ? "Registrar pago" : "Registrar pago";
-
-  return (
-    <Button
-      asChild
-      className={className}
-      size={compact ? "icon" : "sm"}
-      variant={compact ? "outline" : "default"}
-      title={label}
-    >
-      <a
-        href={buildPaymentFormUrl(playerName, period)}
-        rel="noreferrer"
-        target="_blank"
-        aria-label={label}
-      >
-        <ExternalLink className="size-4" />
-        <span className={compact ? "sr-only" : undefined}>{label}</span>
-      </a>
-    </Button>
   );
 }
 
@@ -555,28 +517,6 @@ function Metric({
       <p className="text-muted-foreground mt-1 text-xs">{detail}</p>
     </div>
   );
-}
-
-function buildPaymentFormUrl(playerName: string, period: string) {
-  const [year] = period.split("-");
-  const params = new URLSearchParams({
-    usp: "pp_url",
-    "entry.1447717655": playerName,
-    "entry.2143604901": year,
-    "entry.639910438": formatFormMonth(period),
-  });
-
-  return `${PAYMENT_FORM_BASE_URL}?${params.toString()}`;
-}
-
-function formatFormMonth(period: string) {
-  const [year, month] = period.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-  const label = new Intl.DateTimeFormat("es-AR", {
-    month: "long",
-  }).format(date);
-
-  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function formatPercent(value: number) {
