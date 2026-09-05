@@ -559,7 +559,7 @@ async function drawConvocationPlate(
   drawCenteredText(context, "LA NUEVA GUARDIA", width / 2, footerY, {
     color: "rgba(255,255,255,0.72)",
     font: compact ? "800 30px Arial, sans-serif" : "800 34px Arial, sans-serif",
-    letterSpacing: compact ? 8 : 10,
+    letterSpacing: 0,
     maxWidth: width - 160,
   });
 }

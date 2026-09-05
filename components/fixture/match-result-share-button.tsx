@@ -435,7 +435,7 @@ async function drawMatchResultPlate(
     {
       color: "rgba(255,255,255,0.72)",
       font: compact ? "800 30px Arial, sans-serif" : "800 34px Arial, sans-serif",
-      letterSpacing: 10,
+      letterSpacing: 0,
       maxWidth: width - 160,
     },
   );
@@ -537,7 +537,7 @@ async function drawPhotoOverlayMatchResultPlate(
     {
       color: "rgba(255,255,255,0.78)",
       font: compact ? "800 24px Arial, sans-serif" : "800 34px Arial, sans-serif",
-      letterSpacing: compact ? 8 : 10,
+      letterSpacing: 0,
       maxWidth: width - 160,
       shadowBlur: 12,
       shadowColor: "rgba(0,0,0,0.4)",
@@ -1301,14 +1301,18 @@ function getTeamGoalScorers(match: LeagueFixtureMatch, teamName: string) {
     .filter(Boolean);
 
   if (fromEvents.length > 0) {
-    return fromEvents;
+    return formatRepeatedGoalScorers(fromEvents);
   }
 
   if (match.manualGoalScorers?.length) {
-    return match.manualGoalScorers.map(cleanGoalScorerName).filter(Boolean);
+    return formatRepeatedGoalScorers(
+      match.manualGoalScorers.map(cleanGoalScorerName).filter(Boolean),
+    );
   }
 
-  return match.goals.flatMap((goal) => extractGoalScorers(goal, teamName));
+  return formatRepeatedGoalScorers(
+    match.goals.flatMap((goal) => extractGoalScorers(goal, teamName)),
+  );
 }
 
 function extractGoalScorers(goal: string, teamName: string) {
@@ -1328,6 +1332,41 @@ function extractGoalScorers(goal: string, teamName: string) {
 function cleanGoalScorerName(value: string) {
   return value
     .replace(/\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatRepeatedGoalScorers(scorers: string[]) {
+  const scorersByKey = new Map<string, { count: number; name: string }>();
+
+  for (const scorer of scorers) {
+    const name = cleanGoalScorerName(scorer);
+    const key = normalizeScorerKey(name);
+
+    if (!key) {
+      continue;
+    }
+
+    const existing = scorersByKey.get(key);
+
+    if (existing) {
+      existing.count += 1;
+    } else {
+      scorersByKey.set(key, { count: 1, name });
+    }
+  }
+
+  return [...scorersByKey.values()].map(({ count, name }) =>
+    count > 1 ? `${name} x${count}` : name,
+  );
+}
+
+function normalizeScorerKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
