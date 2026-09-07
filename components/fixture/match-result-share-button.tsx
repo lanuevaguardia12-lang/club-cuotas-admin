@@ -404,21 +404,13 @@ async function drawMatchResultPlate(
     },
   );
 
-  drawTeamsVersusHeader(context, {
-    compact,
-    localCrest,
-    localName: result.localName,
-    visitorCrest,
-    visitorName: result.visitorName,
-    width,
-    y: compact ? 432 : 562,
-  });
-
   drawScoreboard(context, {
     compact,
+    localCrest,
     result,
+    visitorCrest,
     width,
-    y: compact ? 620 : 850,
+    y: compact ? 470 : 690,
   });
 
   if (scorers.length > 0) {
@@ -426,7 +418,7 @@ async function drawMatchResultPlate(
       compact,
       scorers,
       width,
-      y: compact ? 970 : 1370,
+      y: compact ? 850 : 1210,
     });
   }
 
@@ -498,22 +490,13 @@ async function drawPhotoOverlayMatchResultPlate(
     },
   );
 
-  drawTeamsVersusHeader(context, {
-    compact,
-    localCrest,
-    localName: result.localName,
-    shadowColor: "rgba(0,0,0,0.52)",
-    visitorCrest,
-    visitorName: result.visitorName,
-    width,
-    y: compact ? 320 : 540,
-  });
-
   drawScoreboard(context, {
     compact,
+    localCrest,
     result,
+    visitorCrest,
     width,
-    y: compact ? 455 : 795,
+    y: compact ? 330 : 650,
   });
 
   if (scorers.length > 0) {
@@ -521,7 +504,7 @@ async function drawPhotoOverlayMatchResultPlate(
       compact,
       scorers,
       width,
-      y: compact ? 820 : 1295,
+      y: compact ? 705 : 1170,
     });
   }
 
@@ -647,54 +630,66 @@ function drawScoreboard(
   context: CanvasRenderingContext2D,
   {
     compact,
+    localCrest,
     result,
+    visitorCrest,
     width,
     y,
   }: {
     compact: boolean;
+    localCrest: LoadedTeamCrest;
     result: ResultView;
+    visitorCrest: LoadedTeamCrest;
     width: number;
     y: number;
   },
 ) {
-  const cardHeight = compact ? 340 : 440;
   const hasPenalties =
     typeof result.localPenaltyScore === "number" &&
     typeof result.visitorPenaltyScore === "number";
-  const mainScoreY = hasPenalties ? y + (compact ? 236 : 304) : y + (compact ? 282 : 358);
-  const penaltyScoreY = y + (compact ? 306 : 394);
+  const cardHeight = hasPenalties ? (compact ? 330 : 410) : compact ? 300 : 360;
+  const cardX = compact ? 78 : 90;
+  const cardWidth = width - cardX * 2;
+  const centerY = y + cardHeight / 2 - (hasPenalties ? (compact ? 20 : 26) : 0);
+  const teamColumnWidth = compact ? 230 : 270;
+  const sideX = compact ? cardX + 172 : cardX + 205;
+  const mainScoreY = centerY + (compact ? 34 : 45);
+  const penaltyScoreY = mainScoreY + (compact ? 58 : 74);
 
   context.save();
-  const cardGradient = context.createLinearGradient(90, y, width - 90, y + cardHeight);
+  const cardGradient = context.createLinearGradient(
+    cardX,
+    y,
+    cardX + cardWidth,
+    y + cardHeight,
+  );
   cardGradient.addColorStop(0, "rgba(255,255,255,0.16)");
   cardGradient.addColorStop(0.5, "rgba(0,148,220,0.18)");
   cardGradient.addColorStop(1, "rgba(255,255,255,0.08)");
   context.fillStyle = cardGradient;
   context.strokeStyle = "rgba(102,220,255,0.5)";
   context.lineWidth = 4;
-  roundedRect(context, 90, y, width - 180, cardHeight, 34);
+  roundedRect(context, cardX, y, cardWidth, cardHeight, 34);
   context.fill();
   context.stroke();
   context.restore();
 
-  drawTeamSide(context, {
-    align: "left",
+  drawScoreboardTeam(context, {
     compact,
+    crest: localCrest,
     label: result.localName,
-    role: "Local",
-    maxWidth: compact ? 270 : 310,
-    x: 150,
-    y: y + (compact ? 76 : 104),
+    maxWidth: teamColumnWidth,
+    x: sideX,
+    y: centerY,
   });
 
-  drawTeamSide(context, {
-    align: "right",
+  drawScoreboardTeam(context, {
     compact,
+    crest: visitorCrest,
     label: result.visitorName,
-    role: "Visita",
-    maxWidth: compact ? 270 : 310,
-    x: width - 150,
-    y: y + (compact ? 76 : 104),
+    maxWidth: teamColumnWidth,
+    x: width - sideX,
+    y: centerY,
   });
 
   drawCenteredText(
@@ -766,102 +761,46 @@ function drawPenaltyScore(
   });
 }
 
-function drawTeamsVersusHeader(
-  context: CanvasRenderingContext2D,
-  {
-    compact,
-    localCrest,
-    localName,
-    shadowColor = "rgba(244,206,15,0.22)",
-    visitorCrest,
-    visitorName,
-    width,
-    y,
-  }: {
-    compact: boolean;
-    localCrest: LoadedTeamCrest;
-    localName: string;
-    shadowColor?: string;
-    visitorCrest: LoadedTeamCrest;
-    visitorName: string;
-    width: number;
-    y: number;
-  },
-) {
-  const crestSize = compact ? 92 : 124;
-  const teamColumnWidth = compact ? 245 : 285;
-  const teamGap = compact ? 184 : 230;
-  const localX = width / 2 - teamGap;
-  const visitorX = width / 2 + teamGap;
-
-  drawResultTeamMark(context, {
-    compact,
-    crest: localCrest,
-    name: localName,
-    size: crestSize,
-    width: teamColumnWidth,
-    x: localX,
-    y,
-  });
-
-  drawMiddleText(context, "VS", width / 2, y, {
-    color: "#f4ce0f",
-    font: compact
-      ? "900 58px Arial Black, Impact, sans-serif"
-      : "900 72px Arial Black, Impact, sans-serif",
-    shadowBlur: 20,
-    shadowColor,
-  });
-
-  drawResultTeamMark(context, {
-    compact,
-    crest: visitorCrest,
-    name: visitorName,
-    size: crestSize,
-    width: teamColumnWidth,
-    x: visitorX,
-    y,
-  });
-}
-
-function drawResultTeamMark(
+function drawScoreboardTeam(
   context: CanvasRenderingContext2D,
   {
     compact,
     crest,
-    name,
-    size,
-    width,
+    label,
+    maxWidth,
     x,
     y,
   }: {
     compact: boolean;
     crest: LoadedTeamCrest;
-    name: string;
-    size: number;
-    width: number;
+    label: string;
+    maxWidth: number;
     x: number;
     y: number;
   },
 ) {
-  drawTeamCrest(context, crest, x - size / 2, y - size / 2, size);
+  const crestSize = compact ? 76 : 106;
+  const crestY = y - crestSize / 2 - (compact ? 16 : 20);
+  const nameY = y + crestSize / 2 + (compact ? 26 : 32);
 
   const fontSize = getFittedVersusTeamNameFontSize(
     context,
-    name,
-    compact ? 21 : 25,
-    width,
-    compact ? 17 : 20,
+    label,
+    compact ? 20 : 24,
+    maxWidth,
+    compact ? 16 : 19,
   );
   const lineHeight = Math.round(fontSize * 1.16);
   const lines = getClampedLines(
     context,
-    name.toUpperCase(),
-    width,
+    label.toUpperCase(),
+    maxWidth,
     2,
     `500 ${fontSize}px Arial, sans-serif`,
   );
-  const firstLineY = y + size / 2 + (compact ? 34 : 40);
+  const firstLineY = nameY + (2 - lines.length) * (lineHeight / 2);
+
+  drawTeamCrest(context, crest, x - crestSize / 2, crestY, crestSize);
 
   context.save();
   context.fillStyle = "rgba(255,255,255,0.88)";
@@ -871,7 +810,7 @@ function drawResultTeamMark(
   context.shadowColor = "rgba(0,0,0,0.28)";
 
   lines.forEach((line, index) => {
-    context.fillText(line, x, firstLineY + index * lineHeight, width);
+    context.fillText(line, x, firstLineY + index * lineHeight, maxWidth);
   });
 
   context.restore();
@@ -967,53 +906,6 @@ function drawTeamCrest(
     context.stroke();
     context.restore();
   }
-}
-
-function drawTeamSide(
-  context: CanvasRenderingContext2D,
-  {
-    align,
-    compact,
-    label,
-    maxWidth,
-    role,
-    x,
-    y,
-  }: {
-    align: "left" | "right";
-    compact: boolean;
-    label: string;
-    maxWidth: number;
-    role: string;
-    x: number;
-    y: number;
-  },
-) {
-  const textAlign = align === "left" ? "left" : "right";
-  const lineHeight = compact ? 34 : 40;
-  const fontSize = compact
-    ? getTeamNameFontSize(label, 30)
-    : getTeamNameFontSize(label, 36);
-  const lines = getClampedLines(
-    context,
-    label.toUpperCase(),
-    maxWidth,
-    compact ? 3 : 3,
-    `900 ${fontSize}px Arial Black, sans-serif`,
-  );
-
-  context.save();
-  context.textAlign = textAlign;
-  context.fillStyle = "#ffffff";
-  context.font = `900 ${fontSize}px Arial Black, sans-serif`;
-  lines.forEach((line, index) => {
-    context.fillText(line, x, y + index * lineHeight, maxWidth);
-  });
-
-  context.fillStyle = "rgba(255,255,255,0.72)";
-  context.font = compact ? "700 24px Arial, sans-serif" : "700 28px Arial, sans-serif";
-  context.fillText(role, x, y + lineHeight * 3 + (compact ? 18 : 22), maxWidth);
-  context.restore();
 }
 
 function drawScorersBlock(
@@ -1172,36 +1064,6 @@ function drawCenteredText(
   } else {
     context.fillText(text, x, y, maxWidth);
   }
-  context.restore();
-}
-
-function drawMiddleText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  {
-    color,
-    font,
-    maxWidth,
-    shadowBlur = 0,
-    shadowColor = "transparent",
-  }: {
-    color: string;
-    font: string;
-    maxWidth?: number;
-    shadowBlur?: number;
-    shadowColor?: string;
-  },
-) {
-  context.save();
-  context.fillStyle = color;
-  context.font = font;
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.shadowBlur = shadowBlur;
-  context.shadowColor = shadowColor;
-  context.fillText(text, x, y, maxWidth);
   context.restore();
 }
 
