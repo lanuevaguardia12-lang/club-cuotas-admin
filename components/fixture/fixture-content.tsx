@@ -614,14 +614,16 @@ function UnifiedStandingsTable({
         <tbody>
           {rows.map((row) => {
             const versus = getVersusClubResult(matches, row.teamName);
+            const isClub = row.isClub || areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
 
             return (
               <tr
                 key={`${row.position}-${row.teamName}`}
                 className={cn(
-                  "border-border border-t",
+                  "border-border border-t transition-colors",
                   getPositionRowClassName(row.position),
-                  row.isClub && "font-semibold",
+                  isClub &&
+                    "border-y-2 border-yellow-300 bg-yellow-50 text-yellow-950 shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70 dark:bg-yellow-950/30 dark:text-yellow-50",
                 )}
               >
                 <td className="px-1 py-1.5">
@@ -629,19 +631,33 @@ function UnifiedStandingsTable({
                     className={cn(
                       "inline-grid size-5 place-items-center rounded-sm text-[0.65rem] font-bold sm:size-7 sm:rounded-md sm:text-xs",
                       getPositionBadgeClassName(row.position),
+                      isClub &&
+                        "bg-yellow-400 text-blue-950 ring-2 ring-yellow-100 dark:bg-yellow-300 dark:ring-yellow-100/40",
                     )}
                   >
                     {row.position}
                   </span>
                 </td>
                 <td className="px-1 py-1.5" title={row.teamName}>
-                  <span className="line-clamp-2 break-words sm:line-clamp-1">
+                  <span
+                    className={cn(
+                      "line-clamp-2 break-words sm:line-clamp-1",
+                      isClub && "font-bold",
+                    )}
+                  >
                     {row.teamName}
                   </span>
                 </td>
-                <td className="px-1 py-1.5 text-center font-bold">{row.points}</td>
+                <td
+                  className={cn(
+                    "px-1 py-1.5 text-center font-bold",
+                    isClub && "text-yellow-700 dark:text-yellow-200",
+                  )}
+                >
+                  {row.points}
+                </td>
                 <td className="px-1 py-1.5 text-center">
-                  {row.isClub ? (
+                  {isClub ? (
                     <span className="text-muted-foreground">-</span>
                   ) : (
                     <span

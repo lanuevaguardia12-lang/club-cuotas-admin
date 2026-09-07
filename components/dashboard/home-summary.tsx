@@ -245,28 +245,44 @@ export function HomeSummary({
         <CardContent>
           {standingsRows.length > 0 ? (
             <div className="grid gap-2">
-              {standingsRows.map((row) => (
-                <div
-                  key={`${row.position}-${row.teamName}`}
-                  className={cn(
-                    "border-border bg-background flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm",
-                    row.isClub && "border-primary/30 bg-secondary/80",
-                  )}
-                >
-                  <div className="flex min-w-0 items-center gap-2">
+              {standingsRows.map((row) => {
+                const isClub =
+                  row.isClub || areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
+
+                return (
+                  <div
+                    key={`${row.position}-${row.teamName}`}
+                    className={cn(
+                      "border-border bg-background flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm",
+                      isClub &&
+                        "border-yellow-300 bg-yellow-50 shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70 dark:bg-yellow-950/30",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "bg-muted text-muted-foreground grid size-7 shrink-0 place-items-center rounded-md text-xs font-bold",
+                          isClub &&
+                            "bg-yellow-400 text-blue-950 ring-2 ring-yellow-100 dark:bg-yellow-300 dark:ring-yellow-100/40",
+                        )}
+                      >
+                        {row.position}
+                      </span>
+                      <span className={cn("truncate font-medium", isClub && "font-bold")}>
+                        {row.teamName}
+                      </span>
+                    </div>
                     <span
                       className={cn(
-                        "bg-muted text-muted-foreground grid size-7 shrink-0 place-items-center rounded-md text-xs font-bold",
-                        row.isClub && "bg-primary text-primary-foreground",
+                        "shrink-0 font-bold",
+                        isClub && "text-yellow-700 dark:text-yellow-200",
                       )}
                     >
-                      {row.position}
+                      {row.points} pts
                     </span>
-                    <span className="truncate font-medium">{row.teamName}</span>
                   </div>
-                  <span className="shrink-0 font-bold">{row.points} pts</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">Sin tabla publicada.</p>
