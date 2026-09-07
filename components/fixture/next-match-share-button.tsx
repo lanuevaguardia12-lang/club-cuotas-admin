@@ -214,6 +214,7 @@ async function drawNextMatchPlate(
     width / 2 - logoSize / 2,
     compact ? 70 : 108,
     logoSize,
+    { framed: false },
   );
 
   drawCenteredText(context, "PROXIMO PARTIDO", width / 2, compact ? 284 : 382, {
@@ -416,6 +417,13 @@ async function drawMatchup(
   const recentFormY = y + (compact ? 382 : 458);
   const localDisplayName = getTeamDisplayName(teamProfiles, localTeam);
   const visitorDisplayName = getTeamDisplayName(teamProfiles, visitorTeam);
+  const teamNameFontSize = getSharedTeamNameFontSize(
+    context,
+    [localDisplayName, visitorDisplayName],
+    compact ? 24 : 28,
+    teamColumnWidth,
+    compact ? 18 : 21,
+  );
   const [localCrest, visitorCrest] = await Promise.all([
     loadTeamCrestImage(teamProfiles, localTeam, clubTeamName),
     loadTeamCrestImage(teamProfiles, visitorTeam, clubTeamName),
@@ -446,6 +454,7 @@ async function drawMatchup(
     crestTop,
     label: localDisplayName,
     maxWidth: teamColumnWidth,
+    nameFontSize: teamNameFontSize,
     role: `Local · ${localPosition}`,
     roleY,
     x: cardX + sidePadding + teamColumnWidth / 2,
@@ -459,6 +468,7 @@ async function drawMatchup(
     crestTop,
     label: visitorDisplayName,
     maxWidth: teamColumnWidth,
+    nameFontSize: teamNameFontSize,
     role: `Visita · ${visitorPosition}`,
     roleY,
     x: cardX + cardWidth - sidePadding - teamColumnWidth / 2,
@@ -500,6 +510,7 @@ function drawPlateTeamBlock(
     crestTop,
     label,
     maxWidth,
+    nameFontSize,
     role,
     roleY,
     x,
@@ -511,6 +522,7 @@ function drawPlateTeamBlock(
     crestTop: number;
     label: string;
     maxWidth: number;
+    nameFontSize: number;
     role: string;
     roleY: number;
     x: number;
@@ -519,27 +531,20 @@ function drawPlateTeamBlock(
 ) {
   drawTeamCrest(context, crest, x - crestSize / 2, crestTop, crestSize);
 
-  const fontSize = getSharedTeamNameFontSize(
-    context,
-    [label],
-    compact ? 27 : 31,
-    maxWidth,
-    compact ? 21 : 24,
-  );
-  const lineHeight = Math.round(fontSize * 1.18);
+  const lineHeight = Math.round(nameFontSize * 1.18);
   const lines = getClampedLines(
     context,
     label.toUpperCase(),
     maxWidth,
     2,
-    `600 ${fontSize}px Arial, sans-serif`,
+    `500 ${nameFontSize}px Arial, sans-serif`,
   );
   const firstLineY = y + (2 - lines.length) * (lineHeight / 2);
 
   context.save();
   context.textAlign = "center";
-  context.fillStyle = "#ffffff";
-  context.font = `600 ${fontSize}px Arial, sans-serif`;
+  context.fillStyle = "rgba(255,255,255,0.88)";
+  context.font = `500 ${nameFontSize}px Arial, sans-serif`;
   lines.forEach((line, index) => {
     context.fillText(line, x, firstLineY + index * lineHeight, maxWidth);
   });
@@ -599,32 +604,37 @@ function drawTeamCrest(
   x: number,
   y: number,
   size: number,
+  options: { framed?: boolean } = {},
 ) {
+  const framed = options.framed ?? true;
   const centerX = x + size / 2;
   const centerY = y + size / 2;
 
-  context.save();
-  context.shadowBlur = 18;
-  context.shadowColor = "rgba(0,0,0,0.28)";
-  context.fillStyle = "rgba(255,255,255,0.94)";
-  context.beginPath();
-  context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
+  if (framed) {
+    context.save();
+    context.shadowBlur = 18;
+    context.shadowColor = "rgba(0,0,0,0.28)";
+    context.fillStyle = "rgba(255,255,255,0.94)";
+    context.beginPath();
+    context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
 
   context.save();
   context.beginPath();
-  context.arc(centerX, centerY, size / 2 - 4, 0, Math.PI * 2);
+  context.arc(centerX, centerY, size / 2 - (framed ? 4 : 0), 0, Math.PI * 2);
   context.clip();
 
   if (crest.image) {
+    const inset = framed ? size * 0.04 : 0;
     drawFittedCrestImage(
       context,
       crest.image,
-      x + size * 0.04,
-      y + size * 0.04,
-      size * 0.92,
-      size * 0.92,
+      x + inset,
+      y + inset,
+      size - inset * 2,
+      size - inset * 2,
       crest.fit,
     );
   } else {
@@ -642,13 +652,15 @@ function drawTeamCrest(
 
   context.restore();
 
-  context.save();
-  context.strokeStyle = "rgba(255,255,255,0.84)";
-  context.lineWidth = 5;
-  context.beginPath();
-  context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
-  context.stroke();
-  context.restore();
+  if (framed) {
+    context.save();
+    context.strokeStyle = "rgba(255,255,255,0.84)";
+    context.lineWidth = 5;
+    context.beginPath();
+    context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
+    context.stroke();
+    context.restore();
+  }
 }
 
 function drawRecentForm(

@@ -1413,7 +1413,7 @@ function TeamAvatar({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           alt={`Escudo de ${teamName}`}
-          className="size-full object-contain"
+          className="size-[92%] object-contain"
           src={crestDataUrl}
           style={{
             transform: `translate(${crestFit.offsetX}%, ${crestFit.offsetY}%) scale(${crestFit.zoom})`,

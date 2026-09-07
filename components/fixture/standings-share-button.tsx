@@ -186,7 +186,9 @@ async function drawStandingsPlate(
   drawBackground(context, width, height);
 
   const logoSize = compact ? 118 : 136;
-  drawTeamCrest(context, logo, width / 2 - logoSize / 2, compact ? 54 : 94, logoSize);
+  drawTeamCrest(context, logo, width / 2 - logoSize / 2, compact ? 54 : 94, logoSize, {
+    framed: false,
+  });
 
   drawCenteredText(context, "TABLA DE POSICIONES", width / 2, compact ? 230 : 328, {
     color: "#ffffff",
@@ -573,32 +575,37 @@ function drawTeamCrest(
   x: number,
   y: number,
   size: number,
+  options: { framed?: boolean } = {},
 ) {
+  const framed = options.framed ?? true;
   const centerX = x + size / 2;
   const centerY = y + size / 2;
 
-  context.save();
-  context.shadowBlur = 18;
-  context.shadowColor = "rgba(0,0,0,0.28)";
-  context.fillStyle = "rgba(255,255,255,0.94)";
-  context.beginPath();
-  context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
+  if (framed) {
+    context.save();
+    context.shadowBlur = 18;
+    context.shadowColor = "rgba(0,0,0,0.28)";
+    context.fillStyle = "rgba(255,255,255,0.94)";
+    context.beginPath();
+    context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
 
   context.save();
   context.beginPath();
-  context.arc(centerX, centerY, size / 2 - 4, 0, Math.PI * 2);
+  context.arc(centerX, centerY, size / 2 - (framed ? 4 : 0), 0, Math.PI * 2);
   context.clip();
 
   if (crest.image) {
+    const inset = framed ? size * 0.04 : 0;
     drawFittedCrestImage(
       context,
       crest.image,
-      x + size * 0.04,
-      y + size * 0.04,
-      size * 0.92,
-      size * 0.92,
+      x + inset,
+      y + inset,
+      size - inset * 2,
+      size - inset * 2,
       crest.fit,
     );
   } else {
@@ -616,13 +623,15 @@ function drawTeamCrest(
 
   context.restore();
 
-  context.save();
-  context.strokeStyle = "rgba(255,255,255,0.84)";
-  context.lineWidth = 5;
-  context.beginPath();
-  context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
-  context.stroke();
-  context.restore();
+  if (framed) {
+    context.save();
+    context.strokeStyle = "rgba(255,255,255,0.84)";
+    context.lineWidth = 5;
+    context.beginPath();
+    context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
+    context.stroke();
+    context.restore();
+  }
 }
 
 function getTeamInitials(teamName: string) {

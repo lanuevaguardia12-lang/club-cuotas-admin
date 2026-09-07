@@ -669,7 +669,7 @@ function TeamAvatar({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           alt={`Escudo de ${name}`}
-          className="size-full object-contain"
+          className="size-[92%] object-contain"
           src={crestDataUrl}
           style={{
             transform: `translate(${fit.offsetX}%, ${fit.offsetY}%) scale(${fit.zoom})`,
@@ -686,7 +686,7 @@ function TeamAvatar({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           alt={`Escudo de ${name}`}
-          className="size-full object-contain"
+          className="size-[92%] object-contain"
           src="/brand/escudo-la-nueva-guardia.png"
         />
       </span>

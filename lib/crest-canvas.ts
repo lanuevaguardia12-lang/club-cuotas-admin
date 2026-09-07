@@ -15,7 +15,7 @@ interface BackgroundColor {
 }
 
 const MAX_SCAN_SIZE = 420;
-const CROP_PADDING_RATIO = 0.06;
+const CROP_PADDING_RATIO = 0.16;
 const cropCache = new WeakMap<HTMLImageElement, SourceRect>();
 
 export async function resizeCrestImageFile(file: File) {
@@ -63,7 +63,7 @@ export function drawFittedCrestImage(
   height: number,
   fit: TeamCrestFit,
 ) {
-  const source = getCrestSourceRect(image);
+  const source = getFullImageRect(image);
   const ratio = Math.min(width / source.width, height / source.height) * fit.zoom;
   const drawWidth = source.width * ratio;
   const drawHeight = source.height * ratio;

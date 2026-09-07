@@ -446,7 +446,7 @@ function TeamCrestPreview({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           alt={`Escudo de ${name || "equipo"}`}
-          className="size-full object-contain"
+          className="size-[92%] object-contain"
           src={crestDataUrl}
           style={{
             transform: `translate(${normalizedFit.offsetX}%, ${normalizedFit.offsetY}%) scale(${normalizedFit.zoom})`,
