@@ -982,9 +982,11 @@ function MatchTeamsCard({
         teamName={match.localTeam}
         teamProfiles={teamProfiles}
       />
-      <div className="text-muted-foreground flex items-center justify-center">
-        <MatchScore match={match} />
-      </div>
+      {match.status === "played" ? null : (
+        <div className="text-muted-foreground flex items-center justify-center">
+          <MatchScore match={match} />
+        </div>
+      )}
       <MatchTeamLine
         label="Visita"
         penaltyScore={match.visitorPenaltyScore}

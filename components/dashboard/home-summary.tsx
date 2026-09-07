@@ -441,9 +441,6 @@ function HomePlayedMatchCard({
           showScore
           teamProfiles={teamProfiles}
         />
-        <div className="text-primary px-3 text-center text-sm font-bold">
-          {formatMatchScore(match)}
-        </div>
         <TeamLine
           name={match.visitorTeam}
           penaltyScore={match.visitorPenaltyScore}
@@ -773,18 +770,6 @@ function formatOrdinal(value: number) {
   return `${value}to`;
 }
 
-function formatMatchScore(match: LeagueFixtureMatch) {
-  if (typeof match.localScore === "number" && typeof match.visitorScore === "number") {
-    const score = `${match.localScore}-${match.visitorScore}`;
-
-    return hasPenaltyScore(match)
-      ? `${score} (${match.localPenaltyScore}-${match.visitorPenaltyScore} pen)`
-      : score;
-  }
-
-  return "S/R";
-}
-
 type OutcomeKind = "draw" | "loss" | "none" | "win";
 
 interface MatchOutcome {
@@ -851,13 +836,6 @@ function getTeamMatchOutcome(match: LeagueFixtureMatch, teamName: string): Match
     label,
     rival,
   };
-}
-
-function hasPenaltyScore(match: LeagueFixtureMatch) {
-  return (
-    typeof match.localPenaltyScore === "number" &&
-    typeof match.visitorPenaltyScore === "number"
-  );
 }
 
 function isTeamInMatch(match: LeagueFixtureMatch, teamName: string) {
