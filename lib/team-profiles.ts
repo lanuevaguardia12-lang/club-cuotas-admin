@@ -4,7 +4,7 @@ export const TEAM_SHORT_NAME_MAX_LENGTH = 50;
 export const DEFAULT_TEAM_CREST_FIT: TeamCrestFit = {
   offsetX: 0,
   offsetY: 0,
-  zoom: 1,
+  zoom: 1.08,
 };
 
 export function createTeamProfileId(name: string) {

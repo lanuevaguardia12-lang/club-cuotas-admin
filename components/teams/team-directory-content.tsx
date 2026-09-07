@@ -18,6 +18,7 @@ import { saveTeamProfile } from "@/app/(dashboard)/teams/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { resizeCrestImageFile } from "@/lib/crest-canvas";
 import {
   DEFAULT_TEAM_CREST_FIT,
   TEAM_SHORT_NAME_MAX_LENGTH,
@@ -157,7 +158,7 @@ export function TeamDirectoryContent({
     setLoadingMessage("Procesando escudo...");
 
     try {
-      const dataUrl = await resizeCrestImage(file);
+      const dataUrl = await resizeCrestImageFile(file);
       setValue("crestDataUrl", dataUrl, { shouldDirty: true });
       setValue("crestOffsetX", DEFAULT_TEAM_CREST_FIT.offsetX, { shouldDirty: true });
       setValue("crestOffsetY", DEFAULT_TEAM_CREST_FIT.offsetY, { shouldDirty: true });
@@ -555,49 +556,4 @@ function normalizeSearch(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
-}
-
-async function resizeCrestImage(file: File) {
-  const dataUrl = await readFileAsDataUrl(file);
-  const image = await loadImage(dataUrl);
-  const canvas = document.createElement("canvas");
-  const size = 320;
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d");
-
-  if (!context) {
-    throw new Error("Canvas no disponible.");
-  }
-
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, size, size);
-
-  const scale = Math.min(size / image.width, size / image.height);
-  const width = image.width * scale;
-  const height = image.height * scale;
-  const x = (size - width) / 2;
-  const y = (size - height) / 2;
-
-  context.drawImage(image, x, y, width, height);
-
-  return canvas.toDataURL("image/jpeg", 0.82);
-}
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = src;
-  });
 }

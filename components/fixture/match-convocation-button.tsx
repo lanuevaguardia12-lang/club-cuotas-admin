@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { FixturePlayerOption, LeagueFixtureMatch } from "@/types/fixture";
@@ -794,10 +795,10 @@ function drawTeamCrest(
     drawFittedCrestImage(
       context,
       crest.image,
-      x + size * 0.1,
-      y + size * 0.1,
-      size * 0.8,
-      size * 0.8,
+      x + size * 0.04,
+      y + size * 0.04,
+      size * 0.92,
+      size * 0.92,
       crest.fit,
     );
   } else {
@@ -822,30 +823,6 @@ function drawTeamCrest(
   context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
   context.stroke();
   context.restore();
-}
-
-function drawFittedCrestImage(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  fit: TeamCrestFit,
-) {
-  const ratio = Math.min(width / image.width, height / image.height) * fit.zoom;
-  const drawWidth = image.width * ratio;
-  const drawHeight = image.height * ratio;
-  const offsetX = (width * fit.offsetX) / 100;
-  const offsetY = (height * fit.offsetY) / 100;
-
-  context.drawImage(
-    image,
-    x + (width - drawWidth) / 2 + offsetX,
-    y + (height - drawHeight) / 2 + offsetY,
-    drawWidth,
-    drawHeight,
-  );
 }
 
 function getTeamInitials(teamName: string) {
