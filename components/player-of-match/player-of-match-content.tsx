@@ -48,11 +48,13 @@ import type {
   PlayerOfMatchResult,
   PlayerStreakRankingRow,
 } from "@/types/player-of-match";
+import type { TeamProfile } from "@/types/teams";
 
 interface PlayerOfMatchContentProps {
   canManage: boolean;
   canVote: boolean;
   data: PlayerOfMatchData;
+  teamProfiles?: TeamProfile[];
   voteMode?: "coach" | "fan" | "player";
 }
 
@@ -62,6 +64,7 @@ export function PlayerOfMatchContent({
   canManage,
   canVote,
   data,
+  teamProfiles = [],
   voteMode = "player",
 }: PlayerOfMatchContentProps) {
   const [activeTab, setActiveTab] = useState<PlayerOfMatchTab>("mvp");
@@ -124,6 +127,7 @@ export function PlayerOfMatchContent({
           }
           currentMatches={currentMatches}
           historyMatches={historyMatches}
+          teamProfiles={teamProfiles}
           voteMode={voteMode}
         />
       ) : null}
@@ -139,6 +143,7 @@ function MvpTab({
   currentPlayerName,
   currentMatches,
   historyMatches,
+  teamProfiles,
   voteMode,
 }: {
   canManage: boolean;
@@ -146,6 +151,7 @@ function MvpTab({
   currentPlayerName?: string;
   currentMatches: PlayerOfMatchMatch[];
   historyMatches: PlayerOfMatchMatch[];
+  teamProfiles: TeamProfile[];
   voteMode: "coach" | "fan" | "player";
 }) {
   return (
@@ -166,6 +172,7 @@ function MvpTab({
                 currentPlayerName={currentPlayerName}
                 key={match.id}
                 match={match}
+                teamProfiles={teamProfiles}
                 voteMode={voteMode}
               />
             ))}
@@ -200,6 +207,7 @@ function MvpTab({
                   currentPlayerName={currentPlayerName}
                   key={match.id}
                   match={match}
+                  teamProfiles={teamProfiles}
                   voteMode={voteMode}
                 />
               ))}
@@ -561,12 +569,14 @@ function MatchVoteCard({
   canVote: canUserVote,
   currentPlayerName,
   match,
+  teamProfiles,
   voteMode,
 }: {
   canManage: boolean;
   canVote: boolean;
   currentPlayerName?: string;
   match: PlayerOfMatchMatch;
+  teamProfiles: TeamProfile[];
   voteMode: "coach" | "fan" | "player";
 }) {
   const [showResults, setShowResults] = useState(false);
@@ -721,7 +731,9 @@ function MatchVoteCard({
             <Eye />
             {showResults ? "Ocultar resultados" : "Ver resultados"}
           </Button>
-          {showResults ? <ResultsPodium match={match} /> : null}
+          {showResults ? (
+            <ResultsPodium match={match} teamProfiles={teamProfiles} />
+          ) : null}
         </div>
       </CardContent>
     </Card>
@@ -845,7 +857,13 @@ function FriendlyMatchEditForm({
   );
 }
 
-function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
+function ResultsPodium({
+  match,
+  teamProfiles,
+}: {
+  match: PlayerOfMatchMatch;
+  teamProfiles: TeamProfile[];
+}) {
   const podium = match.results.slice(0, 3);
   const totalPoints = match.results.reduce((total, result) => total + result.points, 0);
 
@@ -880,7 +898,7 @@ function ResultsPodium({ match }: { match: PlayerOfMatchMatch }) {
           </p>
         ) : (
           <div className="relative z-10 grid gap-3">
-            <MvpStoryShareButton match={match} />
+            <MvpStoryShareButton match={match} teamProfiles={teamProfiles} />
             <div className="hidden gap-2 rounded-md border border-white/15 bg-white/10 p-3 sm:grid">
               {match.results.slice(0, 6).map((result, index) => (
                 <div

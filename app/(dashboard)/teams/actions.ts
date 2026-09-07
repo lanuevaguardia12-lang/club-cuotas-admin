@@ -21,6 +21,9 @@ const teamProfileSchema = z.object({
       "El escudo debe ser una imagen valida.",
     )
     .optional(),
+  crestOffsetX: z.coerce.number().min(-50).max(50).optional(),
+  crestOffsetY: z.coerce.number().min(-50).max(50).optional(),
+  crestZoom: z.coerce.number().min(0.7).max(2.6).optional(),
   id: z.string().trim().optional(),
   name: z.string().trim().min(2, "Ingresa el nombre del equipo.").max(120),
   shortName: z

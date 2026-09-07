@@ -11,8 +11,10 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { FixturePlayerOption, LeagueFixtureMatch } from "@/types/fixture";
+import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -22,12 +24,19 @@ const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
 
 type ConvocationShareFormat = "post" | "story";
 
+interface LoadedTeamCrest {
+  fit: TeamCrestFit;
+  image?: HTMLImageElement;
+  initials: string;
+}
+
 interface MatchConvocationButtonProps {
   className?: string;
   coachName?: string;
   match: LeagueFixtureMatch;
   playerOptions: FixturePlayerOption[];
   teamName: string;
+  teamProfiles?: TeamProfile[];
 }
 
 interface ConvokedPlayer {
@@ -53,6 +62,7 @@ export function MatchConvocationButton({
   match,
   playerOptions,
   teamName,
+  teamProfiles = [],
 }: MatchConvocationButtonProps) {
   const [open, setOpen] = useState(false);
   const [listText, setListText] = useState("");
@@ -76,6 +86,7 @@ export function MatchConvocationButton({
         match,
         players: parsed.matched,
         teamName,
+        teamProfiles,
       });
       const formatLabel = format === "story" ? "story" : "publicacion";
       const fileName = `convocados-${formatLabel}-${slugify(rival)}.png`;
@@ -426,12 +437,14 @@ async function createConvocationBlob({
   match,
   players,
   teamName,
+  teamProfiles,
 }: {
   coachName?: string;
   format: ConvocationShareFormat;
   match: LeagueFixtureMatch;
   players: ConvokedPlayer[];
   teamName: string;
+  teamProfiles: TeamProfile[];
 }) {
   const canvas = document.createElement("canvas");
   const compact = format === "post";
@@ -452,6 +465,7 @@ async function createConvocationBlob({
     match,
     players,
     teamName,
+    teamProfiles,
     width: canvas.width,
   });
 
@@ -475,6 +489,7 @@ async function drawConvocationPlate(
     match,
     players,
     teamName,
+    teamProfiles,
     width,
   }: {
     compact: boolean;
@@ -483,10 +498,11 @@ async function drawConvocationPlate(
     match: LeagueFixtureMatch;
     players: ConvokedPlayer[];
     teamName: string;
+    teamProfiles: TeamProfile[];
     width: number;
   },
 ) {
-  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
+  const logo = await loadTeamCrestImage(teamProfiles, teamName);
   const rival = getMatchRival(match, teamName);
   const footerY = height - (compact ? 64 : 104);
   const listY = compact ? 388 : 580;
@@ -494,18 +510,8 @@ async function drawConvocationPlate(
 
   drawBackground(context, width, height);
 
-  if (logo) {
-    drawContainedImage(
-      context,
-      logo,
-      width / 2 - (compact ? 58 : 72),
-      compact ? 48 : 86,
-      compact ? 116 : 144,
-      compact ? 108 : 134,
-    );
-  } else {
-    drawFallbackLogo(context, width, compact ? 104 : 152);
-  }
+  const logoSize = compact ? 112 : 132;
+  drawTeamCrest(context, logo, width / 2 - logoSize / 2, compact ? 48 : 86, logoSize);
 
   drawCenteredText(context, "CONVOCADOS", width / 2, compact ? 230 : 342, {
     color: "#ffffff",
@@ -744,42 +750,111 @@ function drawBackground(
   context.restore();
 }
 
-function drawContainedImage(
+async function loadTeamCrestImage(
+  teamProfiles: TeamProfile[],
+  teamName: string,
+): Promise<LoadedTeamCrest> {
+  const fit = getTeamCrestFit(teamProfiles, teamName);
+  const image = await loadImage(
+    getTeamCrestDataUrl(teamProfiles, teamName) || BRAND_LOGO_SRC,
+  ).catch(() => undefined);
+
+  return {
+    fit,
+    image,
+    initials: getTeamInitials(teamName),
+  };
+}
+
+function drawTeamCrest(
+  context: CanvasRenderingContext2D,
+  crest: LoadedTeamCrest,
+  x: number,
+  y: number,
+  size: number,
+) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+
+  context.save();
+  context.shadowBlur = 18;
+  context.shadowColor = "rgba(0,0,0,0.28)";
+  context.fillStyle = "rgba(255,255,255,0.94)";
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 4, 0, Math.PI * 2);
+  context.clip();
+
+  if (crest.image) {
+    drawFittedCrestImage(
+      context,
+      crest.image,
+      x + size * 0.1,
+      y + size * 0.1,
+      size * 0.8,
+      size * 0.8,
+      crest.fit,
+    );
+  } else {
+    const gradient = context.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, "#eaf6ff");
+    gradient.addColorStop(1, "#b7d7ff");
+    context.fillStyle = gradient;
+    context.fillRect(x, y, size, size);
+    drawCenteredText(context, crest.initials || "LNG", centerX, centerY + size * 0.13, {
+      color: "#013b8f",
+      font: `900 ${Math.round(size * 0.28)}px Arial Black, sans-serif`,
+      maxWidth: size * 0.7,
+    });
+  }
+
+  context.restore();
+
+  context.save();
+  context.strokeStyle = "rgba(255,255,255,0.84)";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+}
+
+function drawFittedCrestImage(
   context: CanvasRenderingContext2D,
   image: HTMLImageElement,
   x: number,
   y: number,
   width: number,
   height: number,
+  fit: TeamCrestFit,
 ) {
-  const ratio = Math.min(width / image.width, height / image.height);
+  const ratio = Math.min(width / image.width, height / image.height) * fit.zoom;
   const drawWidth = image.width * ratio;
   const drawHeight = image.height * ratio;
+  const offsetX = (width * fit.offsetX) / 100;
+  const offsetY = (height * fit.offsetY) / 100;
 
   context.drawImage(
     image,
-    x + (width - drawWidth) / 2,
-    y + (height - drawHeight) / 2,
+    x + (width - drawWidth) / 2 + offsetX,
+    y + (height - drawHeight) / 2 + offsetY,
     drawWidth,
     drawHeight,
   );
 }
 
-function drawFallbackLogo(
-  context: CanvasRenderingContext2D,
-  width: number,
-  centerY: number,
-) {
-  context.save();
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(width / 2, centerY, 58, 0, Math.PI * 2);
-  context.fill();
-  drawCenteredText(context, "LNG", width / 2, centerY + 15, {
-    color: "#012f77",
-    font: "900 38px Arial Black, sans-serif",
-  });
-  context.restore();
+function getTeamInitials(teamName: string) {
+  return teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function drawCenteredText(

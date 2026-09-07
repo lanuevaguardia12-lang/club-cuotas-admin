@@ -30,7 +30,11 @@ import {
   type MatchRegistrationStatus,
 } from "@/lib/match-registration-form";
 import { formatPeriod, getCurrentPeriod } from "@/lib/player-profile";
-import { getTeamCrestDataUrl, getTeamDisplayName } from "@/lib/team-profiles";
+import {
+  getTeamCrestDataUrl,
+  getTeamCrestFit,
+  getTeamDisplayName,
+} from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { PlayerMonthPaymentStatus, PlayerProfile } from "@/types/dashboard";
 import type {
@@ -363,6 +367,7 @@ function HomeMatchCard({
           match={match}
           playerOptions={playerOptions}
           teamName={APP_TEAM_NAME}
+          teamProfiles={teamProfiles}
         />
       ) : null}
       <MatchRegistrationAction
@@ -620,6 +625,7 @@ function TeamLine({
   const isClub = name === APP_TEAM_NAME;
   const displayName = getTeamDisplayName(teamProfiles, name);
   const crestDataUrl = getTeamCrestDataUrl(teamProfiles, name);
+  const crestFit = getTeamCrestFit(teamProfiles, name);
 
   return (
     <div
@@ -629,7 +635,7 @@ function TeamLine({
       )}
     >
       <span className="flex min-w-0 items-center gap-3">
-        <TeamAvatar name={name} crestDataUrl={crestDataUrl} />
+        <TeamAvatar name={name} crestDataUrl={crestDataUrl} fit={crestFit} />
         <span className="min-w-0">
           <span className="block truncate font-semibold" title={name}>
             {displayName}
@@ -644,7 +650,19 @@ function TeamLine({
   );
 }
 
-function TeamAvatar({ crestDataUrl, name }: { crestDataUrl: string; name: string }) {
+function TeamAvatar({
+  crestDataUrl,
+  fit,
+  name,
+}: {
+  crestDataUrl: string;
+  fit: {
+    offsetX: number;
+    offsetY: number;
+    zoom: number;
+  };
+  name: string;
+}) {
   if (crestDataUrl) {
     return (
       <span className="bg-card inline-grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border">
@@ -653,6 +671,10 @@ function TeamAvatar({ crestDataUrl, name }: { crestDataUrl: string; name: string
           alt={`Escudo de ${name}`}
           className="size-full object-contain"
           src={crestDataUrl}
+          style={{
+            transform: `translate(${fit.offsetX}%, ${fit.offsetY}%) scale(${fit.zoom})`,
+            transformOrigin: "center",
+          }}
         />
       </span>
     );

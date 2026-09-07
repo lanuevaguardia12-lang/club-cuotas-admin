@@ -2,7 +2,14 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Camera, Pencil, Save, Search, Shield, X } from "lucide-react";
-import { useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -12,9 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import {
+  DEFAULT_TEAM_CREST_FIT,
   TEAM_SHORT_NAME_MAX_LENGTH,
   createTeamProfileId,
   getDefaultTeamShortName,
+  normalizeTeamCrestFit,
   normalizeTeamProfileKey,
 } from "@/lib/team-profiles";
 import type { TeamProfile, TeamsData } from "@/types/teams";
@@ -40,6 +49,9 @@ const teamSchema = z.object({
       "El escudo debe ser una imagen valida.",
     )
     .optional(),
+  crestOffsetX: z.coerce.number().min(-50).max(50),
+  crestOffsetY: z.coerce.number().min(-50).max(50),
+  crestZoom: z.coerce.number().min(0.7).max(2.6),
   id: z.string().optional(),
   name: z.string().trim().min(2, "Ingresa el nombre del equipo.").max(120),
   shortName: z
@@ -49,7 +61,8 @@ const teamSchema = z.object({
     .max(TEAM_SHORT_NAME_MAX_LENGTH, `Maximo ${TEAM_SHORT_NAME_MAX_LENGTH} caracteres.`),
 });
 
-type TeamFormValues = z.infer<typeof teamSchema>;
+type TeamFormInputValues = z.input<typeof teamSchema>;
+type TeamFormValues = z.output<typeof teamSchema>;
 
 export function TeamDirectoryContent({
   data,
@@ -68,11 +81,16 @@ export function TeamDirectoryContent({
     reset,
     setValue,
     watch,
-  } = useForm<TeamFormValues>({
+  } = useForm<TeamFormInputValues, unknown, TeamFormValues>({
     resolver: zodResolver(teamSchema),
     defaultValues: getDefaultValues(),
   });
   const watchedCrestDataUrl = watch("crestDataUrl") ?? "";
+  const watchedCrestFit = normalizeTeamCrestFit({
+    offsetX: watch("crestOffsetX"),
+    offsetY: watch("crestOffsetY"),
+    zoom: watch("crestZoom"),
+  });
   const watchedName = watch("name") ?? "";
   const watchedShortName = watch("shortName") ?? "";
   const teams = useMemo(
@@ -114,6 +132,9 @@ export function TeamDirectoryContent({
     setEditingId(team.id);
     reset({
       crestDataUrl: team.crestDataUrl,
+      crestOffsetX: team.crestOffsetX,
+      crestOffsetY: team.crestOffsetY,
+      crestZoom: team.crestZoom,
       id: team.id,
       name: team.name,
       shortName: team.shortName,
@@ -138,6 +159,9 @@ export function TeamDirectoryContent({
     try {
       const dataUrl = await resizeCrestImage(file);
       setValue("crestDataUrl", dataUrl, { shouldDirty: true });
+      setValue("crestOffsetX", DEFAULT_TEAM_CREST_FIT.offsetX, { shouldDirty: true });
+      setValue("crestOffsetY", DEFAULT_TEAM_CREST_FIT.offsetY, { shouldDirty: true });
+      setValue("crestZoom", DEFAULT_TEAM_CREST_FIT.zoom, { shouldDirty: true });
     } catch {
       setMessage("No se pudo cargar el escudo.");
     } finally {
@@ -154,6 +178,12 @@ export function TeamDirectoryContent({
     setValue("shortName", getDefaultTeamShortName(name), {
       shouldDirty: true,
     });
+  }
+
+  function resetCrestFit() {
+    setValue("crestOffsetX", DEFAULT_TEAM_CREST_FIT.offsetX, { shouldDirty: true });
+    setValue("crestOffsetY", DEFAULT_TEAM_CREST_FIT.offsetY, { shouldDirty: true });
+    setValue("crestZoom", DEFAULT_TEAM_CREST_FIT.zoom, { shouldDirty: true });
   }
 
   return (
@@ -186,6 +216,7 @@ export function TeamDirectoryContent({
                 <div className="flex flex-wrap items-center gap-3">
                   <TeamCrestPreview
                     crestDataUrl={watchedCrestDataUrl}
+                    fit={watchedCrestFit}
                     name={watchedName}
                   />
                   <div className="flex flex-wrap gap-2">
@@ -208,9 +239,10 @@ export function TeamDirectoryContent({
                       <Button
                         type="button"
                         variant="ghost"
-                        onClick={() =>
-                          setValue("crestDataUrl", "", { shouldDirty: true })
-                        }
+                        onClick={() => {
+                          setValue("crestDataUrl", "", { shouldDirty: true });
+                          resetCrestFit();
+                        }}
                       >
                         Quitar
                       </Button>
@@ -221,6 +253,44 @@ export function TeamDirectoryContent({
                   <span className="text-destructive text-sm">
                     {errors.crestDataUrl.message}
                   </span>
+                ) : null}
+                {watchedCrestDataUrl ? (
+                  <div className="border-border bg-background grid gap-3 rounded-md border p-3">
+                    <CrestRange
+                      label="Zoom"
+                      max={2.6}
+                      min={0.7}
+                      step={0.05}
+                      value={watchedCrestFit.zoom}
+                      {...register("crestZoom", { valueAsNumber: true })}
+                    />
+                    <CrestRange
+                      label="Horizontal"
+                      max={50}
+                      min={-50}
+                      step={1}
+                      value={watchedCrestFit.offsetX}
+                      {...register("crestOffsetX", { valueAsNumber: true })}
+                    />
+                    <CrestRange
+                      label="Vertical"
+                      max={50}
+                      min={-50}
+                      step={1}
+                      value={watchedCrestFit.offsetY}
+                      {...register("crestOffsetY", { valueAsNumber: true })}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={resetCrestFit}
+                      >
+                        Centrar escudo
+                      </Button>
+                    </div>
+                  </div>
                 ) : null}
               </div>
 
@@ -303,6 +373,11 @@ export function TeamDirectoryContent({
                     <TeamCrestPreview
                       className="size-14"
                       crestDataUrl={team.crestDataUrl}
+                      fit={{
+                        offsetX: team.crestOffsetX,
+                        offsetY: team.crestOffsetY,
+                        zoom: team.crestZoom,
+                      }}
                       name={team.name}
                     />
                     <div className="min-w-0">
@@ -345,12 +420,20 @@ export function TeamDirectoryContent({
 function TeamCrestPreview({
   className,
   crestDataUrl,
+  fit = DEFAULT_TEAM_CREST_FIT,
   name,
 }: {
   className?: string;
   crestDataUrl?: string;
+  fit?: {
+    offsetX: number;
+    offsetY: number;
+    zoom: number;
+  };
   name?: string;
 }) {
+  const normalizedFit = normalizeTeamCrestFit(fit);
+
   return (
     <div
       className={[
@@ -364,11 +447,36 @@ function TeamCrestPreview({
           alt={`Escudo de ${name || "equipo"}`}
           className="size-full object-contain"
           src={crestDataUrl}
+          style={{
+            transform: `translate(${normalizedFit.offsetX}%, ${normalizedFit.offsetY}%) scale(${normalizedFit.zoom})`,
+            transformOrigin: "center",
+          }}
         />
       ) : (
         <Shield className="text-muted-foreground size-8" aria-hidden="true" />
       )}
     </div>
+  );
+}
+
+function CrestRange({
+  label,
+  value,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value"> & {
+  label: string;
+  value: number;
+}) {
+  return (
+    <label className="grid gap-1">
+      <span className="flex items-center justify-between gap-3 text-xs font-medium">
+        <span>{label}</span>
+        <span className="text-muted-foreground tabular-nums">
+          {label === "Zoom" ? `${value.toFixed(2)}x` : value}
+        </span>
+      </span>
+      <input className="accent-primary w-full" type="range" {...props} />
+    </label>
   );
 }
 
@@ -393,6 +501,9 @@ function Field({
 function getDefaultValues(): TeamFormValues {
   return {
     crestDataUrl: "",
+    crestOffsetX: DEFAULT_TEAM_CREST_FIT.offsetX,
+    crestOffsetY: DEFAULT_TEAM_CREST_FIT.offsetY,
+    crestZoom: DEFAULT_TEAM_CREST_FIT.zoom,
     id: "",
     name: "",
     shortName: "",
@@ -422,6 +533,9 @@ function mergeTeamProfiles(
 
     teamsByKey.set(key, {
       crestDataUrl: "",
+      crestOffsetX: DEFAULT_TEAM_CREST_FIT.offsetX,
+      crestOffsetY: DEFAULT_TEAM_CREST_FIT.offsetY,
+      crestZoom: DEFAULT_TEAM_CREST_FIT.zoom,
       detected: true,
       id: createTeamProfileId(name),
       name,

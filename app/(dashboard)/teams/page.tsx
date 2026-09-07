@@ -6,6 +6,7 @@ import { TeamDirectoryContent } from "@/components/teams/team-directory-content"
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
+  APP_TEAM_NAME,
   applyLeagueFixtureScheduleOverrides,
   getLeagueFixtureData,
 } from "@/lib/league-fixture";
@@ -77,6 +78,8 @@ function collectTeamNames(fixture: LeagueFixtureData) {
     fixture.allCompetitionMatches.length > 0
       ? fixture.allCompetitionMatches
       : fixture.matches;
+
+  addTeamName(namesByKey, APP_TEAM_NAME);
 
   for (const match of matches) {
     addTeamName(namesByKey, match.localTeam);

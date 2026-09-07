@@ -5,20 +5,31 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import type { PlayerOfMatchMatch, PlayerOfMatchResult } from "@/types/player-of-match";
+import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
+const APP_TEAM_NAME = "La Nueva Guardia";
 const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
+
+interface LoadedTeamCrest {
+  fit: TeamCrestFit;
+  image?: HTMLImageElement;
+  initials: string;
+}
 
 interface MvpStoryShareButtonProps {
   disabled?: boolean;
   match: PlayerOfMatchMatch;
+  teamProfiles?: TeamProfile[];
 }
 
 export function MvpStoryShareButton({
   disabled = false,
   match,
+  teamProfiles = [],
 }: MvpStoryShareButtonProps) {
   const [isPending, setIsPending] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,7 +39,7 @@ export function MvpStoryShareButton({
     setMessage("");
 
     try {
-      const blob = await createMvpStoryBlob(match);
+      const blob = await createMvpStoryBlob(match, teamProfiles);
       const fileName = `mvp-${slugify(match.rival || "partido")}.png`;
       const file = new File([blob], fileName, { type: "image/png" });
 
@@ -71,7 +82,10 @@ export function MvpStoryShareButton({
   );
 }
 
-async function createMvpStoryBlob(match: PlayerOfMatchMatch) {
+async function createMvpStoryBlob(
+  match: PlayerOfMatchMatch,
+  teamProfiles: TeamProfile[],
+) {
   const canvas = document.createElement("canvas");
   canvas.width = STORY_WIDTH;
   canvas.height = STORY_HEIGHT;
@@ -82,7 +96,7 @@ async function createMvpStoryBlob(match: PlayerOfMatchMatch) {
     throw new Error("Tu navegador no pudo preparar la imagen.");
   }
 
-  await drawMvpStory(context, match);
+  await drawMvpStory(context, match, teamProfiles);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -98,8 +112,9 @@ async function createMvpStoryBlob(match: PlayerOfMatchMatch) {
 async function drawMvpStory(
   context: CanvasRenderingContext2D,
   match: PlayerOfMatchMatch,
+  teamProfiles: TeamProfile[],
 ) {
-  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
+  const logo = await loadTeamCrestImage(teamProfiles, APP_TEAM_NAME);
   const orderedPodium = getOrderedPodium(match.results);
   const podiumImages = await Promise.all(
     orderedPodium.map((entry) =>
@@ -111,11 +126,7 @@ async function drawMvpStory(
 
   drawBackground(context);
 
-  if (logo) {
-    drawContainedImage(context, logo, STORY_WIDTH / 2 - 92, 92, 184, 164);
-  } else {
-    drawFallbackLogo(context);
-  }
+  drawTeamCrest(context, logo, STORY_WIDTH / 2 - 82, 88, 164);
 
   drawCenteredText(context, "MVP DEL PARTIDO", STORY_WIDTH / 2, 346, {
     color: "#ffffff",
@@ -389,35 +400,99 @@ function drawCircularAvatar(
   context.restore();
 }
 
-function drawFallbackLogo(context: CanvasRenderingContext2D) {
+async function loadTeamCrestImage(
+  teamProfiles: TeamProfile[],
+  teamName: string,
+): Promise<LoadedTeamCrest> {
+  const fit = getTeamCrestFit(teamProfiles, teamName);
+  const image = await loadImage(
+    getTeamCrestDataUrl(teamProfiles, teamName) || BRAND_LOGO_SRC,
+  ).catch(() => undefined);
+
+  return {
+    fit,
+    image,
+    initials: "LNG",
+  };
+}
+
+function drawTeamCrest(
+  context: CanvasRenderingContext2D,
+  crest: LoadedTeamCrest,
+  x: number,
+  y: number,
+  size: number,
+) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+
   context.save();
-  context.fillStyle = "#ffffff";
+  context.shadowBlur = 18;
+  context.shadowColor = "rgba(0,0,0,0.28)";
+  context.fillStyle = "rgba(255,255,255,0.94)";
   context.beginPath();
-  context.arc(STORY_WIDTH / 2, 170, 82, 0, Math.PI * 2);
+  context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
   context.fill();
-  drawCenteredText(context, "LNG", STORY_WIDTH / 2, 190, {
-    color: "#012f77",
-    font: "900 48px Arial Black, sans-serif",
-  });
+  context.restore();
+
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 4, 0, Math.PI * 2);
+  context.clip();
+
+  if (crest.image) {
+    drawFittedCrestImage(
+      context,
+      crest.image,
+      x + size * 0.1,
+      y + size * 0.1,
+      size * 0.8,
+      size * 0.8,
+      crest.fit,
+    );
+  } else {
+    const gradient = context.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, "#eaf6ff");
+    gradient.addColorStop(1, "#b7d7ff");
+    context.fillStyle = gradient;
+    context.fillRect(x, y, size, size);
+    drawCenteredText(context, crest.initials, centerX, centerY + size * 0.13, {
+      color: "#013b8f",
+      font: `900 ${Math.round(size * 0.28)}px Arial Black, sans-serif`,
+      maxWidth: size * 0.7,
+    });
+  }
+
+  context.restore();
+
+  context.save();
+  context.strokeStyle = "rgba(255,255,255,0.84)";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
+  context.stroke();
   context.restore();
 }
 
-function drawContainedImage(
+function drawFittedCrestImage(
   context: CanvasRenderingContext2D,
   image: HTMLImageElement,
   x: number,
   y: number,
   width: number,
   height: number,
+  fit: TeamCrestFit,
 ) {
-  const ratio = Math.min(width / image.width, height / image.height);
+  const ratio = Math.min(width / image.width, height / image.height) * fit.zoom;
   const drawWidth = image.width * ratio;
   const drawHeight = image.height * ratio;
+  const offsetX = (width * fit.offsetX) / 100;
+  const offsetY = (height * fit.offsetY) / 100;
 
   context.drawImage(
     image,
-    x + (width - drawWidth) / 2,
-    y + (height - drawHeight) / 2,
+    x + (width - drawWidth) / 2 + offsetX,
+    y + (height - drawHeight) / 2 + offsetY,
     drawWidth,
     drawHeight,
   );

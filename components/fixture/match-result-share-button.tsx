@@ -5,10 +5,14 @@ import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
-import { getTeamDisplayName } from "@/lib/team-profiles";
+import {
+  getTeamCrestDataUrl,
+  getTeamCrestFit,
+  getTeamDisplayName,
+} from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { LeagueCompetitionKind, LeagueFixtureMatch } from "@/types/fixture";
-import type { TeamProfile } from "@/types/teams";
+import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -23,6 +27,12 @@ const SUPPORTED_RESULT_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/
 
 type ResultShareFormat = "post" | "post-photo" | "story" | "story-photo";
 type PhotoResultShareFormat = Extract<ResultShareFormat, "post-photo" | "story-photo">;
+
+interface LoadedTeamCrest {
+  fit: TeamCrestFit;
+  image?: HTMLImageElement;
+  initials: string;
+}
 
 interface PreparedPhotoShare {
   file: File;
@@ -351,24 +361,24 @@ async function drawMatchResultPlate(
   }
 
   const compact = format === "post";
-  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
   const result = getResultView(match, teamName, teamProfiles);
   const scorers = getTeamGoalScorers(match, teamName);
+  const [clubCrest, localCrest, visitorCrest] = await Promise.all([
+    loadTeamCrestImage(teamProfiles, teamName, teamName),
+    loadTeamCrestImage(teamProfiles, match.localTeam, teamName),
+    loadTeamCrestImage(teamProfiles, match.visitorTeam, teamName),
+  ]);
 
   drawBackground(context, width, height);
 
-  if (logo) {
-    drawContainedImage(
-      context,
-      logo,
-      width / 2 - (compact ? 62 : 78),
-      compact ? 82 : 112,
-      compact ? 124 : 156,
-      compact ? 114 : 142,
-    );
-  } else {
-    drawFallbackLogo(context, width, compact ? 140 : 180);
-  }
+  const logoSize = compact ? 118 : 144;
+  drawTeamCrest(
+    context,
+    clubCrest,
+    width / 2 - logoSize / 2,
+    compact ? 80 : 108,
+    logoSize,
+  );
 
   drawCenteredText(context, "RESULTADO FINAL", width / 2, compact ? 300 : 386, {
     color: "#ffffff",
@@ -392,24 +402,15 @@ async function drawMatchResultPlate(
     },
   );
 
-  drawWrappedCenteredText(
-    context,
-    `VS ${result.rivalName}`,
-    width / 2,
-    compact ? 452 : 586,
-    width - 140,
-    {
-      color: "#f4ce0f",
-      font: compact
-        ? "900 42px Arial Black, Impact, sans-serif"
-        : "900 48px Arial Black, Impact, sans-serif",
-      lineHeight: compact ? 48 : 56,
-      maxLines: 2,
-      shadowBlur: 16,
-      shadowColor: "rgba(244,206,15,0.22)",
-      uppercase: true,
-    },
-  );
+  drawTeamsVersusHeader(context, {
+    compact,
+    localCrest,
+    localName: result.localName,
+    visitorCrest,
+    visitorName: result.visitorName,
+    width,
+    y: compact ? 432 : 562,
+  });
 
   drawScoreboard(context, {
     compact,
@@ -451,24 +452,24 @@ async function drawPhotoOverlayMatchResultPlate(
 ) {
   const { height, width } = getCanvasSize(format);
   const compact = format === "post-photo";
-  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
   const result = getResultView(match, teamName, teamProfiles);
   const scorers = getTeamGoalScorers(match, teamName);
+  const [clubCrest, localCrest, visitorCrest] = await Promise.all([
+    loadTeamCrestImage(teamProfiles, teamName, teamName),
+    loadTeamCrestImage(teamProfiles, match.localTeam, teamName),
+    loadTeamCrestImage(teamProfiles, match.visitorTeam, teamName),
+  ]);
 
   await drawPhotoOverlayBackground(context, width, height, backgroundImageSrc);
 
-  if (logo) {
-    drawContainedImage(
-      context,
-      logo,
-      width / 2 - (compact ? 46 : 70),
-      compact ? 52 : 106,
-      compact ? 92 : 140,
-      compact ? 84 : 128,
-    );
-  } else {
-    drawFallbackLogo(context, width, compact ? 92 : 170);
-  }
+  const logoSize = compact ? 92 : 132;
+  drawTeamCrest(
+    context,
+    clubCrest,
+    width / 2 - logoSize / 2,
+    compact ? 52 : 104,
+    logoSize,
+  );
 
   drawCenteredText(context, "RESULTADO FINAL", width / 2, compact ? 190 : 356, {
     color: "#ffffff",
@@ -494,24 +495,16 @@ async function drawPhotoOverlayMatchResultPlate(
     },
   );
 
-  drawWrappedCenteredText(
-    context,
-    `VS ${result.rivalName}`,
-    width / 2,
-    compact ? 332 : 558,
-    width - 150,
-    {
-      color: "#f4ce0f",
-      font: compact
-        ? "900 38px Arial Black, Impact, sans-serif"
-        : "900 48px Arial Black, Impact, sans-serif",
-      lineHeight: compact ? 46 : 56,
-      maxLines: compact ? 2 : 2,
-      shadowBlur: 18,
-      shadowColor: "rgba(0,0,0,0.48)",
-      uppercase: true,
-    },
-  );
+  drawTeamsVersusHeader(context, {
+    compact,
+    localCrest,
+    localName: result.localName,
+    shadowColor: "rgba(0,0,0,0.52)",
+    visitorCrest,
+    visitorName: result.visitorName,
+    width,
+    y: compact ? 320 : 540,
+  });
 
   drawScoreboard(context, {
     compact,
@@ -770,6 +763,226 @@ function drawPenaltyScore(
   });
 }
 
+function drawTeamsVersusHeader(
+  context: CanvasRenderingContext2D,
+  {
+    compact,
+    localCrest,
+    localName,
+    shadowColor = "rgba(244,206,15,0.22)",
+    visitorCrest,
+    visitorName,
+    width,
+    y,
+  }: {
+    compact: boolean;
+    localCrest: LoadedTeamCrest;
+    localName: string;
+    shadowColor?: string;
+    visitorCrest: LoadedTeamCrest;
+    visitorName: string;
+    width: number;
+    y: number;
+  },
+) {
+  const crestSize = compact ? 92 : 124;
+  const teamColumnWidth = compact ? 245 : 285;
+  const teamGap = compact ? 184 : 230;
+  const localX = width / 2 - teamGap;
+  const visitorX = width / 2 + teamGap;
+
+  drawResultTeamMark(context, {
+    compact,
+    crest: localCrest,
+    name: localName,
+    size: crestSize,
+    width: teamColumnWidth,
+    x: localX,
+    y,
+  });
+
+  drawMiddleText(context, "VS", width / 2, y, {
+    color: "#f4ce0f",
+    font: compact
+      ? "900 58px Arial Black, Impact, sans-serif"
+      : "900 72px Arial Black, Impact, sans-serif",
+    shadowBlur: 20,
+    shadowColor,
+  });
+
+  drawResultTeamMark(context, {
+    compact,
+    crest: visitorCrest,
+    name: visitorName,
+    size: crestSize,
+    width: teamColumnWidth,
+    x: visitorX,
+    y,
+  });
+}
+
+function drawResultTeamMark(
+  context: CanvasRenderingContext2D,
+  {
+    compact,
+    crest,
+    name,
+    size,
+    width,
+    x,
+    y,
+  }: {
+    compact: boolean;
+    crest: LoadedTeamCrest;
+    name: string;
+    size: number;
+    width: number;
+    x: number;
+    y: number;
+  },
+) {
+  drawTeamCrest(context, crest, x - size / 2, y - size / 2, size);
+
+  const fontSize = getFittedVersusTeamNameFontSize(
+    context,
+    name,
+    compact ? 23 : 27,
+    width,
+    compact ? 18 : 21,
+  );
+  const lineHeight = Math.round(fontSize * 1.16);
+  const lines = getClampedLines(
+    context,
+    name.toUpperCase(),
+    width,
+    2,
+    `600 ${fontSize}px Arial, sans-serif`,
+  );
+  const firstLineY = y + size / 2 + (compact ? 34 : 40);
+
+  context.save();
+  context.fillStyle = "rgba(255,255,255,0.92)";
+  context.font = `600 ${fontSize}px Arial, sans-serif`;
+  context.textAlign = "center";
+  context.shadowBlur = 12;
+  context.shadowColor = "rgba(0,0,0,0.28)";
+
+  lines.forEach((line, index) => {
+    context.fillText(line, x, firstLineY + index * lineHeight, width);
+  });
+
+  context.restore();
+}
+
+async function loadTeamCrestImage(
+  teamProfiles: TeamProfile[],
+  teamName: string,
+  clubTeamName: string,
+): Promise<LoadedTeamCrest> {
+  const displayName = getTeamDisplayName(teamProfiles, teamName);
+  const fit = getTeamCrestFit(teamProfiles, teamName);
+  const crestSource =
+    getTeamCrestDataUrl(teamProfiles, teamName) ||
+    (sameTeam(teamName, clubTeamName) ? BRAND_LOGO_SRC : "");
+
+  if (!crestSource) {
+    return {
+      fit,
+      initials: getTeamInitials(displayName),
+    };
+  }
+
+  const image = await loadImage(crestSource).catch(() => undefined);
+
+  return {
+    fit,
+    image,
+    initials: getTeamInitials(displayName),
+  };
+}
+
+function drawTeamCrest(
+  context: CanvasRenderingContext2D,
+  crest: LoadedTeamCrest,
+  x: number,
+  y: number,
+  size: number,
+) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+
+  context.save();
+  context.shadowBlur = 18;
+  context.shadowColor = "rgba(0,0,0,0.28)";
+  context.fillStyle = "rgba(255,255,255,0.94)";
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 4, 0, Math.PI * 2);
+  context.clip();
+
+  if (crest.image) {
+    drawFittedCrestImage(
+      context,
+      crest.image,
+      x + size * 0.1,
+      y + size * 0.1,
+      size * 0.8,
+      size * 0.8,
+      crest.fit,
+    );
+  } else {
+    const gradient = context.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, "#eaf6ff");
+    gradient.addColorStop(1, "#b7d7ff");
+    context.fillStyle = gradient;
+    context.fillRect(x, y, size, size);
+    drawCenteredText(context, crest.initials || "-", centerX, centerY + size * 0.13, {
+      color: "#013b8f",
+      font: `900 ${Math.round(size * 0.28)}px Arial Black, sans-serif`,
+      maxWidth: size * 0.7,
+    });
+  }
+
+  context.restore();
+
+  context.save();
+  context.strokeStyle = "rgba(255,255,255,0.84)";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+}
+
+function drawFittedCrestImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fit: TeamCrestFit,
+) {
+  const ratio = Math.min(width / image.width, height / image.height) * fit.zoom;
+  const drawWidth = image.width * ratio;
+  const drawHeight = image.height * ratio;
+  const offsetX = (width * fit.offsetX) / 100;
+  const offsetY = (height * fit.offsetY) / 100;
+
+  context.drawImage(
+    image,
+    x + (width - drawWidth) / 2 + offsetX,
+    y + (height - drawHeight) / 2 + offsetY,
+    drawWidth,
+    drawHeight,
+  );
+}
+
 function drawTeamSide(
   context: CanvasRenderingContext2D,
   {
@@ -865,44 +1078,6 @@ function drawScorersBlock(
       shadowColor: "rgba(0,0,0,0.35)",
       uppercase: false,
     },
-  );
-}
-
-function drawFallbackLogo(
-  context: CanvasRenderingContext2D,
-  width: number,
-  centerY: number,
-) {
-  context.save();
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(width / 2, centerY, 62, 0, Math.PI * 2);
-  context.fill();
-  drawCenteredText(context, "LNG", width / 2, centerY + 18, {
-    color: "#012f77",
-    font: "900 42px Arial Black, sans-serif",
-  });
-  context.restore();
-}
-
-function drawContainedImage(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const ratio = Math.min(width / image.width, height / image.height);
-  const drawWidth = image.width * ratio;
-  const drawHeight = image.height * ratio;
-
-  context.drawImage(
-    image,
-    x + (width - drawWidth) / 2,
-    y + (height - drawHeight) / 2,
-    drawWidth,
-    drawHeight,
   );
 }
 
@@ -1014,6 +1189,36 @@ function drawCenteredText(
   context.restore();
 }
 
+function drawMiddleText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  {
+    color,
+    font,
+    maxWidth,
+    shadowBlur = 0,
+    shadowColor = "transparent",
+  }: {
+    color: string;
+    font: string;
+    maxWidth?: number;
+    shadowBlur?: number;
+    shadowColor?: string;
+  },
+) {
+  context.save();
+  context.fillStyle = color;
+  context.font = font;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.shadowBlur = shadowBlur;
+  context.shadowColor = shadowColor;
+  context.fillText(text, x, y, maxWidth);
+  context.restore();
+}
+
 function drawWrappedCenteredText(
   context: CanvasRenderingContext2D,
   text: string,
@@ -1087,6 +1292,41 @@ function getTeamNameFontSize(label: string, baseSize: number) {
   }
 
   return baseSize;
+}
+
+function getFittedVersusTeamNameFontSize(
+  context: CanvasRenderingContext2D,
+  label: string,
+  baseSize: number,
+  maxWidth: number,
+  minSize: number,
+) {
+  let fontSize = getTeamNameFontSize(label, baseSize);
+
+  context.save();
+
+  while (fontSize > minSize) {
+    context.font = `600 ${fontSize}px Arial, sans-serif`;
+
+    const longestWord =
+      label
+        .toUpperCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .sort((left, right) => right.length - left.length)[0] ?? "";
+    const wordFits = !longestWord || context.measureText(longestWord).width <= maxWidth;
+    const labelFits = wrapText(context, label.toUpperCase(), maxWidth).length <= 2;
+
+    if (wordFits && labelFits) {
+      break;
+    }
+
+    fontSize -= 1;
+  }
+
+  context.restore();
+
+  return fontSize;
 }
 
 function getClampedLines(
@@ -1373,6 +1613,15 @@ function normalizeScorerKey(value: string) {
 
 function sameTeam(first: string, second: string) {
   return normalizeTeamKey(first) === normalizeTeamKey(second);
+}
+
+function getTeamInitials(teamName: string) {
+  return teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function normalizeTeamKey(value: string) {

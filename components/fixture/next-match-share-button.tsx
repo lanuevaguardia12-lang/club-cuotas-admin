@@ -5,14 +5,18 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
-import { getTeamCrestDataUrl, getTeamDisplayName } from "@/lib/team-profiles";
+import {
+  getTeamCrestDataUrl,
+  getTeamCrestFit,
+  getTeamDisplayName,
+} from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type {
   LeagueCompetitionKind,
   LeagueFixtureMatch,
   LeagueStandingRow,
 } from "@/types/fixture";
-import type { TeamProfile } from "@/types/teams";
+import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -23,6 +27,7 @@ const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
 type NextMatchShareFormat = "story" | "post";
 
 interface LoadedTeamCrest {
+  fit: TeamCrestFit;
   image?: HTMLImageElement;
   initials: string;
 }
@@ -183,7 +188,7 @@ async function drawNextMatchPlate(
   const width = format === "story" ? STORY_WIDTH : POST_WIDTH;
   const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
   const compact = format === "post";
-  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
+  const clubCrest = await loadTeamCrestImage(teamProfiles, teamName, teamName);
   const localRecentMatches = getLastPlayedMatchesForTeam(matches, match.localTeam, match)
     .slice(0, 3)
     .map((recentMatch) =>
@@ -201,18 +206,14 @@ async function drawNextMatchPlate(
 
   drawBackground(context, width, height);
 
-  if (logo) {
-    drawContainedImage(
-      context,
-      logo,
-      width / 2 - (compact ? 62 : 78),
-      compact ? 72 : 112,
-      compact ? 124 : 156,
-      compact ? 114 : 142,
-    );
-  } else {
-    drawFallbackLogo(context, width, compact ? 130 : 180);
-  }
+  const logoSize = compact ? 118 : 144;
+  drawTeamCrest(
+    context,
+    clubCrest,
+    width / 2 - logoSize / 2,
+    compact ? 70 : 108,
+    logoSize,
+  );
 
   drawCenteredText(context, "PROXIMO PARTIDO", width / 2, compact ? 284 : 382, {
     color: "#ffffff",
@@ -570,12 +571,14 @@ async function loadTeamCrestImage(
   clubTeamName: string,
 ): Promise<LoadedTeamCrest> {
   const displayName = getTeamDisplayName(teamProfiles, teamName);
+  const fit = getTeamCrestFit(teamProfiles, teamName);
   const crestSource =
     getTeamCrestDataUrl(teamProfiles, teamName) ||
     (areSameFixtureTeam(teamName, clubTeamName) ? BRAND_LOGO_SRC : "");
 
   if (!crestSource) {
     return {
+      fit,
       initials: getTeamInitials(displayName),
     };
   }
@@ -583,6 +586,7 @@ async function loadTeamCrestImage(
   const image = await loadImage(crestSource).catch(() => undefined);
 
   return {
+    fit,
     image,
     initials: getTeamInitials(displayName),
   };
@@ -613,13 +617,14 @@ function drawTeamCrest(
   context.clip();
 
   if (crest.image) {
-    drawContainedImage(
+    drawFittedCrestImage(
       context,
       crest.image,
       x + size * 0.1,
       y + size * 0.1,
       size * 0.8,
       size * 0.8,
+      crest.fit,
     );
   } else {
     const gradient = context.createLinearGradient(x, y, x + size, y + size);
@@ -643,6 +648,30 @@ function drawTeamCrest(
   context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
   context.stroke();
   context.restore();
+}
+
+function drawFittedCrestImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fit: TeamCrestFit,
+) {
+  const ratio = Math.min(width / image.width, height / image.height) * fit.zoom;
+  const drawWidth = image.width * ratio;
+  const drawHeight = image.height * ratio;
+  const offsetX = (width * fit.offsetX) / 100;
+  const offsetY = (height * fit.offsetY) / 100;
+
+  context.drawImage(
+    image,
+    x + (width - drawWidth) / 2 + offsetX,
+    y + (height - drawHeight) / 2 + offsetY,
+    drawWidth,
+    drawHeight,
+  );
 }
 
 function drawRecentForm(
@@ -714,44 +743,6 @@ function drawRecentForm(
     );
     context.restore();
   });
-}
-
-function drawFallbackLogo(
-  context: CanvasRenderingContext2D,
-  width: number,
-  centerY: number,
-) {
-  context.save();
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(width / 2, centerY, 62, 0, Math.PI * 2);
-  context.fill();
-  drawCenteredText(context, "LNG", width / 2, centerY + 18, {
-    color: "#012f77",
-    font: "900 42px Arial Black, sans-serif",
-  });
-  context.restore();
-}
-
-function drawContainedImage(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const ratio = Math.min(width / image.width, height / image.height);
-  const drawWidth = image.width * ratio;
-  const drawHeight = image.height * ratio;
-
-  context.drawImage(
-    image,
-    x + (width - drawWidth) / 2,
-    y + (height - drawHeight) / 2,
-    drawWidth,
-    drawHeight,
-  );
 }
 
 function drawCenteredText(

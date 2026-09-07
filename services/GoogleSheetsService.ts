@@ -14,6 +14,7 @@ import { APP_TEAM_NAME, getLeagueClubMatchesForYear } from "@/lib/league-fixture
 import {
   createTeamProfileId,
   getDefaultTeamShortName,
+  normalizeTeamCrestFit,
   normalizeTeamProfileKey,
   sanitizeTeamShortName,
 } from "@/lib/team-profiles";
@@ -381,7 +382,16 @@ const pushSubscriptionHeaders = [
   "actualizado_en",
 ];
 
-const teamProfileHeaders = ["id", "nombre", "nombre_corto", "escudo", "actualizado_en"];
+const teamProfileHeaders = [
+  "id",
+  "nombre",
+  "nombre_corto",
+  "escudo",
+  "escudo_zoom",
+  "escudo_x",
+  "escudo_y",
+  "actualizado_en",
+];
 
 const playerOfMatchVoteHeaders = [
   "id",
@@ -4484,6 +4494,25 @@ function mapRowsToTeamProfiles(rows: unknown[][]): TeamProfile[] {
             "nombre_placa",
           ]),
         ) || getDefaultTeamShortName(name);
+      const crestFit = normalizeTeamCrestFit({
+        offsetX: pickNumber(record, [
+          "escudo_x",
+          "escudo_offset_x",
+          "crest_x",
+          "crest_offset_x",
+          "logo_x",
+          "logo_offset_x",
+        ]),
+        offsetY: pickNumber(record, [
+          "escudo_y",
+          "escudo_offset_y",
+          "crest_y",
+          "crest_offset_y",
+          "logo_y",
+          "logo_offset_y",
+        ]),
+        zoom: pickNumber(record, ["escudo_zoom", "crest_zoom", "logo_zoom", "zoom"]),
+      });
 
       return {
         id,
@@ -4492,6 +4521,9 @@ function mapRowsToTeamProfiles(rows: unknown[][]): TeamProfile[] {
         crestDataUrl: sanitizeTeamCrestDataUrl(
           pick(record, ["escudo", "crest", "logo", "shield", "foto"]),
         ),
+        crestOffsetX: crestFit.offsetX,
+        crestOffsetY: crestFit.offsetY,
+        crestZoom: crestFit.zoom,
         updatedAt:
           parseDateTime(
             pick(record, ["actualizado_en", "updated_at", "updated", "modificado"]),
@@ -5085,6 +5117,11 @@ function normalizeTeamProfileInput(
     sanitizeTeamShortName(input.shortName ?? "") ||
     existing?.shortName ||
     getDefaultTeamShortName(name);
+  const crestFit = normalizeTeamCrestFit({
+    offsetX: input.crestOffsetX ?? existing?.crestOffsetX,
+    offsetY: input.crestOffsetY ?? existing?.crestOffsetY,
+    zoom: input.crestZoom ?? existing?.crestZoom,
+  });
 
   return {
     id,
@@ -5094,6 +5131,9 @@ function normalizeTeamProfileInput(
       input.crestDataUrl === undefined
         ? (existing?.crestDataUrl ?? "")
         : sanitizeTeamCrestDataUrl(input.crestDataUrl),
+    crestOffsetX: crestFit.offsetX,
+    crestOffsetY: crestFit.offsetY,
+    crestZoom: crestFit.zoom,
     updatedAt: now,
   };
 }
@@ -5119,6 +5159,22 @@ function buildTeamProfileWritableRow(headers: string[], team: TeamProfile) {
     logo: team.crestDataUrl,
     shield: team.crestDataUrl,
     foto: team.crestDataUrl,
+    escudo_zoom: String(team.crestZoom),
+    crest_zoom: String(team.crestZoom),
+    logo_zoom: String(team.crestZoom),
+    zoom: String(team.crestZoom),
+    escudo_x: String(team.crestOffsetX),
+    escudo_offset_x: String(team.crestOffsetX),
+    crest_x: String(team.crestOffsetX),
+    crest_offset_x: String(team.crestOffsetX),
+    logo_x: String(team.crestOffsetX),
+    logo_offset_x: String(team.crestOffsetX),
+    escudo_y: String(team.crestOffsetY),
+    escudo_offset_y: String(team.crestOffsetY),
+    crest_y: String(team.crestOffsetY),
+    crest_offset_y: String(team.crestOffsetY),
+    logo_y: String(team.crestOffsetY),
+    logo_offset_y: String(team.crestOffsetY),
     actualizado_en: team.updatedAt,
     updated_at: team.updatedAt,
     updated: team.updatedAt,
@@ -9548,6 +9604,18 @@ function pick(record: SheetRecord, keys: string[]) {
   }
 
   return "";
+}
+
+function pickNumber(record: SheetRecord, keys: string[]) {
+  const value = pick(record, keys);
+
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value.replace(",", "."));
+
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function shouldUseClubSheetLayout(error: unknown) {

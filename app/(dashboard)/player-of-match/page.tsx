@@ -17,7 +17,11 @@ export default async function PlayerOfMatchPage() {
     redirect(LOGIN_PATH);
   }
 
-  const data = await getDataService().getPlayerOfMatchData(user.id, user.playerId);
+  const dataService = getDataService();
+  const [data, teamsData] = await Promise.all([
+    dataService.getPlayerOfMatchData(user.id, user.playerId),
+    dataService.getTeamsData().catch(() => ({ teams: [] })),
+  ]);
   const canManage = hasPermission(user, "player-of-match:manage");
   const canVote = user.role !== "admin" && hasPermission(user, "player-of-match:vote");
 
@@ -45,6 +49,7 @@ export default async function PlayerOfMatchPage() {
         canManage={canManage}
         canVote={canVote}
         data={data}
+        teamProfiles={teamsData.teams}
         voteMode={
           user.role === "fan" ? "fan" : user.role === "coach" ? "coach" : "player"
         }

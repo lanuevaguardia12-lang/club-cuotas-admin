@@ -5,8 +5,10 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { LeagueStandingRow } from "@/types/fixture";
+import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
 const STORY_WIDTH = 1080;
 const STORY_HEIGHT = 1920;
@@ -16,12 +18,19 @@ const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
 
 type StandingsShareFormat = "post" | "story";
 
+interface LoadedTeamCrest {
+  fit: TeamCrestFit;
+  image?: HTMLImageElement;
+  initials: string;
+}
+
 interface StandingsShareButtonProps {
   categoryName?: string;
   className?: string;
   competitionName?: string;
   rows: LeagueStandingRow[];
   teamName: string;
+  teamProfiles?: TeamProfile[];
 }
 
 export function StandingsShareButton({
@@ -30,6 +39,7 @@ export function StandingsShareButton({
   competitionName,
   rows,
   teamName,
+  teamProfiles = [],
 }: StandingsShareButtonProps) {
   const [pendingFormat, setPendingFormat] = useState<StandingsShareFormat | null>(null);
   const [message, setMessage] = useState("");
@@ -43,6 +53,7 @@ export function StandingsShareButton({
         categoryName,
         competitionName,
         teamName,
+        teamProfiles,
       });
       const formatLabel = format === "story" ? "story" : "publicacion";
       const fileName = `tabla-posiciones-${formatLabel}.png`;
@@ -118,6 +129,7 @@ async function createStandingsBlob(
     categoryName?: string;
     competitionName?: string;
     teamName: string;
+    teamProfiles: TeamProfile[];
   },
 ) {
   const canvas = document.createElement("canvas");
@@ -152,16 +164,18 @@ async function drawStandingsPlate(
     categoryName,
     competitionName,
     teamName,
+    teamProfiles,
   }: {
     categoryName?: string;
     competitionName?: string;
     teamName: string;
+    teamProfiles: TeamProfile[];
   },
 ) {
   const compact = format === "post";
   const width = compact ? POST_WIDTH : STORY_WIDTH;
   const height = compact ? POST_HEIGHT : STORY_HEIGHT;
-  const logo = await loadImage(BRAND_LOGO_SRC).catch(() => undefined);
+  const logo = await loadTeamCrestImage(teamProfiles, teamName);
   const footerY = height - (compact ? 70 : 108);
   const tableY = compact ? 338 : 474;
   const tableX = compact ? 58 : 64;
@@ -170,18 +184,8 @@ async function drawStandingsPlate(
 
   drawBackground(context, width, height);
 
-  if (logo) {
-    drawContainedImage(
-      context,
-      logo,
-      width / 2 - (compact ? 62 : 74),
-      compact ? 56 : 94,
-      compact ? 124 : 148,
-      compact ? 114 : 136,
-    );
-  } else {
-    drawFallbackLogo(context, width, compact ? 114 : 162);
-  }
+  const logoSize = compact ? 118 : 136;
+  drawTeamCrest(context, logo, width / 2 - logoSize / 2, compact ? 54 : 94, logoSize);
 
   drawCenteredText(context, "TABLA DE POSICIONES", width / 2, compact ? 230 : 328, {
     color: "#ffffff",
@@ -487,44 +491,6 @@ function drawBackground(
   context.restore();
 }
 
-function drawContainedImage(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const ratio = Math.min(width / image.width, height / image.height);
-  const drawWidth = image.width * ratio;
-  const drawHeight = image.height * ratio;
-
-  context.drawImage(
-    image,
-    x + (width - drawWidth) / 2,
-    y + (height - drawHeight) / 2,
-    drawWidth,
-    drawHeight,
-  );
-}
-
-function drawFallbackLogo(
-  context: CanvasRenderingContext2D,
-  width: number,
-  centerY: number,
-) {
-  context.save();
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(width / 2, centerY, 62, 0, Math.PI * 2);
-  context.fill();
-  drawCenteredText(context, "LNG", width / 2, centerY + 18, {
-    color: "#012f77",
-    font: "900 42px Arial Black, sans-serif",
-  });
-  context.restore();
-}
-
 function drawCenteredText(
   context: CanvasRenderingContext2D,
   text: string,
@@ -582,6 +548,113 @@ function drawLetterSpacedText(
     context.fillText(character, currentX, y);
     currentX += context.measureText(character).width + letterSpacing;
   });
+}
+
+async function loadTeamCrestImage(
+  teamProfiles: TeamProfile[],
+  teamName: string,
+): Promise<LoadedTeamCrest> {
+  const fit = getTeamCrestFit(teamProfiles, teamName);
+  const image = await loadImage(
+    getTeamCrestDataUrl(teamProfiles, teamName) || BRAND_LOGO_SRC,
+  ).catch(() => undefined);
+
+  return {
+    fit,
+    image,
+    initials: getTeamInitials(teamName),
+  };
+}
+
+function drawTeamCrest(
+  context: CanvasRenderingContext2D,
+  crest: LoadedTeamCrest,
+  x: number,
+  y: number,
+  size: number,
+) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+
+  context.save();
+  context.shadowBlur = 18;
+  context.shadowColor = "rgba(0,0,0,0.28)";
+  context.fillStyle = "rgba(255,255,255,0.94)";
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 4, 0, Math.PI * 2);
+  context.clip();
+
+  if (crest.image) {
+    drawFittedCrestImage(
+      context,
+      crest.image,
+      x + size * 0.1,
+      y + size * 0.1,
+      size * 0.8,
+      size * 0.8,
+      crest.fit,
+    );
+  } else {
+    const gradient = context.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, "#eaf6ff");
+    gradient.addColorStop(1, "#b7d7ff");
+    context.fillStyle = gradient;
+    context.fillRect(x, y, size, size);
+    drawCenteredText(context, crest.initials || "LNG", centerX, centerY + size * 0.13, {
+      color: "#013b8f",
+      font: `900 ${Math.round(size * 0.28)}px Arial Black, sans-serif`,
+      maxWidth: size * 0.7,
+    });
+  }
+
+  context.restore();
+
+  context.save();
+  context.strokeStyle = "rgba(255,255,255,0.84)";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(centerX, centerY, size / 2 - 2.5, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+}
+
+function drawFittedCrestImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fit: TeamCrestFit,
+) {
+  const ratio = Math.min(width / image.width, height / image.height) * fit.zoom;
+  const drawWidth = image.width * ratio;
+  const drawHeight = image.height * ratio;
+  const offsetX = (width * fit.offsetX) / 100;
+  const offsetY = (height * fit.offsetY) / 100;
+
+  context.drawImage(
+    image,
+    x + (width - drawWidth) / 2 + offsetX,
+    y + (height - drawHeight) / 2 + offsetY,
+    drawWidth,
+    drawHeight,
+  );
+}
+
+function getTeamInitials(teamName: string) {
+  return teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function fitTextWithEllipsis(

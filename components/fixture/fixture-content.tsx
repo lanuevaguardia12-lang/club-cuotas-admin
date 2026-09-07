@@ -29,7 +29,11 @@ import {
   buildMatchRegistrationFormUrl,
   getMatchRegistrationPeriod,
 } from "@/lib/match-registration-form";
-import { getTeamCrestDataUrl, getTeamDisplayName } from "@/lib/team-profiles";
+import {
+  getTeamCrestDataUrl,
+  getTeamCrestFit,
+  getTeamDisplayName,
+} from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type {
   FixturePlayerOption,
@@ -102,7 +106,9 @@ export function FixtureContent({
           teamProfiles={teamProfiles}
         />
       ) : null}
-      {tab === "posiciones" ? <StandingsTable data={data} /> : null}
+      {tab === "posiciones" ? (
+        <StandingsTable data={data} teamProfiles={teamProfiles} />
+      ) : null}
       {tab === "goleadores" ? <ScorersTable rows={data.scorers} /> : null}
       {tab === "fixture" ? (
         <FixtureRounds
@@ -491,7 +497,10 @@ function PlayedMatchCard({
   );
 }
 
-function StandingsTable({ data }: FixtureContentProps) {
+function StandingsTable({
+  data,
+  teamProfiles = [],
+}: Pick<FixtureContentProps, "data" | "teamProfiles">) {
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -505,6 +514,7 @@ function StandingsTable({ data }: FixtureContentProps) {
           competitionName={data.selectedTournamentName}
           rows={data.standings}
           teamName={APP_TEAM_NAME}
+          teamProfiles={teamProfiles}
         />
       </CardHeader>
       <CardContent className="p-0">
@@ -916,6 +926,7 @@ function FullMatchRow({
             match={match}
             playerOptions={playerOptions}
             teamName={APP_TEAM_NAME}
+            teamProfiles={teamProfiles}
           />
         </div>
       ) : null}
@@ -1394,6 +1405,7 @@ function TeamAvatar({
   teamProfiles: TeamProfile[];
 }) {
   const crestDataUrl = getTeamCrestDataUrl(teamProfiles, teamName);
+  const crestFit = getTeamCrestFit(teamProfiles, teamName);
 
   if (crestDataUrl) {
     return (
@@ -1403,6 +1415,10 @@ function TeamAvatar({
           alt={`Escudo de ${teamName}`}
           className="size-full object-contain"
           src={crestDataUrl}
+          style={{
+            transform: `translate(${crestFit.offsetX}%, ${crestFit.offsetY}%) scale(${crestFit.zoom})`,
+            transformOrigin: "center",
+          }}
         />
       </span>
     );
