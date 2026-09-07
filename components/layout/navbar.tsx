@@ -20,6 +20,8 @@ interface NavbarProps {
 export function Navbar({ user }: NavbarProps) {
   const { settings } = useAppSettings();
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const canUsePersonalNotifications =
+    user.role === "player" || user.role === "fan" || user.role === "coach";
 
   return (
     <header className="border-border bg-card/95 sticky top-0 z-30 border-b backdrop-blur">
@@ -67,7 +69,7 @@ export function Navbar({ user }: NavbarProps) {
             <p className="text-muted-foreground mt-1 text-xs">{roleLabels[user.role]}</p>
           </div>
           <ThemeToggle />
-          {user.role === "player" ? (
+          {canUsePersonalNotifications ? (
             <NotificationBell user={user} hydrateDelayMs={1200} />
           ) : null}
         </div>
