@@ -36,7 +36,14 @@ export function parseYear(year?: string) {
 }
 
 export function getCurrentPeriod() {
-  return new Date().toISOString().slice(0, 7);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    month: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return `${values.get("year")}-${values.get("month")}`;
 }
 
 export function formatPeriod(period: string) {

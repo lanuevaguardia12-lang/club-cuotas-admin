@@ -83,8 +83,14 @@ export function HomeSummary({
 }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
   const hasPaymentAlias = Boolean(paymentAlias.trim());
-  const canRegisterLatestQuotaPayment =
-    latestQuota?.status === "unpaid" && latestQuota.quotaStatus === "defined";
+  const currentPeriod = getCurrentPeriod();
+  const canRegisterLatestQuotaPayment = Boolean(
+    latestQuota &&
+      latestQuota.period <= currentPeriod &&
+      latestQuota.status === "unpaid" &&
+      latestQuota.quotaStatus === "defined" &&
+      latestQuota.amountValue > 0,
+  );
   const nextMatch = fixture.nextMatches[0];
   const lastMatch = fixture.lastMatches[0];
   const standingsRows = buildHomeStandingsRows(fixture);
@@ -134,7 +140,7 @@ export function HomeSummary({
                   : "",
               )}
             >
-              {canRegisterLatestQuotaPayment ? (
+              {canRegisterLatestQuotaPayment && latestQuota ? (
                 <PaymentFormButton
                   className="w-full"
                   period={latestQuota.period}

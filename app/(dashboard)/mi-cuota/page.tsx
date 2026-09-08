@@ -100,9 +100,13 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
   const focusedPeriod = currentMonth?.period ?? currentPeriod;
   const previousMonth = findPreviousMonth(sortedMonths, focusedPeriod);
   const nextMonth = findNextMonth(sortedMonths, focusedPeriod);
-  const pendingMonths = profile.months.filter((month) => month.status === "unpaid");
+  const pendingMonths = profile.months.filter((month) =>
+    isPayablePendingMonth(month, currentPeriod),
+  );
   const pendingHistoricalMonths = sortedMonths.filter(
-    (month) => month.status === "unpaid" && month.period !== currentMonth?.period,
+    (month) =>
+      isPayablePendingMonth(month, currentPeriod) &&
+      month.period !== currentMonth?.period,
   );
 
   return (
@@ -162,8 +166,12 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
               />
               <Metric
                 label="Pendientes"
-                value={String(pendingMonths.length)}
-                detail={`Año ${profile.year}`}
+                value={pendingMonths.length > 0 ? String(pendingMonths.length) : "Al día"}
+                detail={
+                  pendingMonths.length > 0
+                    ? "Cuotas definidas sin pagar"
+                    : "Sin cuotas pendientes"
+                }
                 tone={pendingMonths.length > 0 ? "danger" : "success"}
               />
             </div>
@@ -200,12 +208,14 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
 
       <section className="grid gap-4 lg:grid-cols-2">
         <MonthPreviewCard
+          currentPeriod={currentPeriod}
           emptyText="No hay una cuota posterior cargada."
           icon="next"
           month={nextMonth}
           title="Siguiente cuota"
         />
         <MonthPreviewCard
+          currentPeriod={currentPeriod}
           emptyText="No hay una cuota anterior cargada."
           icon="previous"
           month={previousMonth}
@@ -217,6 +227,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         currentPeriod={currentMonth?.period}
         months={sortedMonths}
         pendingCount={pendingHistoricalMonths.length}
+        paymentAlias={paymentAlias}
         playerName={profile.name}
         year={profile.year}
       />
@@ -245,11 +256,13 @@ function PaymentAliasPanel({ alias }: { alias?: string | null }) {
 }
 
 function MonthPreviewCard({
+  currentPeriod,
   emptyText,
   icon,
   month,
   title,
 }: {
+  currentPeriod: string;
   emptyText: string;
   icon: "next" | "previous";
   month?: PlayerYearMonth;
@@ -269,7 +282,7 @@ function MonthPreviewCard({
             {month ? formatPeriod(month.period) : emptyText}
           </p>
         </div>
-        {month ? <MonthStatusBadge month={month} /> : null}
+        {month ? <MonthStatusBadge currentPeriod={currentPeriod} month={month} /> : null}
       </CardHeader>
       <CardContent>
         {month ? (
@@ -297,15 +310,19 @@ function HistoricalMonthsCard({
   currentPeriod,
   months,
   pendingCount,
+  paymentAlias,
   playerName,
   year,
 }: {
   currentPeriod?: string;
   months: PlayerYearMonth[];
   pendingCount: number;
+  paymentAlias?: string | null;
   playerName: string;
   year: number;
 }) {
+  const todayPeriod = getCurrentPeriod();
+
   return (
     <Card>
       <details className="group">
@@ -337,8 +354,10 @@ function HistoricalMonthsCard({
           {months.map((month) => (
             <MonthHistoryRow
               current={month.period === currentPeriod}
+              currentPeriod={todayPeriod}
               key={month.period}
               month={month}
+              paymentAlias={paymentAlias}
               playerName={playerName}
             />
           ))}
@@ -350,18 +369,20 @@ function HistoricalMonthsCard({
 
 function MonthHistoryRow({
   current,
+  currentPeriod,
   month,
+  paymentAlias,
   playerName,
 }: {
   current: boolean;
+  currentPeriod: string;
   month: PlayerYearMonth;
+  paymentAlias?: string | null;
   playerName: string;
 }) {
+  const canPayMonth = isPayablePendingMonth(month, currentPeriod);
   const Icon = month.status === "paid" ? CheckCircle2 : XCircle;
-  const iconTone =
-    month.status === "paid"
-      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-      : "bg-destructive/10 text-destructive";
+  const iconTone = getMonthIconTone(month, currentPeriod);
 
   return (
     <article className="border-border bg-background grid gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -387,17 +408,55 @@ function MonthHistoryRow({
           ) : null}
         </div>
       </div>
-      <div className="flex items-center gap-2 sm:justify-end">
-        <MonthStatusBadge month={month} />
-        {month.status === "unpaid" && month.quotaStatus === "defined" ? (
-          <PaymentFormButton compact period={month.period} playerName={playerName} />
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <MonthStatusBadge currentPeriod={currentPeriod} month={month} />
+        {canPayMonth ? (
+          <>
+            <PaymentAliasCopyButton alias={paymentAlias} size="sm" />
+            <PaymentFormButton compact period={month.period} playerName={playerName} />
+          </>
         ) : null}
       </div>
     </article>
   );
 }
 
-function MonthStatusBadge({ month }: { month: PlayerYearMonth }) {
+function getMonthIconTone(month: PlayerYearMonth, currentPeriod: string) {
+  if (month.status === "paid") {
+    return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  if (month.period > currentPeriod) {
+    return "bg-muted text-muted-foreground";
+  }
+
+  if (month.quotaStatus === "undefined") {
+    return "bg-[#f4ce0f]/10 text-[#8a7200] dark:text-[#f4ce0f]";
+  }
+
+  return "bg-destructive/10 text-destructive";
+}
+
+function isPayablePendingMonth(month: PlayerYearMonth, currentPeriod: string) {
+  return (
+    month.period <= currentPeriod &&
+    month.status === "unpaid" &&
+    month.quotaStatus === "defined" &&
+    month.amountValue > 0
+  );
+}
+
+function MonthStatusBadge({
+  currentPeriod,
+  month,
+}: {
+  currentPeriod: string;
+  month: PlayerYearMonth;
+}) {
+  if (month.period > currentPeriod && month.status === "unpaid") {
+    return <Badge variant="outline">Cuota futura</Badge>;
+  }
+
   if (month.quotaStatus === "undefined") {
     return <Badge variant="warning">Cuota sin definir</Badge>;
   }
