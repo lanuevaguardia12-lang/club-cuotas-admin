@@ -873,6 +873,7 @@ function FullMatchRow({
     registrationPlayerNamesByPeriod[getMatchRegistrationPeriod(match)] ??
     registrationPlayerNamesByPeriod[MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY] ??
     [];
+  const goalLabels = formatRepeatedGoalLabels(match.goals);
 
   return (
     <div
@@ -948,9 +949,9 @@ function FullMatchRow({
         </div>
       ) : null}
 
-      {match.goals.length > 0 || match.cards.length > 0 ? (
+      {goalLabels.length > 0 || match.cards.length > 0 ? (
         <div className="text-muted-foreground grid gap-1 text-xs md:col-span-3">
-          {match.goals.length > 0 ? <p>Goles: {match.goals.join(", ")}</p> : null}
+          {goalLabels.length > 0 ? <p>Goles: {goalLabels.join(" · ")}</p> : null}
           {match.cards.length > 0 ? <p>Tarjetas: {match.cards.join(", ")}</p> : null}
         </div>
       ) : null}

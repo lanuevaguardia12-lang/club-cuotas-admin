@@ -23,8 +23,9 @@ export function formatRepeatedGoalLabels(
 export function parseGoalCountMarker(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
   const markerMatch =
-    /\b(?:x|×)\s*(\d{1,2})\b/i.exec(normalized) ??
-    /\b(\d{1,2})\s*goles?\b/i.exec(normalized);
+    /(?:^|[^\p{L}\p{N}])(?:x|×)\s*(\d{1,2})(?=$|[^\p{L}\p{N}])/iu.exec(
+      normalized,
+    ) ?? /\b(\d{1,2})\s*goles?\b/i.exec(normalized);
 
   if (!markerMatch) {
     return 1;
@@ -37,7 +38,11 @@ export function parseGoalCountMarker(value: string) {
 
 export function stripGoalCountMarker(value: string) {
   return value
-    .replace(/\b(?:x|×)\s*\d{1,2}\b/gi, "")
+    .replace(/\(\s*(?:x|×)\s*\d{1,2}\s*\)/giu, "")
+    .replace(
+      /(^|[^\p{L}\p{N}])(?:x|×)\s*\d{1,2}(?=$|[^\p{L}\p{N}])/giu,
+      "$1",
+    )
     .replace(/\b\d{1,2}\s*goles?\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
