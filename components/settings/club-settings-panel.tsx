@@ -81,8 +81,8 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
       reset(result.settings);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2200);
-    } catch {
-      setError("No se pudo guardar la configuración.");
+    } catch (saveError) {
+      setError(getSaveErrorMessage(saveError));
     }
   }
 
@@ -121,7 +121,7 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
               type="number"
               min={0}
               step={1}
-              {...register("monthlyFee", { valueAsNumber: true })}
+              {...register("monthlyFee", { setValueAs: parseMonthlyFeeInput })}
               className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
             />
           </Field>
@@ -271,6 +271,32 @@ function Field({
       {error ? <span className="text-destructive text-sm">{error}</span> : null}
     </label>
   );
+}
+
+function getSaveErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "No se pudo guardar la configuración.";
+}
+
+function parseMonthlyFeeInput(value: unknown) {
+  if (value === "" || value == null) {
+    return 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isNaN(value) ? 0 : value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(",", "."));
+
+    return Number.isNaN(parsed) ? value : parsed;
+  }
+
+  return value;
 }
 
 function getInitials(value: string) {

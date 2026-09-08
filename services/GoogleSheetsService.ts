@@ -740,6 +740,11 @@ export class GoogleSheetsService implements IDataService {
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.settingsRange);
 
+    await this.ensureSheetForRange(
+      this.config.settingsRange,
+      this.config.spreadsheetId,
+    );
+
     await sheets.spreadsheets.values.update({
       spreadsheetId: this.config.spreadsheetId,
       range: `${sheetPrefix}!A:B`,
