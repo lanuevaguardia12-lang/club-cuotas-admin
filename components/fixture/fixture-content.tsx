@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NavigationLink } from "@/components/ui/navigation-link";
+import { formatRepeatedGoalLabels } from "@/lib/fixture-goals";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
   MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
@@ -1121,14 +1122,16 @@ function formatMatchScore(match: LeagueFixtureMatch) {
 }
 
 function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
-  if (match.goals.length === 0) {
+  const goalLabels = formatRepeatedGoalLabels(match.goals);
+
+  if (goalLabels.length === 0) {
     return null;
   }
 
   return (
     <div className="bg-muted/60 rounded-md px-3 py-2 text-xs">
       <p className="font-semibold">Goles</p>
-      <p className="text-muted-foreground mt-1">{match.goals.join(" · ")}</p>
+      <p className="text-muted-foreground mt-1">{goalLabels.join(" · ")}</p>
     </div>
   );
 }

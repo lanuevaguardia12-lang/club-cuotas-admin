@@ -10,6 +10,7 @@ import {
   normalizeHexColor,
   parseBooleanValue,
 } from "@/lib/app-settings";
+import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
 import { APP_TEAM_NAME, getLeagueClubMatchesForYear } from "@/lib/league-fixture";
 import {
   createTeamProfileId,
@@ -6055,10 +6056,19 @@ function parseFixtureGoalScorers(value: string) {
 }
 
 function buildManualGoalEvents(goalScorers: string[]): LeagueGoalEvent[] {
-  return goalScorers.map((playerName) => ({
-    playerName,
-    teamName: APP_TEAM_NAME,
-  }));
+  return goalScorers.flatMap((playerName) => {
+    const cleanPlayerName = stripGoalCountMarker(playerName);
+    const count = parseGoalCountMarker(playerName);
+
+    if (!cleanPlayerName) {
+      return [];
+    }
+
+    return Array.from({ length: count }, () => ({
+      playerName: cleanPlayerName,
+      teamName: APP_TEAM_NAME,
+    }));
+  });
 }
 
 function formatManualGoalLabels(goalScorers: string[]) {

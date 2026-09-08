@@ -6,6 +6,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
+import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
 import {
   getTeamCrestDataUrl,
   getTeamCrestFit,
@@ -1418,7 +1419,7 @@ function extractGoalScorers(goal: string, teamName: string) {
 }
 
 function cleanGoalScorerName(value: string) {
-  return value
+  return stripGoalCountMarker(value)
     .replace(/\([^)]*\)/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -1429,6 +1430,7 @@ function formatRepeatedGoalScorers(scorers: string[]) {
 
   for (const scorer of scorers) {
     const name = cleanGoalScorerName(scorer);
+    const count = parseGoalCountMarker(scorer);
     const key = normalizeScorerKey(name);
 
     if (!key) {
@@ -1438,9 +1440,9 @@ function formatRepeatedGoalScorers(scorers: string[]) {
     const existing = scorersByKey.get(key);
 
     if (existing) {
-      existing.count += 1;
+      existing.count += count;
     } else {
-      scorersByKey.set(key, { count: 1, name });
+      scorersByKey.set(key, { count, name });
     }
   }
 

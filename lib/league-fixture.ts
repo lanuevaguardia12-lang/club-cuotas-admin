@@ -13,6 +13,7 @@ import type {
   LeagueStandingRow,
   LeagueTournamentOption,
 } from "@/types/fixture";
+import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
 
 const LEAGUE_BASE_URL = "https://ligacountrysur.com.ar";
 const LEAGUE_FOOTBALL_URL = `${LEAGUE_BASE_URL}/futbol`;
@@ -331,10 +332,19 @@ export function applyLeagueFixtureScheduleOverrides(
 }
 
 function buildManualGoalEvents(goalScorers: string[]): LeagueGoalEvent[] {
-  return goalScorers.map((playerName) => ({
-    playerName,
-    teamName: APP_TEAM_NAME,
-  }));
+  return goalScorers.flatMap((playerName) => {
+    const cleanPlayerName = stripGoalCountMarker(playerName);
+    const count = parseGoalCountMarker(playerName);
+
+    if (!cleanPlayerName) {
+      return [];
+    }
+
+    return Array.from({ length: count }, () => ({
+      playerName: cleanPlayerName,
+      teamName: APP_TEAM_NAME,
+    }));
+  });
 }
 
 function formatManualGoalLabels(goalScorers: string[]) {
@@ -1254,30 +1264,32 @@ function parseGoalEventsFromResultDetail(html: string): LeagueGoalEvent[] {
       .map((match) => match.index)
       .filter((goalIndex): goalIndex is number => typeof goalIndex === "number");
 
-    return goalStarts
-      .map((goalStart, goalIndex): LeagueGoalEvent | undefined => {
+    return goalStarts.flatMap((goalStart, goalIndex): LeagueGoalEvent[] => {
         const goalHtml = columnHtml.slice(
           goalStart,
           goalStarts[goalIndex + 1] ?? columnHtml.length,
         );
-        const playerName = formatPersonName(
-          extractText(
-            goalHtml,
-            /<span[^>]*class=["'][^"']*dr-goal-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
-          ),
+        const rawPlayerName = extractText(
+          goalHtml,
+          /<span[^>]*class=["'][^"']*dr-goal-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
         );
+        const playerName = formatPersonName(stripGoalCountMarker(rawPlayerName));
 
         if (!playerName) {
-          return undefined;
+          return [];
         }
 
-        return {
+        const count = parseGoalCountMarker(
+          normalizeWhitespace(decodeHtml(stripTags(goalHtml))),
+        );
+        const goalEvent = {
           ownGoal: /dr-own-goal|en\s+contra/i.test(goalHtml),
           playerName,
           teamName,
         };
-      })
-      .filter((goal): goal is LeagueGoalEvent => Boolean(goal));
+
+        return Array.from({ length: count }, () => goalEvent);
+      });
   });
 }
 

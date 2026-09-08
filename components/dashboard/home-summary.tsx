@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PaymentAliasCopyButton } from "@/components/players/payment-alias-copy-button";
 import { PaymentFormButton } from "@/components/players/payment-form-button";
+import { formatRepeatedGoalLabels } from "@/lib/fixture-goals";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
   MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
@@ -626,7 +627,9 @@ function RecentTeamMatches({
 }
 
 function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
-  if (match.goals.length === 0) {
+  const goalLabels = formatRepeatedGoalLabels(match.goals);
+
+  if (goalLabels.length === 0) {
     return (
       <p className="text-muted-foreground bg-muted/60 rounded-md px-3 py-2 text-xs">
         Sin detalle de goles publicado.
@@ -637,7 +640,9 @@ function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
   return (
     <div className="bg-muted/60 min-w-0 rounded-md px-3 py-2 text-xs">
       <p className="font-semibold">Goles</p>
-      <p className="text-muted-foreground mt-1 break-words">{match.goals.join(" · ")}</p>
+      <p className="text-muted-foreground mt-1 break-words">
+        {goalLabels.join(" · ")}
+      </p>
     </div>
   );
 }
