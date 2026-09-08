@@ -15,6 +15,7 @@ import {
   FormsRefreshButton,
   MyFeePullToRefresh,
 } from "@/components/players/my-fee-refresh";
+import { PaymentAliasCopyButton } from "@/components/players/payment-alias-copy-button";
 import { PaymentFormButton } from "@/components/players/payment-form-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,7 @@ import {
   getPlayerLookupCandidates,
   parseYear,
 } from "@/lib/player-profile";
+import { getDataService } from "@/services/data-service";
 import type {
   PlayerMonthMatchSummary,
   PlayerMonthPaymentStatus,
@@ -71,7 +73,11 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
 
   const params = await searchParams;
   const selectedYear = parseYear(params.year);
-  const profile = await findPlayerProfileForUser(user, selectedYear);
+  const dataService = getDataService();
+  const [profile, settingsData] = await Promise.all([
+    findPlayerProfileForUser(user, selectedYear),
+    dataService.getAppSettings(),
+  ]);
 
   if (!profile) {
     return (
@@ -83,6 +89,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
     );
   }
 
+  const paymentAlias = settingsData.settings.paymentAlias;
   const currentPeriod = getCurrentPeriod();
   const currentMonth =
     profile.months.find((month) => month.period === currentPeriod) ??
@@ -166,6 +173,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                 summary={currentMonth.matchSummary}
               />
             ) : null}
+            <PaymentAliasPanel alias={paymentAlias} />
             {currentMonth?.quotaStatus === "undefined" ? (
               <UndefinedQuotaNotice month={currentMonth} />
             ) : currentMonth?.status === "unpaid" ? (
@@ -213,6 +221,26 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
         year={profile.year}
       />
     </main>
+  );
+}
+
+function PaymentAliasPanel({ alias }: { alias?: string | null }) {
+  const paymentAlias = alias?.trim();
+
+  if (!paymentAlias) {
+    return null;
+  }
+
+  return (
+    <div className="border-primary/20 bg-primary/5 flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">Alias para transferir</p>
+        <p className="text-muted-foreground mt-1 truncate font-mono text-xs">
+          {paymentAlias}
+        </p>
+      </div>
+      <PaymentAliasCopyButton alias={paymentAlias} className="w-full sm:w-auto" />
+    </div>
   );
 }
 

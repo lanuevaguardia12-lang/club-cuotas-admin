@@ -80,14 +80,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   if (user.role === "player" || user.role === "fan" || user.role === "coach") {
     const canRegisterPlayers = user.role === "coach";
-    const [fixture, playerProfile, playerOfMatchData, teamsData] = await Promise.all([
-      fixturePromise,
-      user.role === "player" ? findPlayerProfileForUser(user) : null,
-      canRegisterPlayers
-        ? dataService.getPlayerOfMatchData(user.id, user.playerId).catch(() => null)
-        : null,
-      dataService.getTeamsData().catch(() => ({ teams: [] })),
-    ]);
+    const [fixture, playerProfile, playerOfMatchData, teamsData, settingsData] =
+      await Promise.all([
+        fixturePromise,
+        user.role === "player" ? findPlayerProfileForUser(user) : null,
+        canRegisterPlayers
+          ? dataService.getPlayerOfMatchData(user.id, user.playerId).catch(() => null)
+          : null,
+        dataService.getTeamsData().catch(() => ({ teams: [] })),
+        dataService.getAppSettings(),
+      ]);
     const isFan = user.role === "fan";
     const isCoach = user.role === "coach";
     const [registrationPlayerNamesByPeriod, teamStatsMatches] = await Promise.all([
@@ -118,6 +120,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           canRegisterPlayers={canRegisterPlayers}
           canUploadMedia={isFan}
           fixture={fixture}
+          paymentAlias={settingsData.settings.paymentAlias}
           playerProfile={playerProfile}
           registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
           registrationStatusByMatchKey={registrationStatusByMatchKey}

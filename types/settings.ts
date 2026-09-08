@@ -1,6 +1,7 @@
 export interface AppSettings {
   clubName: string;
   logoUrl: string;
+  paymentAlias: string;
   whatsAppMessageTemplate: string;
   monthlyFee: number;
   primaryColor: string;

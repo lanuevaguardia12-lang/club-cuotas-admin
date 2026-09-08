@@ -7,6 +7,7 @@ export const DEFAULT_PRIMARY_COLOR = BRAND_PRIMARY_COLOR;
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   clubName: DEFAULT_CLUB_NAME,
   logoUrl: process.env.NEXT_PUBLIC_LOGO_URL ?? BRAND_LOGO_URL,
+  paymentAlias: process.env.NEXT_PUBLIC_PAYMENT_ALIAS ?? "",
   whatsAppMessageTemplate:
     process.env.NEXT_PUBLIC_REMINDER_TEMPLATE ??
     "Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6",
@@ -22,6 +23,7 @@ export const APP_SETTINGS_ROWS: Array<{
 }> = [
   { key: "clubName", label: "club_name" },
   { key: "logoUrl", label: "logo_url" },
+  { key: "paymentAlias", label: "payment_alias" },
   { key: "whatsAppMessageTemplate", label: "whatsapp_message_template" },
   { key: "monthlyFee", label: "monthly_fee" },
   { key: "primaryColor", label: "primary_color" },
@@ -34,6 +36,7 @@ export function normalizeAppSettings(
   return {
     clubName: normalizeTextValue(input.clubName) || DEFAULT_APP_SETTINGS.clubName,
     logoUrl: normalizeTextValue(input.logoUrl) || DEFAULT_APP_SETTINGS.logoUrl,
+    paymentAlias: normalizeTextValue(input.paymentAlias),
     whatsAppMessageTemplate:
       normalizeTextValue(input.whatsAppMessageTemplate) ||
       DEFAULT_APP_SETTINGS.whatsAppMessageTemplate,

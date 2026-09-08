@@ -25,6 +25,7 @@ export async function saveAppSettings(input: UpdateAppSettingsInput) {
         summary: "Configuracion general actualizada.",
         metadata: {
           clubName: settings.clubName,
+          paymentAlias: settings.paymentAlias,
           monthlyFee: settings.monthlyFee,
           primaryColor: settings.primaryColor,
           darkMode: settings.darkMode,
@@ -34,6 +35,7 @@ export async function saveAppSettings(input: UpdateAppSettingsInput) {
   }
 
   revalidatePath("/", "layout");
+  revalidatePath("/mi-cuota");
   revalidatePath("/settings");
 
   return {

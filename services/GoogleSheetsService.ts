@@ -7583,6 +7583,14 @@ function mapRowsToAppSettings(rows: unknown[][]): AppSettings {
   return normalizeAppSettings({
     clubName: pickSetting(values, ["club_name", "nombre_club", "name", "nombre"]),
     logoUrl: pickSetting(values, ["logo_url", "logo", "club_logo"]),
+    paymentAlias: pickSetting(values, [
+      "payment_alias",
+      "alias",
+      "alias_pago",
+      "alias_de_pago",
+      "bank_alias",
+      "transfer_alias",
+    ]),
     whatsAppMessageTemplate: pickSetting(values, [
       "whatsapp_message_template",
       "mensaje_whatsapp",

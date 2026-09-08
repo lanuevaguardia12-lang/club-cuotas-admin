@@ -20,6 +20,7 @@ import { MatchResultShareButton } from "@/components/fixture/match-result-share-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PaymentAliasCopyButton } from "@/components/players/payment-alias-copy-button";
 import { PaymentFormButton } from "@/components/players/payment-form-button";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
@@ -51,6 +52,7 @@ interface HomeSummaryProps {
   canUploadMedia?: boolean;
   coachName?: string;
   fixture: LeagueFixtureData;
+  paymentAlias?: string;
   playerProfile?: PlayerProfile | null;
   playerOptions?: FixturePlayerOption[];
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
@@ -71,6 +73,7 @@ export function HomeSummary({
   canUploadMedia = false,
   coachName = "",
   fixture,
+  paymentAlias = "",
   playerProfile,
   playerOptions = [],
   registrationPlayerNamesByPeriod = {},
@@ -79,6 +82,7 @@ export function HomeSummary({
   teamStatsMatches,
 }: HomeSummaryProps) {
   const latestQuota = playerProfile ? getLatestQuotaMonth(playerProfile) : undefined;
+  const hasPaymentAlias = Boolean(paymentAlias.trim());
   const canRegisterLatestQuotaPayment =
     latestQuota?.status === "unpaid" && latestQuota.quotaStatus === "defined";
   const nextMatch = fixture.nextMatches[0];
@@ -125,7 +129,9 @@ export function HomeSummary({
             <div
               className={cn(
                 "grid gap-2",
-                canRegisterLatestQuotaPayment ? "sm:grid-cols-2" : "",
+                canRegisterLatestQuotaPayment || hasPaymentAlias
+                  ? "sm:grid-cols-2"
+                  : "",
               )}
             >
               {canRegisterLatestQuotaPayment ? (
@@ -135,10 +141,19 @@ export function HomeSummary({
                   playerName={playerProfile.name}
                 />
               ) : null}
+              <PaymentAliasCopyButton
+                alias={paymentAlias}
+                className="w-full"
+                variant="outline"
+              />
               <Button
                 asChild
                 className="w-full"
-                variant={canRegisterLatestQuotaPayment ? "outline" : "default"}
+                variant={
+                  canRegisterLatestQuotaPayment || hasPaymentAlias
+                    ? "outline"
+                    : "default"
+                }
               >
                 <Link href="/mi-cuota">
                   <ExternalLink />

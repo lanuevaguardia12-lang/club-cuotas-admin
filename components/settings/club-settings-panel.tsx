@@ -29,6 +29,10 @@ const clubSettingsSchema = z.object({
     .trim()
     .max(500, "La URL no puede superar los 500 caracteres.")
     .refine((value) => !value || isValidLogoUrl(value), "Ingresá una URL válida."),
+  paymentAlias: z
+    .string()
+    .trim()
+    .max(80, "El alias no puede superar los 80 caracteres."),
   whatsAppMessageTemplate: z
     .string()
     .trim()
@@ -135,6 +139,16 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
             />
           </Field>
 
+          <Field label="Alias" error={errors.paymentAlias?.message}>
+            <input
+              {...register("paymentAlias")}
+              autoCapitalize="none"
+              autoComplete="off"
+              placeholder="alias.del.club"
+              className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+            />
+          </Field>
+
           <Field label="Color principal" error={errors.primaryColor?.message}>
             <div className="grid grid-cols-[48px_1fr] gap-2">
               <input
@@ -229,6 +243,11 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
               <p className="text-muted-foreground mt-1 text-xs">
                 Cuota: {formatCurrency(Number(preview.monthlyFee || 0))}
               </p>
+              {preview.paymentAlias ? (
+                <p className="text-muted-foreground mt-1 truncate text-xs">
+                  Alias: {preview.paymentAlias}
+                </p>
+              ) : null}
             </div>
           </div>
 
