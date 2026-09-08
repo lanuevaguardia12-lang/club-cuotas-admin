@@ -91,7 +91,9 @@ WhatsApp > Dispositivos vinculados > Vincular un dispositivo
 - `WHATSAPP_BOT_USER_AGENT`: User-Agent opcional. Por defecto usa uno compatible
   con WhatsApp Web.
 - `WHATSAPP_BOT_READY_TIMEOUT_MS`: tiempo máximo de espera para que WhatsApp Web
-  llegue a listo. Por defecto son `120000` milisegundos.
+  llegue a listo. Por defecto son `600000` milisegundos en modo visible y
+  `120000` en modo headless. Si el modo visible tarda más, Chrome queda abierto
+  y el bot sigue esperando.
 - `WHATSAPP_BOT_CLIENT_ID`: nombre de la sesión local. Por defecto usa
   `club-cuotas-reminders-v2`.
 

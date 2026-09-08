@@ -16,10 +16,13 @@ const runnerSecret = requiredEnv("WHATSAPP_BOT_RUNNER_SECRET");
 const pollIntervalMs = readPositiveNumber("WHATSAPP_BOT_POLL_INTERVAL_MS", 10_000);
 const batchLimit = readPositiveNumber("WHATSAPP_BOT_BATCH_LIMIT", 5);
 const sendDelayMs = readPositiveNumber("WHATSAPP_BOT_SEND_DELAY_MS", 60_000);
-const readyTimeoutMs = readPositiveNumber("WHATSAPP_BOT_READY_TIMEOUT_MS", 120_000);
 const defaultCountryCode = process.env.WHATSAPP_BOT_DEFAULT_COUNTRY_CODE ?? "549";
 const dryRun = parseBoolean(process.env.WHATSAPP_BOT_DRY_RUN);
 const headless = parseBoolean(process.env.WHATSAPP_BOT_HEADLESS);
+const readyTimeoutMs = readPositiveNumber(
+  "WHATSAPP_BOT_READY_TIMEOUT_MS",
+  headless ? 120_000 : 600_000,
+);
 const browserExecutablePath = getBrowserExecutablePath();
 const whatsappUserAgent =
   process.env.WHATSAPP_BOT_USER_AGENT?.trim() ||
@@ -58,6 +61,16 @@ const client = new Client({
 
 const readyTimeout = setTimeout(() => {
   if (ready) {
+    return;
+  }
+
+  if (!headless) {
+    writeStatus("startup-waiting", {
+      message: `WhatsApp todavia no llego a listo despues de ${readyTimeoutMs}ms. Dejo Chrome abierto y sigo esperando.`,
+    });
+    errorLog(
+      `WhatsApp no llego a listo en ${readyTimeoutMs}ms. Dejo Chrome abierto y sigo esperando.`,
+    );
     return;
   }
 
