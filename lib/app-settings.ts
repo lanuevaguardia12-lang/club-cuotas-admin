@@ -6,7 +6,7 @@ export const DEFAULT_PRIMARY_COLOR = BRAND_PRIMARY_COLOR;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   clubName: DEFAULT_CLUB_NAME,
-  logoUrl: process.env.NEXT_PUBLIC_LOGO_URL ?? BRAND_LOGO_URL,
+  logoUrl: normalizeLogoUrl(process.env.NEXT_PUBLIC_LOGO_URL) || BRAND_LOGO_URL,
   paymentAlias: process.env.NEXT_PUBLIC_PAYMENT_ALIAS ?? "",
   whatsAppMessageTemplate:
     process.env.NEXT_PUBLIC_REMINDER_TEMPLATE ??
@@ -35,7 +35,7 @@ export function normalizeAppSettings(
 ): AppSettings {
   return {
     clubName: normalizeTextValue(input.clubName) || DEFAULT_APP_SETTINGS.clubName,
-    logoUrl: normalizeTextValue(input.logoUrl) || DEFAULT_APP_SETTINGS.logoUrl,
+    logoUrl: normalizeLogoUrl(input.logoUrl) || DEFAULT_APP_SETTINGS.logoUrl,
     paymentAlias: normalizeTextValue(input.paymentAlias),
     whatsAppMessageTemplate:
       normalizeTextValue(input.whatsAppMessageTemplate) ||
@@ -55,6 +55,25 @@ export function normalizeHexColor(value: unknown) {
   const color = value.trim();
 
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : undefined;
+}
+
+export function normalizeLogoUrl(value: unknown) {
+  const logoUrl = normalizeTextValue(value);
+
+  if (!logoUrl || logoUrl.length > 500) {
+    return "";
+  }
+
+  if (logoUrl.startsWith("/")) {
+    return logoUrl;
+  }
+
+  try {
+    const url = new URL(logoUrl);
+    return ["http:", "https:"].includes(url.protocol) ? logoUrl : "";
+  } catch {
+    return "";
+  }
 }
 
 export function parseBooleanValue(value: string) {

@@ -743,7 +743,7 @@ export class GoogleSheetsService implements IDataService {
     await sheets.spreadsheets.values.update({
       spreadsheetId: this.config.spreadsheetId,
       range: `${sheetPrefix}!A:B`,
-      valueInputOption: "USER_ENTERED",
+      valueInputOption: "RAW",
       requestBody: {
         values: buildSettingsRows(settings),
       },

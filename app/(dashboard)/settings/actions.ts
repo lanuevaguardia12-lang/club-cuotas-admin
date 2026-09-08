@@ -3,15 +3,22 @@
 import { revalidatePath } from "next/cache";
 
 import { userToAuditActor } from "@/lib/audit";
-import { normalizeAppSettings } from "@/lib/app-settings";
+import { DEFAULT_APP_SETTINGS, normalizeAppSettings } from "@/lib/app-settings";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 import type { UpdateAppSettingsInput } from "@/types/settings";
 
-export async function saveAppSettings(input: UpdateAppSettingsInput) {
-  const settings = normalizeAppSettings(input);
+export async function saveAppSettings(input: Partial<UpdateAppSettingsInput>) {
   const user = await getCurrentUser();
   const dataService = getDataService();
+  const currentSettings = await dataService
+    .getAppSettings()
+    .then((result) => result.settings)
+    .catch(() => DEFAULT_APP_SETTINGS);
+  const settings = normalizeAppSettings({
+    ...currentSettings,
+    ...input,
+  });
 
   await dataService.updateAppSettings(settings);
 

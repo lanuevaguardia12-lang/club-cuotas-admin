@@ -24,10 +24,6 @@ const clubSettingsSchema = z.object({
     .trim()
     .min(2, "Ingresá el nombre del club.")
     .max(80, "El nombre no puede superar los 80 caracteres."),
-  logoUrl: z
-    .string()
-    .trim()
-    .max(500, "El logo no puede superar los 500 caracteres."),
   paymentAlias: z
     .string()
     .trim()
@@ -71,7 +67,7 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
   }, [initialSettings, reset, settings]);
 
   const preview = watch();
-  const logoUrl = preview.logoUrl?.trim();
+  const logoUrl = (settings ?? initialSettings).logoUrl?.trim();
 
   async function handleSave(values: ClubSettingsFormValues) {
     setSaved(false);
@@ -113,8 +109,6 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <input type="hidden" {...register("logoUrl")} />
-
           <Field label="Nombre del club" error={errors.clubName?.message}>
             <input
               {...register("clubName")}
