@@ -265,7 +265,7 @@ export function HomeSummary({
         </CardHeader>
         <CardContent>
           {standingsRows.length > 0 ? (
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2 overflow-hidden">
               {standingsRows.map((row) => {
                 const isClub =
                   row.isClub || areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
@@ -274,9 +274,9 @@ export function HomeSummary({
                   <div
                     key={`${row.position}-${row.teamName}`}
                     className={cn(
-                      "border-border bg-background flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm",
+                      "border-border bg-background grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-md border px-3 py-2 text-sm",
                       isClub &&
-                        "border-yellow-300 bg-yellow-50 shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70 dark:bg-yellow-950/30",
+                        "border-primary/50 bg-primary/10 shadow-[inset_4px_0_0_var(--primary)]",
                     )}
                   >
                     <div className="flex min-w-0 items-center gap-2">
@@ -284,7 +284,7 @@ export function HomeSummary({
                         className={cn(
                           "bg-muted text-muted-foreground grid size-7 shrink-0 place-items-center rounded-md text-xs font-bold",
                           isClub &&
-                            "bg-yellow-400 text-blue-950 ring-2 ring-yellow-100 dark:bg-yellow-300 dark:ring-yellow-100/40",
+                            "bg-primary text-primary-foreground ring-primary/20 ring-2",
                         )}
                       >
                         {row.position}
@@ -295,8 +295,8 @@ export function HomeSummary({
                     </div>
                     <span
                       className={cn(
-                        "shrink-0 font-bold",
-                        isClub && "text-yellow-700 dark:text-yellow-200",
+                        "shrink-0 whitespace-nowrap font-bold",
+                        isClub && "text-primary",
                       )}
                     >
                       {row.points} pts

@@ -27,8 +27,7 @@ const clubSettingsSchema = z.object({
   logoUrl: z
     .string()
     .trim()
-    .max(500, "La URL no puede superar los 500 caracteres.")
-    .refine((value) => !value || isValidLogoUrl(value), "Ingresá una URL válida."),
+    .max(500, "El logo no puede superar los 500 caracteres."),
   paymentAlias: z
     .string()
     .trim()
@@ -114,17 +113,11 @@ export function ClubSettingsPanel({ initialSettings }: ClubSettingsPanelProps) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
+          <input type="hidden" {...register("logoUrl")} />
+
           <Field label="Nombre del club" error={errors.clubName?.message}>
             <input
               {...register("clubName")}
-              className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-            />
-          </Field>
-
-          <Field label="Logo" error={errors.logoUrl?.message}>
-            <input
-              {...register("logoUrl")}
-              placeholder="https://..."
               className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
             />
           </Field>
@@ -284,15 +277,6 @@ function Field({
       {error ? <span className="text-destructive text-sm">{error}</span> : null}
     </label>
   );
-}
-
-function isValidLogoUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol);
-  } catch {
-    return false;
-  }
 }
 
 function getInitials(value: string) {
