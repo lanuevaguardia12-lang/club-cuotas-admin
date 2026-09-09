@@ -49,6 +49,23 @@ export function getMatchRegistrationPeriod(match: LeagueFixtureMatch) {
   return match.dateIso?.slice(0, 7) ?? MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY;
 }
 
+export function getMatchRegistrationPlayerNames(
+  match: LeagueFixtureMatch,
+  playerNamesByPeriod: Record<string, string[]>,
+) {
+  const convokedPlayerNames = match.convokedPlayerNames?.filter(Boolean) ?? [];
+
+  if (convokedPlayerNames.length > 0) {
+    return convokedPlayerNames;
+  }
+
+  return (
+    playerNamesByPeriod[getMatchRegistrationPeriod(match)] ??
+    playerNamesByPeriod[MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY] ??
+    []
+  );
+}
+
 export async function getRegistrationPlayerNamesByPeriod(
   dataService: IDataService,
   matches: LeagueFixtureMatch[],

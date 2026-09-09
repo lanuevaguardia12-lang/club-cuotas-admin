@@ -537,6 +537,7 @@ const playerAttendanceSnapshotHeaders = [
 const fixtureOverrideHeaders = [
   "match_id",
   "fecha_hora",
+  "convocados",
   "goles_local",
   "goles_visitante",
   "penales_local",
@@ -2490,19 +2491,6 @@ export class GoogleSheetsService implements IDataService {
       fixtureOverrideHeaders,
     );
 
-    const override: FixtureMatchScheduleOverride = {
-      dateTime: input.dateTime,
-      goalScorers: input.goalScorers ?? [],
-      localScore: input.localScore,
-      localPenaltyScore: input.localPenaltyScore,
-      matchId: input.matchId,
-      updatedAt: new Date().toISOString(),
-      updatedByName: input.updatedByName,
-      updatedByUserId: input.updatedByUserId,
-      visitorPenaltyScore: input.visitorPenaltyScore,
-      visitorScore: input.visitorScore,
-    };
-    const row = buildFixtureOverrideWritableRow(headers, override);
     const matchIdIndex = findHeaderIndex(headers, ["match_id", "partido_id", "id"]);
     const targetRowIndex =
       matchIdIndex >= 0
@@ -2510,6 +2498,40 @@ export class GoogleSheetsService implements IDataService {
             (candidate) => String(candidate[matchIdIndex] ?? "").trim() === input.matchId,
           )
         : -1;
+    const existingOverride =
+      targetRowIndex >= 0
+        ? mapRowsToFixtureMatchScheduleOverrides([headers, dataRows[targetRowIndex]])[0]
+        : undefined;
+    const override: FixtureMatchScheduleOverride = {
+      convokedPlayerNames: getFixtureOverrideArrayInput(
+        input,
+        "convokedPlayerNames",
+        existingOverride?.convokedPlayerNames,
+      ),
+      dateTime: input.dateTime,
+      goalScorers: getFixtureOverrideArrayInput(
+        input,
+        "goalScorers",
+        existingOverride?.goalScorers,
+      ),
+      localScore: getFixtureOverrideScoreInput(input, "localScore", existingOverride),
+      localPenaltyScore: getFixtureOverrideScoreInput(
+        input,
+        "localPenaltyScore",
+        existingOverride,
+      ),
+      matchId: input.matchId,
+      updatedAt: new Date().toISOString(),
+      updatedByName: input.updatedByName,
+      updatedByUserId: input.updatedByUserId,
+      visitorPenaltyScore: getFixtureOverrideScoreInput(
+        input,
+        "visitorPenaltyScore",
+        existingOverride,
+      ),
+      visitorScore: getFixtureOverrideScoreInput(input, "visitorScore", existingOverride),
+    };
+    const row = buildFixtureOverrideWritableRow(headers, override);
     const sheets = this.createSheetsClient();
 
     if (targetRowIndex >= 0) {
@@ -6006,6 +6028,14 @@ function mapRowsToFixtureMatchScheduleOverrides(
       }
 
       return {
+        convokedPlayerNames: splitPlayerNames(
+          pick(record, [
+            "convocados",
+            "jugadores_convocados",
+            "convoked_players",
+            "convoked_player_names",
+          ]),
+        ),
         dateTime,
         goalScorers: parseFixtureGoalScorers(
           pick(record, ["goleadores_lng", "goleadores", "goal_scorers"]),
@@ -6039,6 +6069,22 @@ function parseOptionalScore(value: string) {
   const parsed = Number(normalized.replace(",", "."));
 
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function getFixtureOverrideArrayInput(
+  input: UpdateFixtureMatchScheduleInput,
+  key: "convokedPlayerNames" | "goalScorers",
+  fallback: string[] = [],
+) {
+  return Object.hasOwn(input, key) ? (input[key] ?? []) : fallback;
+}
+
+function getFixtureOverrideScoreInput(
+  input: UpdateFixtureMatchScheduleInput,
+  key: "localPenaltyScore" | "localScore" | "visitorPenaltyScore" | "visitorScore",
+  fallback?: FixtureMatchScheduleOverride,
+) {
+  return Object.hasOwn(input, key) ? input[key] : fallback?.[key];
 }
 
 function formatOptionalScore(value?: number) {
@@ -6101,6 +6147,7 @@ function applyFixtureMatchScheduleOverrides(
 
     return {
       ...match,
+      convokedPlayerNames: override.convokedPlayerNames,
       dateIso: nextDateIso,
       goalEvents: [...match.goalEvents, ...manualGoalEvents],
       goals: [...match.goals, ...formatManualGoalLabels(override.goalScorers)],
@@ -6750,11 +6797,13 @@ function buildFixtureOverrideWritableRow(
   headers: string[],
   override: FixtureMatchScheduleOverride,
 ) {
+  const convokedPlayersText = override.convokedPlayerNames.join("\n");
   const goalScorersText = override.goalScorers.join("\n");
   const values: Record<string, string> = {
     actualizado_en: override.updatedAt,
     actualizado_por: override.updatedByName,
     actualizado_por_user_id: override.updatedByUserId,
+    convocados: convokedPlayersText,
     date_time: override.dateTime,
     datetime: override.dateTime,
     fecha: override.dateTime,
@@ -6765,6 +6814,7 @@ function buildFixtureOverrideWritableRow(
     goleadores: goalScorersText,
     goleadores_lng: goalScorersText,
     id: override.matchId,
+    jugadores_convocados: convokedPlayersText,
     local_penalties: formatOptionalScore(override.localPenaltyScore),
     local_penalty_score: formatOptionalScore(override.localPenaltyScore),
     local_score: formatOptionalScore(override.localScore),

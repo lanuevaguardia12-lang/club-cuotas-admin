@@ -25,9 +25,8 @@ import { PaymentFormButton } from "@/components/players/payment-form-button";
 import { formatRepeatedGoalLabels } from "@/lib/fixture-goals";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
-  MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
   buildMatchRegistrationFormUrl,
-  getMatchRegistrationPeriod,
+  getMatchRegistrationPlayerNames,
   getMatchRegistrationStatusKeyForFixture,
   type MatchRegistrationStatus,
 } from "@/lib/match-registration-form";
@@ -87,10 +86,10 @@ export function HomeSummary({
   const currentPeriod = getCurrentPeriod();
   const canRegisterLatestQuotaPayment = Boolean(
     latestQuota &&
-      latestQuota.period <= currentPeriod &&
-      latestQuota.status === "unpaid" &&
-      latestQuota.quotaStatus === "defined" &&
-      latestQuota.amountValue > 0,
+    latestQuota.period <= currentPeriod &&
+    latestQuota.status === "unpaid" &&
+    latestQuota.quotaStatus === "defined" &&
+    latestQuota.amountValue > 0,
   );
   const nextMatch = fixture.nextMatches[0];
   const lastMatch = fixture.lastMatches[0];
@@ -136,9 +135,7 @@ export function HomeSummary({
             <div
               className={cn(
                 "grid gap-2",
-                canRegisterLatestQuotaPayment || hasPaymentAlias
-                  ? "sm:grid-cols-2"
-                  : "",
+                canRegisterLatestQuotaPayment || hasPaymentAlias ? "sm:grid-cols-2" : "",
               )}
             >
               {canRegisterLatestQuotaPayment && latestQuota ? (
@@ -157,9 +154,7 @@ export function HomeSummary({
                 asChild
                 className="w-full"
                 variant={
-                  canRegisterLatestQuotaPayment || hasPaymentAlias
-                    ? "outline"
-                    : "default"
+                  canRegisterLatestQuotaPayment || hasPaymentAlias ? "outline" : "default"
                 }
               >
                 <Link href="/mi-cuota">
@@ -296,7 +291,7 @@ export function HomeSummary({
                     </div>
                     <span
                       className={cn(
-                        "shrink-0 whitespace-nowrap font-bold",
+                        "shrink-0 font-bold whitespace-nowrap",
                         isClub && "text-primary",
                       )}
                     >
@@ -553,10 +548,10 @@ function MatchRegistrationAction({
     );
   }
 
-  const registrationPlayerNames =
-    registrationPlayerNamesByPeriod[getMatchRegistrationPeriod(match)] ??
-    registrationPlayerNamesByPeriod[MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY] ??
-    [];
+  const registrationPlayerNames = getMatchRegistrationPlayerNames(
+    match,
+    registrationPlayerNamesByPeriod,
+  );
 
   return (
     <Button asChild size="sm" variant="secondary">
@@ -640,9 +635,7 @@ function MatchGoalsList({ match }: { match: LeagueFixtureMatch }) {
   return (
     <div className="bg-muted/60 min-w-0 rounded-md px-3 py-2 text-xs">
       <p className="font-semibold">Goles</p>
-      <p className="text-muted-foreground mt-1 break-words">
-        {goalLabels.join(" · ")}
-      </p>
+      <p className="text-muted-foreground mt-1 break-words">{goalLabels.join(" · ")}</p>
     </div>
   );
 }

@@ -45,6 +45,18 @@ const fixtureScheduleSchema = z
     }
   });
 
+const fixtureConvocationSchema = z.object({
+  convokedPlayerNames: z
+    .array(z.string().trim().min(1).max(120))
+    .min(1, "Cargá al menos un convocado.")
+    .max(80, "La lista de convocados es demasiado larga."),
+  dateTime: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Usá una fecha y hora válida."),
+  matchId: z.string().trim().min(1, "No se encontró el partido."),
+});
+
 export async function updateFixtureMatchSchedule(
   input: unknown,
 ): Promise<FixtureScheduleActionResult> {
@@ -107,6 +119,7 @@ export async function updateFixtureMatchSchedule(
     }
 
     revalidatePath("/fixture");
+    revalidatePath("/");
     revalidatePath("/player-of-match");
 
     return {
@@ -120,6 +133,59 @@ export async function updateFixtureMatchSchedule(
         error instanceof Error
           ? error.message
           : "No se pudo actualizar la fecha del partido.",
+    };
+  }
+}
+
+export async function updateFixtureMatchConvocation(
+  input: unknown,
+): Promise<FixtureScheduleActionResult> {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return {
+      ok: false,
+      message: "Iniciá sesión para guardar convocados.",
+    };
+  }
+
+  if (user.role !== "admin") {
+    return {
+      ok: false,
+      message: "Solo el administrador puede guardar convocados.",
+    };
+  }
+
+  const parsed = fixtureConvocationSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Revisá la lista de convocados.",
+    };
+  }
+
+  try {
+    await getDataService().updateFixtureMatchSchedule({
+      convokedPlayerNames: parsed.data.convokedPlayerNames,
+      dateTime: parsed.data.dateTime,
+      matchId: parsed.data.matchId,
+      updatedByName: user.name,
+      updatedByUserId: user.id,
+    });
+
+    revalidatePath("/fixture");
+    revalidatePath("/");
+
+    return {
+      ok: true,
+      message: `Convocados guardados (${parsed.data.convokedPlayerNames.length}).`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "No se pudo guardar la convocatoria.",
     };
   }
 }

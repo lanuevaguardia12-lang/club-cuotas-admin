@@ -3,12 +3,15 @@
 import {
   ClipboardList,
   ImageDown,
+  Save,
   Share2,
   TriangleAlert,
   UsersRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
+import { updateFixtureMatchConvocation } from "@/app/(dashboard)/fixture/actions";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
@@ -65,10 +68,19 @@ export function MatchConvocationButton({
   teamName,
   teamProfiles = [],
 }: MatchConvocationButtonProps) {
+  const router = useRouter();
+  const savedListText = formatConvocationListText(match.convokedPlayerNames ?? []);
   const [open, setOpen] = useState(false);
-  const [listText, setListText] = useState("");
+  const [listText, setListText] = useState(savedListText);
   const [pendingFormat, setPendingFormat] = useState<ConvocationShareFormat | null>(null);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "neutral" | "success">(
+    "neutral",
+  );
+  const [savedPlayerNames, setSavedPlayerNames] = useState(
+    match.convokedPlayerNames ?? [],
+  );
+  const [saving, setSaving] = useState(false);
   const parsed = useMemo(
     () => parseConvocationText(listText, playerOptions),
     [listText, playerOptions],
@@ -76,10 +88,66 @@ export function MatchConvocationButton({
   const rival = getMatchRival(match, teamName);
   const canExport = parsed.matched.length > 0;
 
-  async function handleShare(format: ConvocationShareFormat) {
-    setPendingFormat(format);
-    setMessage("");
+  useEffect(() => {
+    const playerNames = match.convokedPlayerNames ?? [];
 
+    setSavedPlayerNames(playerNames);
+    setListText(formatConvocationListText(playerNames));
+  }, [match.convokedPlayerNames, match.id]);
+
+  async function saveConvocationList({ silent = false } = {}) {
+    setMessage("");
+    setMessageTone("neutral");
+
+    if (parsed.matched.length === 0) {
+      setMessage("Cargá al menos un convocado identificado.");
+      setMessageTone("error");
+      return false;
+    }
+
+    const convokedPlayerNames = parsed.matched.map((player) => player.name);
+
+    setSaving(true);
+
+    try {
+      const result = await updateFixtureMatchConvocation({
+        convokedPlayerNames,
+        dateTime: toDateTimeLocalValue(match),
+        matchId: match.id,
+      });
+
+      if (!result.ok) {
+        setMessage(result.message);
+        setMessageTone("error");
+        return false;
+      }
+
+      setSavedPlayerNames(convokedPlayerNames);
+      setMessage(silent ? "" : result.message);
+      setMessageTone("success");
+      router.refresh();
+
+      return true;
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "No se pudo guardar la convocatoria.",
+      );
+      setMessageTone("error");
+
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleShare(format: ConvocationShareFormat) {
+    const saved = await saveConvocationList({ silent: true });
+
+    if (!saved) {
+      return;
+    }
+
+    setPendingFormat(format);
     try {
       const blob = await createConvocationBlob({
         coachName,
@@ -99,17 +167,19 @@ export function MatchConvocationButton({
           text: `Convocados: ${teamName} vs ${rival}`,
           title: "Convocados",
         });
-        setMessage("Placa lista para compartir.");
+        setMessage("Convocados guardados y placa lista para compartir.");
       } else {
         downloadBlob(blob, fileName);
-        setMessage("Imagen descargada.");
+        setMessage("Convocados guardados e imagen descargada.");
       }
+      setMessageTone("success");
     } catch (error) {
       if (isShareAbort(error)) {
         return;
       }
 
       setMessage(error instanceof Error ? error.message : "No se pudo generar la placa.");
+      setMessageTone("error");
     } finally {
       setPendingFormat(null);
     }
@@ -122,9 +192,13 @@ export function MatchConvocationButton({
   return (
     <section className={cn("grid gap-2", className)}>
       <LoadingModal
-        open={Boolean(pendingFormat)}
+        open={saving || Boolean(pendingFormat)}
         description={
-          pendingFormat === "post" ? "Preparando publicación..." : "Preparando story..."
+          saving
+            ? "Guardando convocados..."
+            : pendingFormat === "post"
+              ? "Preparando publicación..."
+              : "Preparando story..."
         }
       />
       <Button
@@ -192,6 +266,12 @@ export function MatchConvocationButton({
             </div>
           ) : null}
 
+          {savedPlayerNames.length > 0 ? (
+            <p className="text-muted-foreground text-xs">
+              Lista guardada: {savedPlayerNames.length} convocados.
+            </p>
+          ) : null}
+
           {parsed.missing.length > 0 ? (
             <div className="border-destructive/30 bg-destructive/10 text-destructive grid gap-2 rounded-md border p-3 text-sm">
               <p className="flex items-center gap-2 font-semibold">
@@ -204,12 +284,22 @@ export function MatchConvocationButton({
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canExport || saving || Boolean(pendingFormat)}
+              onClick={() => void saveConvocationList()}
+            >
+              <Save />
+              Guardar lista
+            </Button>
             <Button
               type="button"
               size="sm"
               variant="secondary"
-              disabled={!canExport || Boolean(pendingFormat)}
+              disabled={!canExport || saving || Boolean(pendingFormat)}
               onClick={() => void handleShare("story")}
             >
               <Share2 />
@@ -219,7 +309,7 @@ export function MatchConvocationButton({
               type="button"
               size="sm"
               variant="outline"
-              disabled={!canExport || Boolean(pendingFormat)}
+              disabled={!canExport || saving || Boolean(pendingFormat)}
               onClick={() => void handleShare("post")}
             >
               <ImageDown />
@@ -228,7 +318,16 @@ export function MatchConvocationButton({
           </div>
 
           {message ? (
-            <p className="text-muted-foreground text-center text-xs font-medium">
+            <p
+              className={cn(
+                "text-center text-xs font-medium",
+                messageTone === "error"
+                  ? "text-destructive"
+                  : messageTone === "success"
+                    ? "text-emerald-700"
+                    : "text-muted-foreground",
+              )}
+            >
               {message}
             </p>
           ) : null}
@@ -236,6 +335,10 @@ export function MatchConvocationButton({
       ) : null}
     </section>
   );
+}
+
+function formatConvocationListText(playerNames: string[]) {
+  return playerNames.map((playerName, index) => `${index + 1}. ${playerName}`).join("\n");
 }
 
 function ConvocationMetric({ label, value }: { label: string; value: string }) {
@@ -1116,6 +1219,14 @@ function formatMatchDate(match: LeagueFixtureMatch) {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
   }).format(date);
+}
+
+function toDateTimeLocalValue(match: LeagueFixtureMatch) {
+  const date = match.dateIso ?? new Date().toISOString().slice(0, 10);
+  const timeMatch = /^(\d{1,2}):(\d{2})/.exec(match.time);
+  const time = timeMatch ? `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}` : "12:00";
+
+  return `${date}T${time}`;
 }
 
 function formatDisplayPersonName(value: string) {

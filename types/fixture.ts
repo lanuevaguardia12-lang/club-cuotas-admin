@@ -62,6 +62,7 @@ export interface LeagueFixtureMatch {
   goals: string[];
   manualGoalScorers?: string[];
   cards: string[];
+  convokedPlayerNames?: string[];
   isClubMatch: boolean;
   involvesBye: boolean;
   resultOverrideUpdatedAt?: string;
@@ -101,6 +102,7 @@ export interface LeagueFixtureData {
 }
 
 export interface FixtureMatchScheduleOverride {
+  convokedPlayerNames: string[];
   goalScorers: string[];
   localScore?: number;
   localPenaltyScore?: number;
@@ -114,6 +116,7 @@ export interface FixtureMatchScheduleOverride {
 }
 
 export interface UpdateFixtureMatchScheduleInput {
+  convokedPlayerNames?: string[];
   goalScorers?: string[];
   localScore?: number;
   localPenaltyScore?: number;

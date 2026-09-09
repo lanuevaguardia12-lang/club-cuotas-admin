@@ -26,9 +26,8 @@ import { NavigationLink } from "@/components/ui/navigation-link";
 import { formatRepeatedGoalLabels } from "@/lib/fixture-goals";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
-  MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY,
   buildMatchRegistrationFormUrl,
-  getMatchRegistrationPeriod,
+  getMatchRegistrationPlayerNames,
 } from "@/lib/match-registration-form";
 import {
   getTeamCrestDataUrl,
@@ -869,10 +868,10 @@ function FullMatchRow({
   teamProfiles: TeamProfile[];
 }) {
   const canEditSchedule = canManage && match.isClubMatch;
-  const registrationPlayerNames =
-    registrationPlayerNamesByPeriod[getMatchRegistrationPeriod(match)] ??
-    registrationPlayerNamesByPeriod[MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY] ??
-    [];
+  const registrationPlayerNames = getMatchRegistrationPlayerNames(
+    match,
+    registrationPlayerNamesByPeriod,
+  );
   const goalLabels = formatRepeatedGoalLabels(match.goals);
 
   return (

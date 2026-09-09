@@ -274,6 +274,7 @@ export function applyLeagueFixtureScheduleOverrides(
 
     return {
       ...match,
+      convokedPlayerNames: override.convokedPlayerNames,
       dateIso: nextDateIso,
       goalEvents: [...match.goalEvents, ...manualGoalEvents],
       goals: [...match.goals, ...formatManualGoalLabels(override.goalScorers)],
@@ -1265,31 +1266,31 @@ function parseGoalEventsFromResultDetail(html: string): LeagueGoalEvent[] {
       .filter((goalIndex): goalIndex is number => typeof goalIndex === "number");
 
     return goalStarts.flatMap((goalStart, goalIndex): LeagueGoalEvent[] => {
-        const goalHtml = columnHtml.slice(
-          goalStart,
-          goalStarts[goalIndex + 1] ?? columnHtml.length,
-        );
-        const rawPlayerName = extractText(
-          goalHtml,
-          /<span[^>]*class=["'][^"']*dr-goal-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
-        );
-        const playerName = formatPersonName(stripGoalCountMarker(rawPlayerName));
+      const goalHtml = columnHtml.slice(
+        goalStart,
+        goalStarts[goalIndex + 1] ?? columnHtml.length,
+      );
+      const rawPlayerName = extractText(
+        goalHtml,
+        /<span[^>]*class=["'][^"']*dr-goal-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+      );
+      const playerName = formatPersonName(stripGoalCountMarker(rawPlayerName));
 
-        if (!playerName) {
-          return [];
-        }
+      if (!playerName) {
+        return [];
+      }
 
-        const count = parseGoalCountMarker(
-          normalizeWhitespace(decodeHtml(stripTags(goalHtml))),
-        );
-        const goalEvent = {
-          ownGoal: /dr-own-goal|en\s+contra/i.test(goalHtml),
-          playerName,
-          teamName,
-        };
+      const count = parseGoalCountMarker(
+        normalizeWhitespace(decodeHtml(stripTags(goalHtml))),
+      );
+      const goalEvent = {
+        ownGoal: /dr-own-goal|en\s+contra/i.test(goalHtml),
+        playerName,
+        teamName,
+      };
 
-        return Array.from({ length: count }, () => goalEvent);
-      });
+      return Array.from({ length: count }, () => goalEvent);
+    });
   });
 }
 
