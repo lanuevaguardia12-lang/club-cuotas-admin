@@ -30,7 +30,13 @@ cat > "$PLIST_PATH" <<EOF
     <key>WHATSAPP_BOT_HEADLESS</key>
     <string>true</string>
     <key>WHATSAPP_BOT_SEND_DELAY_MS</key>
-    <string>60000</string>
+    <string>90000</string>
+    <key>WHATSAPP_BOT_READY_TIMEOUT_MS</key>
+    <string>3600000</string>
+    <key>WHATSAPP_BOT_SEND_READY_TIMEOUT_MS</key>
+    <string>3600000</string>
+    <key>WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS</key>
+    <string>15000</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

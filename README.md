@@ -934,9 +934,10 @@ El cron no envia WhatsApp directamente. Genera recordatorios auditables en cola,
 preparados para conectar luego WhatsApp Business API, Twilio, Zenvia, QStash,
 Inngest u otro worker.
 
-El dashboard de administrador incluye el boton `Correr bot recordatorios`. Ese
-boton toma solamente el periodo visible en Home, busca jugadores impagos de ese
-mes y arma el mensaje con la plantilla vigente de Configuracion.
+El dashboard de administrador incluye el boton `Abrir WhatsApp y correr bot`.
+Ese boton intenta abrir el launcher local de WhatsApp y toma solamente el periodo
+visible en Home, busca jugadores impagos de ese mes y arma el mensaje con la
+plantilla vigente de Configuracion.
 
 Hay dos modos:
 
@@ -975,7 +976,10 @@ CLUB_APP_URL="https://club-cuotas-admin.vercel.app"
 WHATSAPP_BOT_RUNNER_SECRET="mismo_valor_que_en_vercel"
 WHATSAPP_BOT_POLL_INTERVAL_MS=10000
 WHATSAPP_BOT_BATCH_LIMIT=5
-WHATSAPP_BOT_SEND_DELAY_MS=60000
+WHATSAPP_BOT_SEND_DELAY_MS=90000
+WHATSAPP_BOT_READY_TIMEOUT_MS=3600000
+WHATSAPP_BOT_SEND_READY_TIMEOUT_MS=3600000
+WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS=15000
 WHATSAPP_BOT_DEFAULT_COUNTRY_CODE=549
 WHATSAPP_BOT_DRY_RUN=false
 WHATSAPP_BOT_HEADLESS=false

@@ -10,7 +10,10 @@ BOT_PROFILE_PATH="$SCRIPT_DIR/.wwebjs_auth/session-$BOT_CLIENT_ID"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 export WHATSAPP_BOT_HEADLESS="${WHATSAPP_BOT_HEADLESS:-false}"
-export WHATSAPP_BOT_SEND_DELAY_MS="${WHATSAPP_BOT_SEND_DELAY_MS:-60000}"
+export WHATSAPP_BOT_SEND_DELAY_MS="${WHATSAPP_BOT_SEND_DELAY_MS:-90000}"
+export WHATSAPP_BOT_READY_TIMEOUT_MS="${WHATSAPP_BOT_READY_TIMEOUT_MS:-3600000}"
+export WHATSAPP_BOT_SEND_READY_TIMEOUT_MS="${WHATSAPP_BOT_SEND_READY_TIMEOUT_MS:-3600000}"
+export WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS="${WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS:-15000}"
 export WHATSAPP_BOT_STATUS_FILE="${WHATSAPP_BOT_STATUS_FILE:-$STATUS_FILE}"
 export WHATSAPP_BOT_CLIENT_ID="$BOT_CLIENT_ID"
 
@@ -20,27 +23,77 @@ notify() {
   /usr/bin/osascript -e "display notification \"$1\" with title \"Bot WhatsApp\"" >/dev/null 2>&1 || true
 }
 
+bring_chrome_to_front() {
+  /usr/bin/osascript -e 'tell application "Google Chrome" to activate' >/dev/null 2>&1 || true
+}
+
+read_status_value() {
+  local key="$1"
+
+  if [ ! -f "$STATUS_FILE" ]; then
+    echo ""
+    return
+  fi
+
+  /usr/bin/sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$STATUS_FILE" | /usr/bin/head -n 1
+}
+
+read_status_boolean() {
+  local key="$1"
+
+  if [ ! -f "$STATUS_FILE" ]; then
+    echo ""
+    return
+  fi
+
+  /usr/bin/sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\\([^,}]*\\).*/\\1/p" "$STATUS_FILE" | /usr/bin/tr -d ' "'
+}
+
+is_healthy_status() {
+  case "$1" in
+    authenticated|idle|loading|processing|qr|ready|send-waiting|sent|starting|startup-waiting|state-change)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 BOT_PIDS="$(pgrep -f "$SCRIPT_DIR/whatsapp-reminder-bot.mjs" 2>/dev/null || true)"
 
 if [ -n "$BOT_PIDS" ]; then
   NOW="$(date +%s)"
   STATUS_MTIME="0"
+  STATUS_NAME=""
+  STATUS_HEADLESS=""
 
   if [ -f "$STATUS_FILE" ]; then
     STATUS_MTIME="$(stat -f %m "$STATUS_FILE" 2>/dev/null || echo 0)"
+    STATUS_NAME="$(read_status_value "status")"
+    STATUS_HEADLESS="$(read_status_boolean "headless")"
   fi
 
   STATUS_AGE=$((NOW - STATUS_MTIME))
 
-  if [ "$STATUS_AGE" -le 180 ]; then
+  if [ "$STATUS_AGE" -le 180 ] && [ "$WHATSAPP_BOT_HEADLESS" != "true" ] && [ "$STATUS_HEADLESS" != "false" ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') reiniciando bot no visible en modo visible: $BOT_PIDS" >> "$LAUNCHER_LOG_FILE"
+    kill $BOT_PIDS >/dev/null 2>&1 || true
+    sleep 2
+  elif [ "$STATUS_AGE" -le 180 ] && is_healthy_status "$STATUS_NAME"; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') bot ya estaba corriendo con status reciente" >> "$LAUNCHER_LOG_FILE"
+    bring_chrome_to_front
     notify "El bot ya esta corriendo."
     exit 0
+  elif [ "$STATUS_AGE" -le 180 ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') reiniciando bot con status $STATUS_NAME: $BOT_PIDS" >> "$LAUNCHER_LOG_FILE"
+    kill $BOT_PIDS >/dev/null 2>&1 || true
+    sleep 2
+  else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') reiniciando bot sin status reciente: $BOT_PIDS" >> "$LAUNCHER_LOG_FILE"
+    kill $BOT_PIDS >/dev/null 2>&1 || true
+    sleep 2
   fi
-
-  echo "$(date '+%Y-%m-%d %H:%M:%S') reiniciando bot sin status reciente: $BOT_PIDS" >> "$LAUNCHER_LOG_FILE"
-  kill $BOT_PIDS >/dev/null 2>&1 || true
-  sleep 2
 fi
 
 if [ -d "$BOT_PROFILE_PATH" ]; then

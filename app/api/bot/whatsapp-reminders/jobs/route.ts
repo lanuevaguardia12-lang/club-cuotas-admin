@@ -269,6 +269,7 @@ function clampLimit(value: string | null) {
 
 function normalizeWritableStatus(value: unknown): ReminderStatus | null {
   if (
+    value === "queued" ||
     value === "processing" ||
     value === "sent" ||
     value === "failed" ||

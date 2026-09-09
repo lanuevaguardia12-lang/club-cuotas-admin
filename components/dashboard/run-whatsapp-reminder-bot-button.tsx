@@ -117,7 +117,8 @@ export function RunWhatsAppReminderBotButton({
   async function runBot() {
     setLoading(true);
     setMessage("");
-    setShowLocalLauncher(false);
+    setShowLocalLauncher(true);
+    openLocalBotLauncher();
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
@@ -142,15 +143,13 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Ahora tocá Abrir bot local." : ""}`,
+        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intente abrir WhatsApp automaticamente; si Chrome no aparece, toca Reintentar abrir bot local." : ""}`,
       );
       setTrackingJobs(result?.jobs ?? []);
       setTrackingPeriodLabel(result?.periodLabel ?? formatPeriodLabel(period));
       setTrackingRunId(result?.runId ?? "");
 
-      if (result?.mode === "local-queue") {
-        setShowLocalLauncher(true);
-      }
+      setShowLocalLauncher(result?.mode === "local-queue");
 
       if (result?.runId && (result.jobs?.length ?? 0) > 0) {
         setTrackingOpen(true);
@@ -171,7 +170,7 @@ export function RunWhatsAppReminderBotButton({
       <LoadingModal
         open={loading}
         title="Corriendo bot"
-        description="Preparando pendientes del mes y dejandolos listos para el bot..."
+        description="Abriendo WhatsApp y preparando pendientes del mes..."
       />
       <WhatsAppReminderRunModal
         jobs={trackingJobs}
@@ -196,13 +195,13 @@ export function RunWhatsAppReminderBotButton({
       </label>
       <Button type="button" variant="outline" onClick={runBot} disabled={loading}>
         <Bot />
-        Correr bot recordatorios
+        Abrir WhatsApp y correr bot
       </Button>
       {showLocalLauncher ? (
         <Button asChild variant="secondary">
           <a href={LOCAL_WHATSAPP_BOT_URL}>
             <Bot />
-            Abrir bot local
+            Reintentar abrir bot local
           </a>
         </Button>
       ) : null}
@@ -224,6 +223,19 @@ function formatPeriodLabel(period: string) {
     month: "long",
     year: "numeric",
   }).format(date);
+}
+
+function openLocalBotLauncher() {
+  const link = document.createElement("a");
+
+  link.href = LOCAL_WHATSAPP_BOT_URL;
+  link.style.display = "none";
+  link.setAttribute("aria-hidden", "true");
+  document.body.appendChild(link);
+  link.click();
+  window.setTimeout(() => {
+    link.remove();
+  }, 1000);
 }
 
 function WhatsAppReminderRunModal({
@@ -319,7 +331,7 @@ function WhatsAppReminderRunModal({
             <Button asChild variant="secondary">
               <a href={localLauncherUrl}>
                 <Bot />
-                Abrir bot local
+                Reintentar abrir bot local
               </a>
             </Button>
           ) : null}
