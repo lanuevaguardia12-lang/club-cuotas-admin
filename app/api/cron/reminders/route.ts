@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { systemAuditActor } from "@/lib/audit";
-import { buildReminderMessage, getCurrentMonthLabel } from "@/lib/reminders";
+import {
+  buildReminderMessage,
+  formatReminderPeriodLabel,
+  getCurrentReminderPeriod,
+  normalizeReminderMessageMonth,
+} from "@/lib/reminders";
 import { getDataService } from "@/services/data-service";
 
 export const runtime = "nodejs";
@@ -16,13 +21,14 @@ export async function GET(request: NextRequest) {
   }
 
   const dataService = getDataService();
-  const period = new Date().toISOString().slice(0, 7);
+  const period = getCurrentReminderPeriod();
   const [dashboard, settingsData, premium] = await Promise.all([
     dataService.getDashboardData(period),
     dataService.getAppSettings(),
     dataService.getPremiumData(),
   ]);
   const scheduledFor = new Date().toISOString();
+  const periodLabel = formatReminderPeriodLabel(period);
   const alreadyQueued = new Set(
     premium.reminders
       .filter((reminder) => reminder.period === period)
@@ -40,12 +46,15 @@ export async function GET(request: NextRequest) {
       playerName: player.name,
       phone: player.phone,
       paymentStatus: player.status,
-      message: buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
-        clubName: settingsData.settings.clubName,
-        currentMonth: getCurrentMonthLabel(),
-        feeAmount: player.fee,
-        playerName: player.name,
-      }),
+      message: normalizeReminderMessageMonth(
+        buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
+          clubName: settingsData.settings.clubName,
+          currentMonth: periodLabel,
+          feeAmount: player.fee,
+          playerName: player.name,
+        }),
+        periodLabel,
+      ),
     });
   }
 

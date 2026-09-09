@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
-import { buildReminderMessage, sanitizeWhatsAppPhone } from "@/lib/reminders";
+import {
+  buildReminderMessage,
+  formatReminderPeriodLabel,
+  getCurrentReminderPeriod,
+  normalizeReminderMessageMonth,
+  sanitizeWhatsAppPhone,
+} from "@/lib/reminders";
 import {
   buildWhatsAppBotReminderMarker,
   getWhatsAppBotReminderRunId,
@@ -77,7 +83,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
   const period =
     typeof body.period === "string" && /^\d{4}-\d{2}$/.test(body.period)
       ? body.period
-      : getCurrentPeriod();
+      : getCurrentReminderPeriod();
   const dataService = getDataService();
   const [dashboard, settingsData, reminders] = await Promise.all([
     dataService.getDashboardData(period),
@@ -97,7 +103,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     dataService,
     previousQueuedReminders,
   );
-  const periodLabel = formatPeriod(period);
+  const periodLabel = formatReminderPeriodLabel(period);
   const messages: WhatsAppBotPayloadMessage[] = [];
   let skippedNoPhone = 0;
   let skippedUndefinedFee = pendingPlayers.length - pendingPlayersWithDefinedFee.length;
@@ -365,29 +371,6 @@ function buildWebhookHeaders() {
   return headers;
 }
 
-function getCurrentPeriod() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    month: "2-digit",
-    timeZone: "America/Argentina/Buenos_Aires",
-    year: "numeric",
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-
-  return `${year}-${month}`;
-}
-
-function formatPeriod(period: string) {
-  const [year, month] = period.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-
-  return new Intl.DateTimeFormat("es-AR", {
-    month: "long",
-    timeZone: "America/Argentina/Buenos_Aires",
-    year: "numeric",
-  }).format(date);
-}
-
 function hasDashboardFeeDefined(player: PlayerTableRow) {
   return player.feeSource !== "none" && player.feeAmount > 0;
 }
@@ -461,9 +444,9 @@ function buildCurrentPeriodReminderMessage(
   template: string,
   values: Parameters<typeof buildReminderMessage>[1],
 ) {
-  return buildReminderMessage(template, values).replace(
-    /cuota\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+de\s+\d{4})?/gi,
-    `cuota de ${values.currentMonth}`,
+  return normalizeReminderMessageMonth(
+    buildReminderMessage(template, values),
+    values.currentMonth,
   );
 }
 

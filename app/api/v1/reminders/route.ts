@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import { userToAuditActor } from "@/lib/audit";
 import { requireApiPermission } from "@/lib/api/auth";
-import { buildReminderMessage, getCurrentMonthLabel } from "@/lib/reminders";
+import {
+  buildReminderMessage,
+  formatReminderPeriodLabel,
+  normalizeReminderMessageMonth,
+} from "@/lib/reminders";
 import { getDataService } from "@/services/data-service";
 
 export const runtime = "nodejs";
@@ -35,14 +39,18 @@ export async function POST(request: NextRequest) {
 
   const dataService = getDataService();
   const settingsData = await dataService.getAppSettings();
+  const periodLabel = formatReminderPeriodLabel(parsed.data.period);
   const message =
     parsed.data.message ??
-    buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
-      clubName: settingsData.settings.clubName,
-      currentMonth: getCurrentMonthLabel(),
-      feeAmount: parsed.data.feeAmount ?? "-",
-      playerName: parsed.data.playerName,
-    });
+    normalizeReminderMessageMonth(
+      buildReminderMessage(settingsData.settings.whatsAppMessageTemplate, {
+        clubName: settingsData.settings.clubName,
+        currentMonth: periodLabel,
+        feeAmount: parsed.data.feeAmount ?? "-",
+        playerName: parsed.data.playerName,
+      }),
+      periodLabel,
+    );
 
   await dataService.createReminderJob({
     scheduledFor: parsed.data.scheduledFor ?? new Date().toISOString(),

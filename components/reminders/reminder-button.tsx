@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   buildReminderMessage,
   getCurrentMonthLabel,
+  normalizeReminderMessageMonth,
   sanitizeWhatsAppPhone,
 } from "@/lib/reminders";
 
@@ -30,12 +31,16 @@ export function ReminderButton({
   const disabled = sanitizedPhone.length === 0;
 
   function handleClick() {
-    const message = buildReminderMessage(settings.whatsAppMessageTemplate, {
-      clubName: settings.clubName,
-      playerName,
-      currentMonth: getCurrentMonthLabel(),
-      feeAmount,
-    });
+    const currentMonth = getCurrentMonthLabel();
+    const message = normalizeReminderMessageMonth(
+      buildReminderMessage(settings.whatsAppMessageTemplate, {
+        clubName: settings.clubName,
+        playerName,
+        currentMonth,
+        feeAmount,
+      }),
+      currentMonth,
+    );
     const url = `https://wa.me/${sanitizedPhone}?text=${encodeURIComponent(message)}`;
 
     window.open(url, "_blank", "noopener,noreferrer");

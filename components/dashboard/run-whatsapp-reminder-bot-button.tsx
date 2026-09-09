@@ -7,6 +7,10 @@ import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import {
+  formatReminderPeriodLabel,
+  normalizeReminderMessageMonth,
+} from "@/lib/reminders";
 
 const LOCAL_WHATSAPP_BOT_URL = "lng-whatsapp-bot://start";
 
@@ -62,21 +66,26 @@ export function RunWhatsAppReminderBotButton({
   period,
 }: RunWhatsAppReminderBotButtonProps) {
   const { settings } = useAppSettings();
+  const selectedPeriodLabel = formatReminderPeriodLabel(period);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTemplate, setMessageTemplate] = useState(
-    settings.whatsAppMessageTemplate,
+    normalizeReminderMessageMonth(settings.whatsAppMessageTemplate, selectedPeriodLabel),
   );
   const [showLocalLauncher, setShowLocalLauncher] = useState(false);
   const [trackingJobs, setTrackingJobs] = useState<WhatsAppReminderTrackingJob[]>([]);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [trackingPeriodLabel, setTrackingPeriodLabel] = useState("");
   const [trackingRunId, setTrackingRunId] = useState("");
-  const selectedPeriodLabel = formatPeriodLabel(period);
 
   useEffect(() => {
-    setMessageTemplate(settings.whatsAppMessageTemplate);
-  }, [settings.whatsAppMessageTemplate]);
+    setMessageTemplate(
+      normalizeReminderMessageMonth(
+        settings.whatsAppMessageTemplate,
+        selectedPeriodLabel,
+      ),
+    );
+  }, [selectedPeriodLabel, settings.whatsAppMessageTemplate]);
 
   useEffect(() => {
     if (!trackingOpen || !trackingRunId) {
@@ -121,7 +130,13 @@ export function RunWhatsAppReminderBotButton({
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
-        body: JSON.stringify({ messageTemplate, period }),
+        body: JSON.stringify({
+          messageTemplate: normalizeReminderMessageMonth(
+            messageTemplate,
+            selectedPeriodLabel,
+          ),
+          period,
+        }),
         headers: {
           "content-type": "application/json",
         },
@@ -142,10 +157,10 @@ export function RunWhatsAppReminderBotButton({
         result?.mode === "webhook" ? "Enviados al bot" : "En cola para tu PC";
 
       setMessage(
-        `Mes ${result?.periodLabel ?? formatPeriodLabel(period)}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intente abrir WhatsApp automaticamente; si Chrome no aparece, toca Reintentar abrir bot local." : ""}`,
+        `Mes ${result?.periodLabel ?? selectedPeriodLabel}. Pendientes con cuota definida ${result?.totalPending ?? 0}. ${target} ${result?.queued ?? 0}. Cola anterior reemplazada ${result?.replacedQueued ?? 0}. Sin telefono ${result?.skippedNoPhone ?? 0}. Sin cuota definida ${result?.skippedUndefinedFee ?? 0}. Registros fallidos ${result?.reminderRecordsFailed ?? 0}.${result?.mode === "local-queue" ? " Intente abrir WhatsApp automaticamente; si Chrome no aparece, toca Reintentar abrir bot local." : ""}`,
       );
       setTrackingJobs(result?.jobs ?? []);
-      setTrackingPeriodLabel(result?.periodLabel ?? formatPeriodLabel(period));
+      setTrackingPeriodLabel(result?.periodLabel ?? selectedPeriodLabel);
       setTrackingRunId(result?.runId ?? "");
 
       setShowLocalLauncher(result?.mode === "local-queue");
@@ -230,16 +245,6 @@ export function RunWhatsAppReminderBotButton({
       ) : null}
     </div>
   );
-}
-
-function formatPeriodLabel(period: string) {
-  const [year, month] = period.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-
-  return new Intl.DateTimeFormat("es-AR", {
-    month: "long",
-    year: "numeric",
-  }).format(date);
 }
 
 function WhatsAppReminderRunModal({
@@ -370,7 +375,7 @@ function TrackingJobRow({
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{job.playerName}</p>
         <p className="text-muted-foreground text-xs">
-          Cuota {getJobFeeLabel(job)} · {formatPeriodLabel(job.period)}
+          Cuota {getJobFeeLabel(job)} · {formatReminderPeriodLabel(job.period)}
         </p>
         {job.error && job.status !== "queued" && job.status !== "processing" ? (
           <p className="text-destructive mt-1 line-clamp-2 text-xs">{job.error}</p>

@@ -11,6 +11,10 @@ export interface ReminderTemplateValues {
   feeAmount: string;
 }
 
+const ARGENTINA_TIME_ZONE = "America/Argentina/Buenos_Aires";
+const SPANISH_MONTH_NAME_PATTERN =
+  /\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+\d{4})?\b/gi;
+
 export function buildReminderMessage(template: string, values: ReminderTemplateValues) {
   return template
     .replaceAll("{nombre}", values.playerName)
@@ -22,13 +26,48 @@ export function buildReminderMessage(template: string, values: ReminderTemplateV
     .replaceAll("((monto de la cuota del mes))", values.feeAmount);
 }
 
+export function normalizeReminderMessageMonth(message: string, currentMonth: string) {
+  const normalizedCurrentMonth = currentMonth.trim();
+
+  if (!normalizedCurrentMonth) {
+    return message;
+  }
+
+  return message.replace(SPANISH_MONTH_NAME_PATTERN, normalizedCurrentMonth);
+}
+
 export function sanitizeWhatsAppPhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
+export function getCurrentReminderPeriod(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    month: "2-digit",
+    timeZone: ARGENTINA_TIME_ZONE,
+    year: "numeric",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+
+  return `${year}-${month}`;
+}
+
 export function getCurrentMonthLabel(date = new Date()) {
+  return formatReminderPeriodLabel(getCurrentReminderPeriod(date));
+}
+
+export function formatReminderPeriodLabel(period: string) {
+  const [year, month] = period.split("-").map(Number);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return period;
+  }
+
+  const safeDate = new Date(Date.UTC(year, month - 1, 15, 12));
+
   return new Intl.DateTimeFormat("es-AR", {
     month: "long",
+    timeZone: "UTC",
     year: "numeric",
-  }).format(date);
+  }).format(safeDate);
 }
