@@ -75,7 +75,7 @@ export interface AppNotification {
   readAt?: string;
 }
 
-export type ReminderStatus = "queued" | "sent" | "failed" | "skipped";
+export type ReminderStatus = "queued" | "processing" | "sent" | "failed" | "skipped";
 
 export interface ReminderJob {
   id: string;

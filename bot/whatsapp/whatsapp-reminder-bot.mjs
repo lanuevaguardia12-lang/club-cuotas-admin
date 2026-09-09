@@ -31,8 +31,7 @@ const statusFile = path.resolve(
   __dirname,
   process.env.WHATSAPP_BOT_STATUS_FILE ?? "./whatsapp-bot-status.json",
 );
-const clientId =
-  process.env.WHATSAPP_BOT_CLIENT_ID?.trim() || "club-cuotas-reminders-v2";
+const clientId = process.env.WHATSAPP_BOT_CLIENT_ID?.trim() || "club-cuotas-reminders-v2";
 const sessionPath = path.resolve(
   __dirname,
   process.env.WHATSAPP_SESSION_PATH ?? "./.wwebjs_auth",
@@ -235,10 +234,16 @@ async function processJob(job) {
     return;
   }
 
+  const locked = await markJobProcessing(job);
+
+  if (!locked) {
+    log(`Omitido: ${job.period} ${job.playerName} ya no estaba pendiente.`);
+    return;
+  }
+
   try {
     if (dryRun) {
       log(`[DRY_RUN] ${phone} ${job.playerName} ${job.message}`);
-      return;
     } else {
       await client.sendMessage(`${phone}@c.us`, job.message);
     }
@@ -265,7 +270,15 @@ async function processJob(job) {
   }
 }
 
-async function updateJob(reminderId, status, error) {
+async function markJobProcessing(job) {
+  const result = await updateJob(job.id, "processing", undefined, {
+    allowConflict: true,
+  });
+
+  return !result.conflict;
+}
+
+async function updateJob(reminderId, status, error, options = {}) {
   const response = await fetch(new URL("/api/bot/whatsapp-reminders/jobs", appUrl), {
     body: JSON.stringify({ error, reminderId, status }),
     headers: {
@@ -275,9 +288,17 @@ async function updateJob(reminderId, status, error) {
     method: "PATCH",
   });
 
+  if (response.status === 409 && options.allowConflict) {
+    return { conflict: true };
+  }
+
   if (!response.ok) {
     throw new Error(`No se pudo actualizar ${reminderId}: ${await response.text()}`);
   }
+
+  const data = await response.json().catch(() => ({}));
+
+  return { conflict: false, data };
 }
 
 async function inspectStartupPage() {

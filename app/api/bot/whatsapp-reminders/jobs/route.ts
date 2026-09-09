@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { apiAuditActor } from "@/lib/audit";
-import { isWhatsAppBotReminder } from "@/lib/whatsapp-bot";
+import {
+  buildWhatsAppBotReminderMarker,
+  getWhatsAppBotReminderRunId,
+  isWhatsAppBotReminder,
+} from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
 import type { ReminderJob, ReminderStatus } from "@/types/premium";
 
@@ -20,17 +24,19 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeAllRuns = searchParams.get("all") === "1";
   const period = searchParams.get("period");
+  const runId = searchParams.get("runId")?.trim();
   const limit = clampLimit(searchParams.get("limit"));
   const dataService = getDataService();
   const queuedReminders = (await dataService.getReminderJobs())
     .filter((reminder) => reminder.status === "queued")
     .filter(isWhatsAppBotReminder)
+    .filter((reminder) => !runId || getWhatsAppBotReminderRunId(reminder) === runId)
     .filter((reminder) => !period || reminder.period === period);
   const targetReminders = includeAllRuns
     ? queuedReminders
-    : period
+    : runId || period
       ? queuedReminders
-      : filterLatestReminderPeriod(queuedReminders);
+      : filterLatestReminderRun(queuedReminders);
   const { reminders: currentReminders, skipped: skippedStale } =
     await filterCurrentPendingReminders(dataService, targetReminders);
   const jobs = currentReminders
@@ -79,32 +85,53 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "Payload invalido." }, { status: 400 });
   }
 
-  await getDataService().updateReminderJobStatus({
+  const dataService = getDataService();
+  const reminder = (await dataService.getReminderJobs()).find(
+    (job) => job.id === reminderId,
+  );
+
+  if (!reminder) {
+    return NextResponse.json(
+      { message: "No se encontro el recordatorio a actualizar." },
+      { status: 404 },
+    );
+  }
+
+  if (status === "processing" && reminder.status !== "queued") {
+    return NextResponse.json(
+      {
+        message: "El recordatorio ya no esta pendiente.",
+        reminderId,
+        status: reminder.status,
+      },
+      { status: 409 },
+    );
+  }
+
+  await dataService.updateReminderJobStatus({
+    error: buildReminderStatusError(reminder, status, body.error),
     reminderId,
     status,
     sentAt: status === "sent" ? new Date().toISOString() : undefined,
-    error:
-      status === "sent"
-        ? ""
-        : typeof body.error === "string"
-          ? body.error.slice(0, 500)
-          : undefined,
   });
-  await getDataService()
-    .recordAuditEvent({
-      actor: apiAuditActor,
-      action: status === "sent" ? "reminder.sent" : "system.error",
-      entityType: "reminder",
-      entityId: reminderId,
-      summary:
-        status === "sent"
-          ? `Bot local marco enviado el recordatorio ${reminderId}.`
-          : `Bot local marco ${status} el recordatorio ${reminderId}.`,
-      metadata: {
-        status,
-      },
-    })
-    .catch(() => undefined);
+
+  if (status !== "processing") {
+    await dataService
+      .recordAuditEvent({
+        actor: apiAuditActor,
+        action: status === "sent" ? "reminder.sent" : "system.error",
+        entityType: "reminder",
+        entityId: reminderId,
+        summary:
+          status === "sent"
+            ? `Bot local marco enviado el recordatorio ${reminderId}.`
+            : `Bot local marco ${status} el recordatorio ${reminderId}.`,
+        metadata: {
+          status,
+        },
+      })
+      .catch(() => undefined);
+  }
 
   return NextResponse.json({ ok: true, reminderId, status });
 }
@@ -145,6 +172,24 @@ function filterLatestReminderPeriod(reminders: ReminderJob[]) {
   }
 
   return reminders.filter((reminder) => reminder.period === latestPeriod);
+}
+
+function filterLatestReminderRun(reminders: ReminderJob[]) {
+  if (reminders.length === 0) {
+    return [];
+  }
+
+  const latestReminder = [...reminders].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  )[0];
+  const latestRunId = latestReminder ? getWhatsAppBotReminderRunId(latestReminder) : "";
+
+  return latestRunId
+    ? reminders.filter(
+        (reminder) => getWhatsAppBotReminderRunId(reminder) === latestRunId,
+      )
+    : filterLatestReminderPeriod(reminders);
 }
 
 async function filterCurrentPendingReminders(
@@ -195,7 +240,11 @@ async function filterCurrentPendingReminders(
     const results = await Promise.allSettled(
       staleReminders.map((reminder) =>
         dataService.updateReminderJobStatus({
-          error: "Omitido porque el jugador ya no figura pendiente en el dashboard.",
+          error: buildReminderStatusError(
+            reminder,
+            "skipped",
+            "Omitido porque el jugador ya no figura pendiente en el dashboard.",
+          ),
           reminderId: reminder.id,
           status: "skipped",
         }),
@@ -219,9 +268,31 @@ function clampLimit(value: string | null) {
 }
 
 function normalizeWritableStatus(value: unknown): ReminderStatus | null {
-  if (value === "sent" || value === "failed" || value === "skipped") {
+  if (
+    value === "processing" ||
+    value === "sent" ||
+    value === "failed" ||
+    value === "skipped"
+  ) {
     return value;
   }
 
   return null;
+}
+
+function buildReminderStatusError(
+  reminder: ReminderJob,
+  status: ReminderStatus,
+  rawError: unknown,
+) {
+  const runId = getWhatsAppBotReminderRunId(reminder);
+  const marker = runId ? buildWhatsAppBotReminderMarker(runId) : "";
+  const error =
+    typeof rawError === "string" && rawError.trim() ? rawError.trim().slice(0, 500) : "";
+
+  if (status === "processing" || status === "sent") {
+    return marker || undefined;
+  }
+
+  return [marker, error].filter(Boolean).join("; ") || undefined;
 }

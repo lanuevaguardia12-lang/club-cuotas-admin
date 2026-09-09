@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { buildReminderMessage, sanitizeWhatsAppPhone } from "@/lib/reminders";
 import {
   buildWhatsAppBotReminderMarker,
+  getWhatsAppBotReminderRunId,
   isWhatsAppBotReminder,
 } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
@@ -26,6 +27,16 @@ interface WhatsAppBotPayloadMessage {
   playerId: string;
   playerName: string;
   rawPhone: string;
+}
+
+interface WhatsAppBotRunJob {
+  amount: number;
+  fee: string;
+  paymentStatus: string;
+  period: string;
+  playerId: string;
+  playerName: string;
+  status: "queued" | "failed";
 }
 
 export async function POST(request: NextRequest) {
@@ -80,10 +91,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
   const pendingPlayers = dashboard.players.filter((player) => player.status !== "paid");
   const pendingPlayersWithDefinedFee = pendingPlayers.filter(hasDashboardFeeDefined);
   const previousQueuedReminders = reminders.filter(
-    (reminder) =>
-      reminder.period === period &&
-      reminder.status === "queued" &&
-      isWhatsAppBotReminder(reminder),
+    (reminder) => reminder.status === "queued" && isWhatsAppBotReminder(reminder),
   );
   const replacedQueued = await skipQueuedWhatsAppBotReminders(
     dataService,
@@ -113,7 +121,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
     messages.push({
       amount,
       fee,
-      message: buildReminderMessage(messageTemplate, {
+      message: buildCurrentPeriodReminderMessage(messageTemplate, {
         clubName: settingsData.settings.clubName,
         currentMonth: periodLabel,
         feeAmount: fee,
@@ -236,6 +244,7 @@ async function runWhatsAppReminderBot(request: NextRequest) {
   const reminderRecordsFailed = reminderResults.filter(
     (result) => result.status === "rejected",
   ).length;
+  const jobs = buildRunJobs(messages, reminderResults);
 
   if (reminderRecordsFailed === messages.length) {
     return NextResponse.json(
@@ -244,9 +253,11 @@ async function runWhatsAppReminderBot(request: NextRequest) {
           "No se pudo crear la cola en la hoja Recordatorios. Revisá que la Service Account tenga permisos de edición y que exista el rango GOOGLE_SHEETS_REMINDERS_RANGE.",
         mode: webhookUrl ? "webhook" : "local-queue",
         period,
+        periodLabel,
         queued: 0,
         reminderRecordsFailed,
         replacedQueued,
+        runId,
         skippedAlreadyQueued: 0,
         skippedNoPhone,
         skippedUndefinedFee,
@@ -293,11 +304,13 @@ async function runWhatsAppReminderBot(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     mode: webhookUrl ? "webhook" : "local-queue",
+    jobs,
     period,
     periodLabel,
     queued: messages.length - reminderRecordsFailed,
     replacedQueued,
     reminderRecordsFailed,
+    runId,
     skippedAlreadyQueued: 0,
     skippedNoPhone,
     skippedUndefinedFee,
@@ -390,7 +403,10 @@ async function skipQueuedWhatsAppBotReminders(
   const results = await Promise.allSettled(
     reminders.map((reminder) =>
       dataService.updateReminderJobStatus({
-        error: "Reemplazado por una nueva corrida del bot de WhatsApp.",
+        error: buildSkippedReminderError(
+          reminder,
+          "Reemplazado por una nueva corrida del bot de WhatsApp.",
+        ),
         reminderId: reminder.id,
         status: "skipped",
       }),
@@ -398,6 +414,25 @@ async function skipQueuedWhatsAppBotReminders(
   );
 
   return results.filter((result) => result.status === "fulfilled").length;
+}
+
+function buildRunJobs(
+  messages: WhatsAppBotPayloadMessage[],
+  results: PromiseSettledResult<void>[],
+): WhatsAppBotRunJob[] {
+  return messages.map((message, index) => {
+    const result = results[index];
+
+    return {
+      amount: message.amount,
+      fee: message.fee,
+      paymentStatus: message.paymentStatus,
+      period: message.period,
+      playerId: message.playerId,
+      playerName: message.playerName,
+      status: result?.status === "rejected" ? "failed" : "queued",
+    };
+  });
 }
 
 function formatCurrency(amount: number) {
@@ -420,6 +455,23 @@ function normalizeMessageTemplate(value: unknown, fallback: string) {
   }
 
   return template.slice(0, 1200);
+}
+
+function buildCurrentPeriodReminderMessage(
+  template: string,
+  values: Parameters<typeof buildReminderMessage>[1],
+) {
+  return buildReminderMessage(template, values).replace(
+    /cuota\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+de\s+\d{4})?/gi,
+    `cuota de ${values.currentMonth}`,
+  );
+}
+
+function buildSkippedReminderError(reminder: ReminderJob, reason: string) {
+  const runId = getWhatsAppBotReminderRunId(reminder);
+  const marker = runId ? buildWhatsAppBotReminderMarker(runId) : "";
+
+  return [marker, reason].filter(Boolean).join("; ") || undefined;
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

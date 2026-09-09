@@ -741,10 +741,7 @@ export class GoogleSheetsService implements IDataService {
     const sheets = this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.settingsRange);
 
-    await this.ensureSheetForRange(
-      this.config.settingsRange,
-      this.config.spreadsheetId,
-    );
+    await this.ensureSheetForRange(this.config.settingsRange, this.config.spreadsheetId);
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: this.config.spreadsheetId,
@@ -11433,6 +11430,10 @@ function normalizeReminderStatus(value: string): ReminderStatus {
 
   if (status === "sent" || status === "enviado") {
     return "sent";
+  }
+
+  if (status === "processing" || status === "enviando" || status === "en proceso") {
+    return "processing";
   }
 
   if (status === "failed" || status === "fallido" || status === "error") {
