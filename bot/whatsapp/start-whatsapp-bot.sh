@@ -52,7 +52,7 @@ read_status_boolean() {
 
 is_healthy_status() {
   case "$1" in
-    authenticated|idle|loading|processing|qr|ready|send-waiting|sent|starting|startup-waiting|state-change)
+    authenticated|idle|loading|processing|qr|ready|sent|starting|startup-waiting|state-change)
       return 0
       ;;
     *)

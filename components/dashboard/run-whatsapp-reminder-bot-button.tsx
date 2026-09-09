@@ -118,7 +118,6 @@ export function RunWhatsAppReminderBotButton({
     setLoading(true);
     setMessage("");
     setShowLocalLauncher(true);
-    openLocalBotLauncher();
 
     try {
       const response = await fetch("/api/bot/whatsapp-reminders", {
@@ -193,9 +192,27 @@ export function RunWhatsAppReminderBotButton({
           Variables: {"{nombre}"}, {"{mes}"}, {"{monto}"}.
         </span>
       </label>
-      <Button type="button" variant="outline" onClick={runBot} disabled={loading}>
-        <Bot />
-        Abrir WhatsApp y correr bot
+      <Button
+        asChild
+        className={loading ? "pointer-events-none opacity-50" : undefined}
+        variant="outline"
+      >
+        <a
+          aria-disabled={loading}
+          href={LOCAL_WHATSAPP_BOT_URL}
+          onClick={(event) => {
+            if (loading) {
+              event.preventDefault();
+              return;
+            }
+
+            void runBot();
+          }}
+          tabIndex={loading ? -1 : undefined}
+        >
+          <Bot />
+          Abrir WhatsApp y correr bot
+        </a>
       </Button>
       {showLocalLauncher ? (
         <Button asChild variant="secondary">
@@ -223,19 +240,6 @@ function formatPeriodLabel(period: string) {
     month: "long",
     year: "numeric",
   }).format(date);
-}
-
-function openLocalBotLauncher() {
-  const link = document.createElement("a");
-
-  link.href = LOCAL_WHATSAPP_BOT_URL;
-  link.style.display = "none";
-  link.setAttribute("aria-hidden", "true");
-  document.body.appendChild(link);
-  link.click();
-  window.setTimeout(() => {
-    link.remove();
-  }, 1000);
 }
 
 function WhatsAppReminderRunModal({
