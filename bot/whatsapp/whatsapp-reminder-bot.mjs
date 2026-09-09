@@ -35,6 +35,10 @@ const startupStableDelayMs = readPositiveNumber(
   "WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS",
   15_000,
 );
+const protocolTimeoutMs = readPositiveNumber(
+  "WHATSAPP_BOT_PROTOCOL_TIMEOUT_MS",
+  3_600_000,
+);
 const browserExecutablePath = getBrowserExecutablePath();
 const whatsappUserAgent =
   process.env.WHATSAPP_BOT_USER_AGENT?.trim() ||
@@ -67,6 +71,7 @@ const client = new Client({
     args: ["--disable-dev-shm-usage", "--no-sandbox", "--start-maximized"],
     defaultViewport: null,
     headless,
+    protocolTimeout: protocolTimeoutMs,
   },
   userAgent: whatsappUserAgent,
 });
@@ -101,6 +106,7 @@ writeStatus("starting", {
   dryRun,
   headless,
   pollIntervalMs,
+  protocolTimeoutMs,
   sendDelayMs,
   sendReadyTimeoutMs,
   startupStableDelayMs,

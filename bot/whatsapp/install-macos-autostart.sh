@@ -37,6 +37,8 @@ cat > "$PLIST_PATH" <<EOF
     <string>3600000</string>
     <key>WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS</key>
     <string>15000</string>
+    <key>WHATSAPP_BOT_PROTOCOL_TIMEOUT_MS</key>
+    <string>3600000</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

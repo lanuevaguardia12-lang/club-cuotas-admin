@@ -104,6 +104,9 @@ WhatsApp > Dispositivos vinculados > Vincular un dispositivo
   chat. Por defecto son `3600000` milisegundos en modo visible.
 - `WHATSAPP_BOT_STARTUP_STABLE_DELAY_MS`: pausa despues de `ready` antes de
   consultar la cola. Por defecto son `15000` milisegundos.
+- `WHATSAPP_BOT_PROTOCOL_TIMEOUT_MS`: tiempo maximo de espera del canal interno
+  de Chrome/Puppeteer. Por defecto son `3600000` milisegundos para evitar
+  errores como `Runtime.callFunctionOn timed out`.
 - `WHATSAPP_BOT_CLIENT_ID`: nombre de la sesión local. Por defecto usa
   `club-cuotas-reminders-v2`.
 
