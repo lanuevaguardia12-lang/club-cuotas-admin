@@ -1,6 +1,14 @@
 "use client";
 
-import { Bot, CheckCircle2, Clock3, LoaderCircle, X, XCircle } from "lucide-react";
+import {
+  Bot,
+  CheckCircle2,
+  Clock3,
+  FileDown,
+  LoaderCircle,
+  X,
+  XCircle,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -13,6 +21,7 @@ import {
 } from "@/lib/reminders";
 
 const LOCAL_WHATSAPP_BOT_URL = "lng-whatsapp-bot://start";
+const WINDOWS_INSTALLER_URL = "/api/bot/whatsapp-reminders/windows-installer";
 
 interface RunWhatsAppReminderBotButtonProps {
   period: string;
@@ -227,6 +236,12 @@ export function RunWhatsAppReminderBotButton({
         >
           <Bot />
           Abrir WhatsApp y correr bot
+        </a>
+      </Button>
+      <Button asChild variant="secondary">
+        <a download href={WINDOWS_INSTALLER_URL}>
+          <FileDown />
+          Instalar bot Windows
         </a>
       </Button>
       {showLocalLauncher ? (

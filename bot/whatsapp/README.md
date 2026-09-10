@@ -77,6 +77,23 @@ WhatsApp:
 WhatsApp > Dispositivos vinculados > Vincular un dispositivo
 ```
 
+### Windows
+
+En Windows, la forma recomendada es usar el boton `Instalar bot Windows` de la
+app. Ese boton descarga un instalador `.cmd` para la computadora donde estas
+trabajando.
+
+Ejecutalo una sola vez. El instalador:
+
+1. Instala Node.js LTS con `winget` si no lo encuentra.
+2. Instala Google Chrome con `winget` si no lo encuentra.
+3. Copia el bot local en `%LOCALAPPDATA%\LaNuevaGuardia\WhatsAppBot`.
+4. Configura el archivo `.env` con la URL de la app y el secret del bot.
+5. Registra el protocolo `lng-whatsapp-bot://start`.
+
+Cuando termine, volve a la app y toca `Abrir WhatsApp y correr bot`. La primera
+vez Windows puede pedir confirmar el enlace y WhatsApp puede pedir escanear QR.
+
 ## Variables
 
 - `CLUB_APP_URL`: URL de Vercel, por ejemplo

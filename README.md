@@ -969,6 +969,12 @@ Tambien se puede correr desde la raiz del repo con:
 npm run bot:whatsapp
 ```
 
+En Windows, el administrador puede usar el boton `Instalar bot Windows` desde el
+dashboard. Descarga un instalador `.cmd` que prepara Node.js, Chrome, el bot
+local, el `.env` y el protocolo `lng-whatsapp-bot://start` en esa computadora.
+Despues de esa instalacion inicial, en esa PC alcanza con tocar
+`Abrir WhatsApp y correr bot`.
+
 Variables de `bot/whatsapp/.env`:
 
 ```bash
