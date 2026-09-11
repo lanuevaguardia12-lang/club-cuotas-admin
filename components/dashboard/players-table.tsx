@@ -31,6 +31,8 @@ interface PlayersTableProps {
   rows: PlayerTableRow[];
 }
 
+type StatusFilter = "all" | PlayerPaymentStatus | "without-fee";
+
 const statusLabels: Record<PlayerPaymentStatus, string> = {
   paid: "Pagó",
   debt: "Debe",
@@ -43,16 +45,17 @@ const statusVariants: Record<PlayerPaymentStatus, "success" | "danger" | "warnin
   pending: "warning",
 };
 
-const statusOptions: Array<{ value: "all" | PlayerPaymentStatus; label: string }> = [
+const statusOptions: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Todos los estados" },
   { value: "paid", label: "Pagó" },
   { value: "debt", label: "Debe" },
   { value: "pending", label: "Pendiente" },
+  { value: "without-fee", label: "Sin cuota" },
 ];
 
 const feeSourceLabels: Record<PlayerTableRow["feeSource"], string> = {
   calculator: "Calculador",
-  none: "Sin cálculo",
+  none: "Sin cuota",
   payments: "Cuotas",
   player: "Jugador",
 };
@@ -61,7 +64,7 @@ export function PlayersTable({ period, rows }: PlayersTableProps) {
   const router = useLoadingRouter();
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | PlayerPaymentStatus>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
   const categories = useMemo(
@@ -78,7 +81,11 @@ export function PlayersTable({ period, rows }: PlayersTableProps) {
         [row.name, row.category, row.phone, row.fee, row.observations]
           .map(normalize)
           .some((value) => value.includes(normalizedQuery));
-      const matchesStatus = statusFilter === "all" || row.status === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "without-fee"
+          ? !hasDefinedFee(row)
+          : hasDefinedFee(row) && row.status === statusFilter);
       const matchesCategory = categoryFilter === "all" || row.category === categoryFilter;
 
       return matchesQuery && matchesStatus && matchesCategory;
@@ -143,7 +150,7 @@ export function PlayersTable({ period, rows }: PlayersTableProps) {
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => <StatusBadge player={row.original} />,
       },
       {
         accessorFn: (row) => row.lastPaymentDate ?? "",
@@ -219,9 +226,7 @@ export function PlayersTable({ period, rows }: PlayersTableProps) {
             <span className="sr-only">Filtrar por estado</span>
             <select
               value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value as "all" | PlayerPaymentStatus)
-              }
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
               className="border-input bg-background focus:ring-ring h-10 w-full rounded-md border px-3 text-sm outline-none focus:ring-2"
             >
               {statusOptions.map((option) => (
@@ -371,8 +376,14 @@ function SortButton({ label, onClick }: { label: string; onClick: () => void }) 
   );
 }
 
-function StatusBadge({ status }: { status: PlayerPaymentStatus }) {
-  return <Badge variant={statusVariants[status]}>{statusLabels[status]}</Badge>;
+function StatusBadge({ player }: { player: PlayerTableRow }) {
+  if (!hasDefinedFee(player)) {
+    return <Badge variant="secondary">Sin cuota</Badge>;
+  }
+
+  return (
+    <Badge variant={statusVariants[player.status]}>{statusLabels[player.status]}</Badge>
+  );
 }
 
 function RowActions({ player }: { player: PlayerTableRow }) {
@@ -428,7 +439,7 @@ function PlayerCard({ row }: { row: PlayerTableRow }) {
             </CardTitle>
             <p className="text-muted-foreground mt-1 text-sm">{row.category}</p>
           </div>
-          <StatusBadge status={row.status} />
+          <StatusBadge player={row} />
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -494,6 +505,10 @@ function normalize(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function hasDefinedFee(player: Pick<PlayerTableRow, "feeAmount" | "feeSource">) {
+  return player.feeSource !== "none" && player.feeAmount > 0;
 }
 
 function formatPeriod(period: string) {

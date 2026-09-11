@@ -9384,11 +9384,12 @@ function buildPlayerTableRows(
         : player.monthlyFee
           ? "player"
           : "none";
+    const hasDefinedFee = feeSource !== "none" && feeAmount > 0;
     const status = getPlayerPaymentStatus(
       playerFees,
       currentFee,
       latestFee,
-      feeSource !== "none",
+      hasDefinedFee,
     );
 
     return {
@@ -9396,14 +9397,14 @@ function buildPlayerTableRows(
       name: player.name,
       category: player.category,
       phone: player.phone,
-      fee: feeSource === "none" ? "-" : formatCurrency(feeAmount),
+      fee: hasDefinedFee ? formatCurrency(feeAmount) : "-",
       feeAmount,
       feePeriod: period,
-      feeSource,
+      feeSource: hasDefinedFee ? feeSource : "none",
       status,
       lastPayment: latestPaidFee?.paidAt ? formatDate(latestPaidFee.paidAt) : "-",
       lastPaymentDate: latestPaidFee?.paidAt,
-      observations: buildPlayerObservation(player, status),
+      observations: buildPlayerObservation(player, status, hasDefinedFee),
     };
   });
 }
@@ -9646,9 +9647,17 @@ function getPlayerPaymentStatus(
   return "pending";
 }
 
-function buildPlayerObservation(player: PlayerRecord, status: PlayerPaymentStatus) {
+function buildPlayerObservation(
+  player: PlayerRecord,
+  status: PlayerPaymentStatus,
+  hasDefinedFee = true,
+) {
   if (player.observations && player.observations !== "-") {
     return player.observations;
+  }
+
+  if (!hasDefinedFee) {
+    return "Sin cuota definida";
   }
 
   if (status === "paid") {

@@ -8,6 +8,7 @@ import {
   normalizeReminderMessageMonth,
 } from "@/lib/reminders";
 import { getDataService } from "@/services/data-service";
+import type { PlayerTableRow } from "@/types/dashboard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,8 @@ export async function GET(request: NextRequest) {
       .map((reminder) => reminder.playerId),
   );
   const targetPlayers = dashboard.players.filter(
-    (player) => player.status !== "paid" && !alreadyQueued.has(player.id),
+    (player) =>
+      player.status !== "paid" && hasDefinedFee(player) && !alreadyQueued.has(player.id),
   );
 
   for (const player of targetPlayers) {
@@ -84,4 +86,8 @@ export async function GET(request: NextRequest) {
     skipped: alreadyQueued.size,
     period,
   });
+}
+
+function hasDefinedFee(player: Pick<PlayerTableRow, "feeAmount" | "feeSource">) {
+  return player.feeSource !== "none" && player.feeAmount > 0;
 }

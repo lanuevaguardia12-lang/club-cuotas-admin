@@ -11,7 +11,7 @@ import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { formatPeriod } from "@/lib/player-profile";
 import { getDataService } from "@/services/data-service";
-import type { PlayerPaymentStatus } from "@/types/dashboard";
+import type { PlayerPaymentStatus, PlayerTableRow } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +60,11 @@ export default async function FeeTrackingPage({ searchParams }: FeeTrackingPageP
         <DashboardPeriodSelector period={dashboard.period} />
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           title="Total jugadores"
           value={dashboard.players.length}
-          detail={`Cuotas de ${periodLabel}`}
+          detail={`${counts.withDefinedFee} con cuota definida`}
           icon={<UsersRound className="size-4" aria-hidden="true" />}
         />
         <MetricCard
@@ -77,7 +77,7 @@ export default async function FeeTrackingPage({ searchParams }: FeeTrackingPageP
         <MetricCard
           title="Pendientes"
           value={counts.pending}
-          detail="Falta registrar el pago"
+          detail="Con cuota definida sin pagar"
           icon={<Clock3 className="size-4" aria-hidden="true" />}
           tone="warning"
         />
@@ -87,6 +87,12 @@ export default async function FeeTrackingPage({ searchParams }: FeeTrackingPageP
           detail="Deben recibir seguimiento"
           icon={<AlertTriangle className="size-4" aria-hidden="true" />}
           tone="danger"
+        />
+        <MetricCard
+          title="Sin cuota"
+          value={counts.withoutDefinedFee}
+          detail={`Sin monto para ${periodLabel}`}
+          icon={<AlertTriangle className="size-4" aria-hidden="true" />}
         />
       </section>
 
@@ -161,10 +167,17 @@ function MetricCard({
 }
 
 function countPlayersByPaymentStatus(
-  players: Array<{ status: PlayerPaymentStatus }>,
-): Record<PlayerPaymentStatus, number> {
+  players: PlayerTableRow[],
+): Record<PlayerPaymentStatus | "withDefinedFee" | "withoutDefinedFee", number> {
   return players.reduce(
     (counts, player) => {
+      if (!hasDefinedFee(player)) {
+        counts.withoutDefinedFee += 1;
+
+        return counts;
+      }
+
+      counts.withDefinedFee += 1;
       counts[player.status] += 1;
 
       return counts;
@@ -173,8 +186,17 @@ function countPlayersByPaymentStatus(
       debt: 0,
       paid: 0,
       pending: 0,
-    } satisfies Record<PlayerPaymentStatus, number>,
+      withDefinedFee: 0,
+      withoutDefinedFee: 0,
+    } satisfies Record<
+      PlayerPaymentStatus | "withDefinedFee" | "withoutDefinedFee",
+      number
+    >,
   );
+}
+
+function hasDefinedFee(player: Pick<PlayerTableRow, "feeAmount" | "feeSource">) {
+  return player.feeSource !== "none" && player.feeAmount > 0;
 }
 
 function getMetricIconClassName(tone: "danger" | "neutral" | "success" | "warning") {
