@@ -14,7 +14,7 @@ interface SendPendingNotificationsResponse {
   failed: number;
   period: string;
   sent: number;
-  skipped: number;
+  skippedNoPush: number;
   throttled?: number;
   totalPending: number;
 }
@@ -49,7 +49,7 @@ export function SendPendingNotificationsButton({
       const result = (await response.json()) as SendPendingNotificationsResponse;
 
       setMessage(
-        `Pendientes ${result.totalPending}. Enviadas ${result.sent}. Sin dispositivo ${result.skipped}. Fallidas ${result.failed}. Salteadas por 4 dias ${result.throttled ?? 0}.`,
+        `Vencidas ${result.totalPending}. Enviadas ${result.sent}. Sin dispositivo ${result.skippedNoPush}. Fallidas ${result.failed}. Salteadas por 4 dias ${result.throttled ?? 0}.`,
       );
     } catch (error) {
       setMessage(
@@ -66,11 +66,11 @@ export function SendPendingNotificationsButton({
     <div className="flex flex-col gap-2 sm:items-end">
       <LoadingModal
         open={loading}
-        description="Enviando notificaciones a jugadores pendientes..."
+        description="Enviando notificaciones de cuota vencida..."
       />
       <Button type="button" onClick={sendNotifications} disabled={loading}>
         <BellRing />
-        Enviar notificacion a pendientes
+        Enviar cuota vencida
       </Button>
       {message ? (
         <p className="text-muted-foreground max-w-sm text-xs sm:text-right">{message}</p>

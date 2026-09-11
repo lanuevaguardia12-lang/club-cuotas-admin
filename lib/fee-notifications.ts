@@ -6,7 +6,7 @@ import type { IDataService } from "@/services/IDataService";
 import type { FeePlayerCalculation } from "@/types/fee-calculator";
 import type { AuditActor } from "@/types/premium";
 
-const NEW_FEE_NOTIFICATION_TITLE = "Ya está definida tu cuota";
+const NEW_FEE_NOTIFICATION_TITLE = "Nueva cuota definida";
 const NEW_FEE_NOTIFICATION_URL = "/mi-cuota";
 
 export interface SendDefinedFeeNotificationsResult {

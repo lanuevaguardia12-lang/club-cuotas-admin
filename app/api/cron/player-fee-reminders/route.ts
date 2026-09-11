@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { systemAuditActor, userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
-import {
-  hasAlreadySentDefinedFeeNotification,
-  sendDefinedFeeNotifications,
-} from "@/lib/fee-notifications";
+import { hasAlreadySentDefinedFeeNotification } from "@/lib/fee-notifications";
 import { isPushConfigured, sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
 import type { AuditActor, ReminderJob } from "@/types/premium";
@@ -14,6 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PUSH_REMINDER_INTERVAL_DAYS = 4;
+const OVERDUE_FEE_NOTIFICATION_TITLE = "Cuota vencida";
 
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
@@ -77,7 +75,7 @@ async function sendPendingFeePushNotifications({
       .map((notification) => notification.referenceId)
       .filter((referenceId): referenceId is string => Boolean(referenceId)),
   );
-  const definedReferenceIdsBeforeBackfill = new Set(existingReferenceIds);
+  const definedReferenceIds = new Set(existingReferenceIds);
   const emptyResult = {
     definedNotificationsBackfilled: 0,
     failed: 0,
@@ -112,11 +110,6 @@ async function sendPendingFeePushNotifications({
     });
   }
 
-  const definedResult = await sendDefinedFeeNotifications({
-    actor,
-    period,
-    trigger: trigger === "cron" ? "cron" : "manual",
-  });
   const activePlayerIds = new Set(
     feeCalculatorData.players
       .filter((player) => player.status === "active")
@@ -153,13 +146,7 @@ async function sendPendingFeePushNotifications({
   ).length;
 
   for (const player of targetPlayers) {
-    if (
-      !hasAlreadySentDefinedFeeNotification(
-        definedReferenceIdsBeforeBackfill,
-        player.id,
-        period,
-      )
-    ) {
+    if (!hasAlreadySentDefinedFeeNotification(definedReferenceIds, player.id, period)) {
       skippedNoDefinedNotification += 1;
       continue;
     }
@@ -175,7 +162,7 @@ async function sendPendingFeePushNotifications({
     ) {
       try {
         await dataService.createNotification({
-          title: "Cuota pendiente",
+          title: OVERDUE_FEE_NOTIFICATION_TITLE,
           message,
           type: "warning",
           targetRole: "player",
@@ -199,7 +186,7 @@ async function sendPendingFeePushNotifications({
     for (const subscription of subscriptions) {
       try {
         await sendPushNotification(subscription, {
-          title: "Cuota pendiente",
+          title: OVERDUE_FEE_NOTIFICATION_TITLE,
           body: message,
           tag: `fee-reminder-${player.id}-${period}`,
           url: "/mi-cuota",
@@ -250,7 +237,7 @@ async function sendPendingFeePushNotifications({
   });
 
   return NextResponse.json({
-    definedNotificationsBackfilled: definedResult.notificationsCreated,
+    definedNotificationsBackfilled: 0,
     failed,
     notificationRecordsFailed,
     notificationsCreated,
@@ -328,7 +315,7 @@ function buildPendingFeeNotificationMessage(
   fee: string,
   period: string,
 ) {
-  return `Hola, ${playerName}. Tenés pendiente la cuota de ${formatPeriod(
+  return `Hola, ${playerName}. Tenés vencida la cuota de ${formatPeriod(
     period,
   )}. El monto es ${fee}. Hacé el pago y registralo en la app para dejarla al día.`;
 }
