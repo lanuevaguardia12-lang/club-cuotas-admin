@@ -19,6 +19,7 @@ import {
   normalizeTeamProfileKey,
   sanitizeTeamShortName,
 } from "@/lib/team-profiles";
+import { isWhatsAppBotNotification } from "@/lib/whatsapp-bot";
 import { DataServiceError } from "@/services/data-service-error";
 import type { IDataService } from "@/services/IDataService";
 import type {
@@ -7976,9 +7977,13 @@ function buildPremiumData({
   cachedAt: string;
   revalidateSeconds: number;
 }): PremiumData {
+  const visibleNotifications = notifications.filter(
+    (notification) => !isWhatsAppBotNotification(notification),
+  );
+
   return {
     summary: {
-      unreadNotifications: notifications.filter(
+      unreadNotifications: visibleNotifications.filter(
         (notification) => notification.status === "unread",
       ).length,
       queuedReminders: reminders.filter((reminder) => reminder.status === "queued")
@@ -7996,7 +8001,7 @@ function buildPremiumData({
     },
     audit,
     logs,
-    notifications,
+    notifications: visibleNotifications,
     reminders,
     payments,
     source: {

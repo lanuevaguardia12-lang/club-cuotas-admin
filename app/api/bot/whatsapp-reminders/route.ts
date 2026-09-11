@@ -275,17 +275,6 @@ async function runWhatsAppReminderBot(request: NextRequest) {
   }
 
   await dataService
-    .createNotification({
-      title: "Bot de recordatorios iniciado",
-      message: webhookUrl
-        ? `${messages.length} mensajes de WhatsApp enviados al bot para ${periodLabel}.`
-        : `${messages.length} mensajes de WhatsApp quedaron en cola para el bot local de ${periodLabel}.`,
-      type: reminderRecordsFailed > 0 ? "warning" : "success",
-      targetRole: "all",
-      referenceId: runId,
-    })
-    .catch(() => undefined);
-  await dataService
     .recordAuditEvent({
       actor: userToAuditActor(user),
       action: "reminder.queued",

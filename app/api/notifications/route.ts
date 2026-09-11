@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { userToAuditActor } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isWhatsAppBotNotification } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
 import type { AuthUser } from "@/types/auth";
 import type { AppNotification } from "@/types/premium";
@@ -31,6 +32,7 @@ export async function GET() {
   }
 
   const notifications = (await getDataService().getNotifications())
+    .filter((notification) => !isWhatsAppBotNotification(notification))
     .filter((notification) => canUserSeeNotification(notification, user))
     .slice(0, 50);
 
@@ -65,7 +67,9 @@ export async function PATCH(request: NextRequest) {
   }
 
   const dataService = getDataService();
-  const notifications = await dataService.getNotifications();
+  const notifications = (await dataService.getNotifications()).filter(
+    (notification) => !isWhatsAppBotNotification(notification),
+  );
   if (parsed.data.markAll) {
     const unreadNotifications = notifications.filter(
       (candidate) =>
