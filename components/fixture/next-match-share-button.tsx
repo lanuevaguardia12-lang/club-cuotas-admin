@@ -1047,12 +1047,12 @@ function formatMatchDate(match: LeagueFixtureMatch) {
 
 function formatCompetition(kind: LeagueCompetitionKind) {
   const labels: Record<LeagueCompetitionKind, string> = {
-    cup: "Copa",
-    friendly: "Amistoso",
-    league: "Liga",
+    cup: "COPA",
+    friendly: "AMISTOSO",
+    league: "LIGA",
   };
 
-  return labels[kind] ?? "Partido";
+  return labels[kind] ?? "PARTIDO";
 }
 
 type OutcomeKind = "draw" | "loss" | "none" | "win";

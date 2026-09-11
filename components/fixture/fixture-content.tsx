@@ -623,7 +623,7 @@ function UnifiedStandingsTable({
                   "border-border border-t transition-colors",
                   getPositionRowClassName(row.position),
                   isClub &&
-                    "border-y-2 border-yellow-300 bg-yellow-50 text-yellow-950 shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70 dark:bg-yellow-950/30 dark:text-yellow-50",
+                    "border-y-2 border-yellow-300 font-semibold shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70",
                 )}
               >
                 <td className="px-1 py-1.5">
@@ -631,8 +631,7 @@ function UnifiedStandingsTable({
                     className={cn(
                       "inline-grid size-5 place-items-center rounded-sm text-[0.65rem] font-bold sm:size-7 sm:rounded-md sm:text-xs",
                       getPositionBadgeClassName(row.position),
-                      isClub &&
-                        "bg-yellow-400 text-blue-950 ring-2 ring-yellow-100 dark:bg-yellow-300 dark:ring-yellow-100/40",
+                      isClub && "ring-2 ring-yellow-100 dark:ring-yellow-100/40",
                     )}
                   >
                     {row.position}
@@ -1316,15 +1315,15 @@ function getOutcomeClassName(kind: OutcomeKind) {
 
 function getPositionRowClassName(position: number) {
   if (position === 1) {
-    return "bg-amber-50/70 dark:bg-amber-950/20";
+    return "bg-amber-100/70 dark:bg-amber-950/30";
   }
 
   if (position === 2) {
-    return "bg-sky-50/70 dark:bg-sky-950/20";
+    return "bg-sky-100/70 dark:bg-sky-950/30";
   }
 
   if (position === 3 || position === 4) {
-    return "bg-violet-50/70 dark:bg-violet-950/20";
+    return "bg-violet-100/70 dark:bg-violet-950/30";
   }
 
   return "bg-card";

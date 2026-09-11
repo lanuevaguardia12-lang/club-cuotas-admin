@@ -711,12 +711,12 @@ function parseStoryDate(value: string) {
 
 function formatCompetition(sourceType: PlayerOfMatchMatch["sourceType"]) {
   const labels: Record<PlayerOfMatchMatch["sourceType"], string> = {
-    cup: "Copa",
-    friendly: "Amistoso",
-    league: "Liga",
+    cup: "COPA",
+    friendly: "AMISTOSO",
+    league: "LIGA",
   };
 
-  return labels[sourceType] ?? "Partido";
+  return labels[sourceType] ?? "PARTIDO";
 }
 
 function loadImage(source: string) {

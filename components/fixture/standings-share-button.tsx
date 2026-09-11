@@ -16,8 +16,47 @@ const STORY_HEIGHT = 1920;
 const POST_WIDTH = 1080;
 const POST_HEIGHT = 1350;
 const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
+const STANDINGS_LEGEND_ITEMS: StandingClassificationStyle[] = [
+  {
+    badgeFill: "#f59e0b",
+    label: "1° Campeón",
+    legendFill: "#fef3c7",
+    legendText: "#78350f",
+    positions: [1],
+    rowFill: "rgba(245,158,11,0.24)",
+    rowStroke: "rgba(245,158,11,0.58)",
+  },
+  {
+    badgeFill: "#0ea5e9",
+    label: "2° Ascenso",
+    legendFill: "#e0f2fe",
+    legendText: "#075985",
+    positions: [2],
+    rowFill: "rgba(14,165,233,0.22)",
+    rowStroke: "rgba(14,165,233,0.56)",
+  },
+  {
+    badgeFill: "#8b5cf6",
+    label: "3°/4° Promoción",
+    legendFill: "#ede9fe",
+    legendText: "#5b21b6",
+    positions: [3, 4],
+    rowFill: "rgba(139,92,246,0.22)",
+    rowStroke: "rgba(139,92,246,0.56)",
+  },
+];
 
 type StandingsShareFormat = "post" | "story";
+
+interface StandingClassificationStyle {
+  badgeFill: string;
+  label: string;
+  legendFill: string;
+  legendText: string;
+  positions: number[];
+  rowFill: string;
+  rowStroke: string;
+}
 
 interface LoadedTeamCrest {
   fit: TeamCrestFit;
@@ -181,7 +220,8 @@ async function drawStandingsPlate(
   const tableY = compact ? 338 : 474;
   const tableX = compact ? 58 : 64;
   const tableWidth = width - tableX * 2;
-  const tableBottom = footerY - (compact ? 64 : 92);
+  const legendY = footerY - (compact ? 86 : 124);
+  const tableBottom = legendY - (compact ? 26 : 42);
 
   drawBackground(context, width, height);
 
@@ -217,6 +257,13 @@ async function drawStandingsPlate(
     tableY,
     tableWidth,
     teamName,
+  });
+
+  drawStandingsLegend(context, {
+    compact,
+    tableWidth,
+    tableX,
+    y: legendY,
   });
 
   drawCenteredText(context, "LA NUEVA GUARDIA", width / 2, footerY, {
@@ -290,10 +337,18 @@ function drawStandingsTable(
   rows.forEach((row, index) => {
     const y = tableY + headerHeight + 18 + index * rowHeight;
     const isClub = row.isClub || areSameTeam(row.teamName, teamName);
+    const classification = getStandingClassificationStyle(row.position);
 
     context.save();
 
-    if (isClub) {
+    if (classification) {
+      context.fillStyle = classification.rowFill;
+      context.strokeStyle = classification.rowStroke;
+      context.lineWidth = 2;
+      roundedRect(context, tableX + 16, y, tableWidth - 32, rowHeight - 6, 16);
+      context.fill();
+      context.stroke();
+    } else if (isClub) {
       context.fillStyle = "rgba(244,206,15,0.18)";
       context.strokeStyle = "#f4ce0f";
       context.lineWidth = 4;
@@ -306,9 +361,19 @@ function drawStandingsTable(
       context.fill();
     }
 
+    if (isClub) {
+      context.strokeStyle = "#f4ce0f";
+      context.lineWidth = 4;
+      roundedRect(context, tableX + 16, y, tableWidth - 32, rowHeight - 6, 16);
+      context.stroke();
+    }
+
     context.restore();
 
-    drawPositionBadge(context, row.position, columns[0].x, y + rowHeight / 2 - 3, isClub);
+    drawPositionBadge(context, row.position, columns[0].x, y + rowHeight / 2 - 3, {
+      classification,
+      isClub,
+    });
     drawTableText(
       context,
       fitTextWithEllipsis(context, row.teamName, columns[1].width),
@@ -339,6 +404,78 @@ function drawStandingsTable(
       rowHeight,
     );
   });
+}
+
+function drawStandingsLegend(
+  context: CanvasRenderingContext2D,
+  {
+    compact,
+    tableWidth,
+    tableX,
+    y,
+  }: {
+    compact: boolean;
+    tableWidth: number;
+    tableX: number;
+    y: number;
+  },
+) {
+  const gap = compact ? 14 : 18;
+  const pillHeight = compact ? 42 : 48;
+  const swatchSize = compact ? 18 : 22;
+  const horizontalPadding = compact ? 18 : 22;
+  const font = compact ? "900 20px Arial, sans-serif" : "900 24px Arial, sans-serif";
+
+  context.save();
+  context.font = font;
+
+  const itemWidths = STANDINGS_LEGEND_ITEMS.map(
+    (item) =>
+      Math.ceil(context.measureText(item.label).width) +
+      horizontalPadding * 2 +
+      swatchSize +
+      12,
+  );
+  const totalWidth =
+    itemWidths.reduce((total, itemWidth) => total + itemWidth, 0) +
+    gap * Math.max(STANDINGS_LEGEND_ITEMS.length - 1, 0);
+  let x = tableX + Math.max((tableWidth - totalWidth) / 2, 0);
+
+  STANDINGS_LEGEND_ITEMS.forEach((item, index) => {
+    const width = itemWidths[index] ?? 0;
+
+    context.fillStyle = item.legendFill;
+    context.strokeStyle = "rgba(255,255,255,0.26)";
+    context.lineWidth = 2;
+    roundedRect(context, x, y, width, pillHeight, 14);
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = item.badgeFill;
+    roundedRect(
+      context,
+      x + horizontalPadding,
+      y + (pillHeight - swatchSize) / 2,
+      swatchSize,
+      swatchSize,
+      5,
+    );
+    context.fill();
+
+    context.fillStyle = item.legendText;
+    context.font = font;
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.fillText(
+      item.label,
+      x + horizontalPadding + swatchSize + 12,
+      y + pillHeight / 2 + 1,
+    );
+
+    x += width + gap;
+  });
+
+  context.restore();
 }
 
 function buildColumns(tableX: number, tableWidth: number) {
@@ -397,23 +534,34 @@ function drawPositionBadge(
   position: number,
   x: number,
   centerY: number,
-  isClub: boolean,
+  {
+    classification,
+    isClub,
+  }: {
+    classification?: StandingClassificationStyle;
+    isClub: boolean;
+  },
 ) {
   const size = 38;
 
   context.save();
-  context.fillStyle = isClub ? "#f4ce0f" : "rgba(255,255,255,0.12)";
-  context.strokeStyle = isClub ? "#ffffff" : "rgba(255,255,255,0.16)";
-  context.lineWidth = 2;
+  context.fillStyle =
+    classification?.badgeFill ?? (isClub ? "#f4ce0f" : "rgba(255,255,255,0.12)");
+  context.strokeStyle = isClub ? "#f4ce0f" : "rgba(255,255,255,0.16)";
+  context.lineWidth = isClub ? 4 : 2;
   roundedRect(context, x - size / 2, centerY - size / 2, size, size, 10);
   context.fill();
   context.stroke();
-  context.fillStyle = isClub ? "#012f77" : "#ffffff";
+  context.fillStyle = classification || !isClub ? "#ffffff" : "#012f77";
   context.font = "900 21px Arial Black, sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillText(String(position), x, centerY + 1, size - 6);
   context.restore();
+}
+
+function getStandingClassificationStyle(position: number) {
+  return STANDINGS_LEGEND_ITEMS.find((item) => item.positions.includes(position));
 }
 
 function drawStatCell(

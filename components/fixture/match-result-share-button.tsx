@@ -1317,12 +1317,12 @@ function formatResultDate(value?: string) {
 
 function formatCompetition(kind: LeagueCompetitionKind) {
   const labels: Record<LeagueCompetitionKind, string> = {
-    cup: "Copa",
-    friendly: "Amistoso",
-    league: "Liga",
+    cup: "COPA",
+    friendly: "AMISTOSO",
+    league: "LIGA",
   };
 
-  return labels[kind] ?? "Partido";
+  return labels[kind] ?? "PARTIDO";
 }
 
 interface ResultView {

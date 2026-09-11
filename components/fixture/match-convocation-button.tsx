@@ -1197,9 +1197,9 @@ function formatConvocationMatchMeta(match: LeagueFixtureMatch) {
 
 function formatCompetition(kind: LeagueFixtureMatch["competitionKind"]) {
   const labels: Record<LeagueFixtureMatch["competitionKind"], string> = {
-    cup: "Copa",
-    friendly: "Amistoso",
-    league: "Liga",
+    cup: "COPA",
+    friendly: "AMISTOSO",
+    league: "LIGA",
   };
 
   return labels[kind];
