@@ -338,6 +338,16 @@ const notificationHeaders = [
   "reference_id",
   "url",
   "read_at",
+  "notification_kind",
+  "delivery_status",
+  "delivery_attempts",
+  "delivery_error",
+  "recipient_user_id",
+  "recipient_player_id",
+  "recipient_name",
+  "period",
+  "match_id",
+  "match_label",
 ];
 
 const reminderHeaders = [
@@ -7796,6 +7806,28 @@ function mapRowsToNotifications(rows: unknown[][]): AppNotification[] {
             pick(record, ["reference_id", "referencia_id", "entity_id"]) || undefined,
           url: pick(record, ["url", "href", "link"]) || undefined,
           readAt: parseDateTime(pick(record, ["read_at", "leido_el"])),
+          deliveryAttempts: parsePositiveInteger(
+            pick(record, ["delivery_attempts", "intentos_entrega"]),
+          ),
+          deliveryError: pick(record, ["delivery_error", "error_entrega"]) || undefined,
+          deliveryStatus: normalizeNotificationDeliveryStatus(
+            pick(record, ["delivery_status", "estado_entrega"]),
+          ),
+          matchId: pick(record, ["match_id", "partido_id"]) || undefined,
+          matchLabel: pick(record, ["match_label", "partido"]) || undefined,
+          notificationKind: normalizeNotificationKind(
+            pick(record, ["notification_kind", "tipo_notificacion"]),
+            pick(record, ["reference_id", "referencia_id", "entity_id"]),
+            pick(record, ["url", "href", "link"]),
+          ),
+          period:
+            normalizePeriod(pick(record, ["period", "periodo", "mes"])) ?? undefined,
+          recipientName:
+            pick(record, ["recipient_name", "destinatario", "jugador"]) || undefined,
+          recipientPlayerId:
+            pick(record, ["recipient_player_id", "destinatario_jugador_id"]) || undefined,
+          recipientUserId:
+            pick(record, ["recipient_user_id", "destinatario_usuario_id"]) || undefined,
         },
       ];
     })
@@ -7839,8 +7871,8 @@ function buildNotificationWritableRow(
     description: input.message,
     type: input.type ?? "info",
     tipo: input.type ?? "info",
-    status: "unread",
-    estado: "unread",
+    status: input.status ?? "unread",
+    estado: input.status ?? "unread",
     target_role: input.targetRole ?? "all",
     rol: input.targetRole ?? "all",
     audience: input.targetRole ?? "all",
@@ -7858,6 +7890,27 @@ function buildNotificationWritableRow(
     link: input.url ?? "",
     read_at: "",
     leido_el: "",
+    notification_kind: input.notificationKind ?? "other",
+    tipo_notificacion: input.notificationKind ?? "other",
+    delivery_status: input.deliveryStatus ?? "created",
+    estado_entrega: input.deliveryStatus ?? "created",
+    delivery_attempts: String(input.deliveryAttempts ?? 0),
+    intentos_entrega: String(input.deliveryAttempts ?? 0),
+    delivery_error: input.deliveryError ?? "",
+    error_entrega: input.deliveryError ?? "",
+    recipient_user_id: input.recipientUserId ?? "",
+    destinatario_usuario_id: input.recipientUserId ?? "",
+    recipient_player_id: input.recipientPlayerId ?? "",
+    destinatario_jugador_id: input.recipientPlayerId ?? "",
+    recipient_name: input.recipientName ?? "",
+    destinatario: input.recipientName ?? "",
+    period: input.period ?? "",
+    periodo: input.period ?? "",
+    mes: input.period ?? "",
+    match_id: input.matchId ?? "",
+    partido_id: input.matchId ?? "",
+    match_label: input.matchLabel ?? "",
+    partido: input.matchLabel ?? "",
   };
 
   return headers.map((header) => values[header] ?? "");
@@ -11039,6 +11092,12 @@ function parseMoney(value: string) {
   return Number.isFinite(parsed) ? parsed * sign : 0;
 }
 
+function parsePositiveInteger(value: string) {
+  const amount = Number.parseInt(value, 10);
+
+  return Number.isFinite(amount) && amount > 0 ? amount : undefined;
+}
+
 function normalizeMixedMoneySeparators(value: string, decimalSeparator: "," | ".") {
   const thousandsSeparator = decimalSeparator === "," ? "." : ",";
 
@@ -11448,6 +11507,75 @@ function normalizeNotificationStatus(value: string): NotificationStatus {
   }
 
   return "unread";
+}
+
+function normalizeNotificationDeliveryStatus(
+  value: string,
+): AppNotification["deliveryStatus"] {
+  const status = normalizeText(value);
+
+  if (status === "failed" || status === "fallida") {
+    return "failed";
+  }
+
+  if (status === "no_subscription" || status === "sin_suscripcion") {
+    return "no_subscription";
+  }
+
+  if (status === "sent" || status === "enviada") {
+    return "sent";
+  }
+
+  if (status === "skipped" || status === "omitida") {
+    return "skipped";
+  }
+
+  return "created";
+}
+
+function normalizeNotificationKind(
+  value: string,
+  referenceId = "",
+  url = "",
+): AppNotification["notificationKind"] {
+  const kind = normalizeText(value);
+
+  if (
+    kind === "birthday" ||
+    kind === "fee-defined" ||
+    kind === "fee-reminder" ||
+    kind === "match-registration" ||
+    kind === "mvp" ||
+    kind === "upcoming-match"
+  ) {
+    return kind;
+  }
+
+  if (referenceId.startsWith("upcoming-match")) {
+    return "upcoming-match";
+  }
+
+  if (referenceId.startsWith("fee-defined")) {
+    return "fee-defined";
+  }
+
+  if (referenceId.startsWith("fee-reminder")) {
+    return "fee-reminder";
+  }
+
+  if (referenceId.startsWith("mvp") || url === "/player-of-match") {
+    return "mvp";
+  }
+
+  if (referenceId.startsWith("match-registration")) {
+    return "match-registration";
+  }
+
+  if (referenceId.startsWith("birthday")) {
+    return "birthday";
+  }
+
+  return "other";
 }
 
 function normalizeTargetRole(value: string): AppNotification["targetRole"] {

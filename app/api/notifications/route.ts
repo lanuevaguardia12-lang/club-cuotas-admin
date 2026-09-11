@@ -33,6 +33,7 @@ export async function GET() {
 
   const notifications = (await getDataService().getNotifications())
     .filter((notification) => !isWhatsAppBotNotification(notification))
+    .filter((notification) => notification.status !== "archived")
     .filter((notification) => canUserSeeNotification(notification, user))
     .slice(0, 50);
 
@@ -68,7 +69,8 @@ export async function PATCH(request: NextRequest) {
 
   const dataService = getDataService();
   const notifications = (await dataService.getNotifications()).filter(
-    (notification) => !isWhatsAppBotNotification(notification),
+    (notification) =>
+      !isWhatsAppBotNotification(notification) && notification.status !== "archived",
   );
   if (parsed.data.markAll) {
     const unreadNotifications = notifications.filter(

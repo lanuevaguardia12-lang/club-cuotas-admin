@@ -69,7 +69,6 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
   coach: [
     "dashboard:read",
     "account:manage",
-    "notifications:manage",
     "fixture:read",
     "squad:read",
     "player-of-match:vote",
@@ -97,7 +96,6 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "fee-calculator:manage",
     "exports:read",
     "audit:read",
-    "notifications:manage",
     "payments:manage",
     "api:read",
     "api:write",

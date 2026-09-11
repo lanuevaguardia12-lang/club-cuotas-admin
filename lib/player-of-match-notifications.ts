@@ -127,9 +127,15 @@ export async function sendOpenPlayerOfMatchNotifications({
     globalData?.matches.filter(isEligiblePlayerOfMatchReminderMatch) ?? [];
   const subscriptionUsers = countRecipientsWithSubscriptions(recipients);
   const lastNotificationsByReferenceId = groupLatestNotificationByReferenceId(
-    premium.notifications,
+    premium.notifications.filter(isDeliveredNotificationRecord),
+  );
+  const recordedReferenceIds = new Set(
+    premium.notifications
+      .map((notification) => notification.referenceId)
+      .filter((referenceId): referenceId is string => Boolean(referenceId)),
   );
   const notifiedThisRun = new Set<string>();
+  const recordedThisRun = new Set<string>();
   const pendingMatchIds = new Set<string>();
   const details: PlayerOfMatchNotificationDetail[] = [];
   let sent = 0;
@@ -215,15 +221,6 @@ export async function sendOpenPlayerOfMatchNotifications({
       continue;
     }
 
-    if (userSubscriptions.length === 0) {
-      skipped += 1;
-      skippedNoSubscriptions += 1;
-      detail.skipped += 1;
-      detail.reasons.push("no-active-subscription");
-      details.push(detail);
-      continue;
-    }
-
     for (const match of pendingMatches) {
       const stage = resolveNotificationStage(match, trigger, notificationStage);
 
@@ -259,7 +256,34 @@ export async function sendOpenPlayerOfMatchNotifications({
       }
 
       const notification = buildMvpNotificationContent(match, stage);
+
+      if (userSubscriptions.length === 0) {
+        skipped += 1;
+        skippedNoSubscriptions += 1;
+        detail.skipped += 1;
+        pushUniqueReason(detail, "no-active-subscription");
+        await createMvpDeliveryRecord({
+          dataService,
+          deliveryStatus: "no_subscription",
+          error: "Sin dispositivo push activo.",
+          match,
+          notification,
+          playerId: userPlayerId,
+          recordedReferenceIds,
+          recordedThisRun,
+          referenceId,
+          role,
+          userId,
+          userName: recipient.userName,
+          onRecordFailed: () => {
+            notificationRecordsFailed += 1;
+          },
+        });
+        continue;
+      }
+
       let matchSent = 0;
+      let lastError: unknown;
 
       for (const subscription of userSubscriptions) {
         try {
@@ -274,6 +298,7 @@ export async function sendOpenPlayerOfMatchNotifications({
           detail.sent += 1;
         } catch (error) {
           failed += 1;
+          lastError = error;
           detail.failed += 1;
           pushUniqueId(detail.failedMatchIds, match.id);
           await maybeDeactivateExpiredSubscription(
@@ -287,23 +312,45 @@ export async function sendOpenPlayerOfMatchNotifications({
       if (matchSent > 0) {
         notifiedThisRun.add(referenceId);
         pushUniqueId(detail.sentMatchIds, match.id);
-        try {
-          await createMvpNotificationRecordWithRetry(() =>
-            dataService.createNotification({
-              title: notification.title,
-              message: notification.message,
-              type: "info",
-              targetRole: role,
-              targetUserId: userId,
-              targetPlayerId: userPlayerId,
-              referenceId,
-              url: "/player-of-match",
-            }),
-          );
-          pushUniqueId(detail.notifiedMatchIds, match.id);
-        } catch {
-          notificationRecordsFailed += 1;
-        }
+        await createMvpDeliveryRecord({
+          dataService,
+          deliveryAttempts: userSubscriptions.length,
+          deliveryStatus: "sent",
+          match,
+          notification,
+          playerId: userPlayerId,
+          recordedReferenceIds,
+          recordedThisRun,
+          referenceId,
+          role,
+          userId,
+          userName: recipient.userName,
+          onRecordCreated: () => {
+            pushUniqueId(detail.notifiedMatchIds, match.id);
+          },
+          onRecordFailed: () => {
+            notificationRecordsFailed += 1;
+          },
+        });
+      } else {
+        await createMvpDeliveryRecord({
+          dataService,
+          deliveryAttempts: userSubscriptions.length,
+          deliveryStatus: "failed",
+          error: getDeliveryErrorMessage(lastError),
+          match,
+          notification,
+          playerId: userPlayerId,
+          recordedReferenceIds,
+          recordedThisRun,
+          referenceId,
+          role,
+          userId,
+          userName: recipient.userName,
+          onRecordFailed: () => {
+            notificationRecordsFailed += 1;
+          },
+        });
       }
     }
 
@@ -403,6 +450,85 @@ function buildRecipientNotificationMatches(
       userVote: userMatch?.userVote,
     };
   });
+}
+
+async function createMvpDeliveryRecord({
+  dataService,
+  deliveryAttempts = 0,
+  deliveryStatus,
+  error,
+  match,
+  notification,
+  onRecordCreated,
+  onRecordFailed,
+  playerId,
+  recordedReferenceIds,
+  recordedThisRun,
+  referenceId,
+  role,
+  userId,
+  userName,
+}: {
+  dataService: ReturnType<typeof getDataService>;
+  deliveryAttempts?: number;
+  deliveryStatus: "failed" | "no_subscription" | "sent";
+  error?: string;
+  match: PlayerOfMatchMatch;
+  notification: ReturnType<typeof buildMvpNotificationContent>;
+  onRecordCreated?: () => void;
+  onRecordFailed: () => void;
+  playerId?: string;
+  recordedReferenceIds: Set<string>;
+  recordedThisRun: Set<string>;
+  referenceId: string;
+  role: AuthRole;
+  userId: string;
+  userName?: string;
+}) {
+  const shouldNotifyRecipient = deliveryStatus === "sent";
+
+  if (recordedThisRun.has(referenceId)) {
+    return;
+  }
+
+  if (recordedReferenceIds.has(referenceId) && deliveryStatus !== "sent") {
+    return;
+  }
+
+  try {
+    await createMvpNotificationRecordWithRetry(() =>
+      dataService.createNotification({
+        title: notification.title,
+        message: notification.message,
+        type:
+          deliveryStatus === "failed"
+            ? "danger"
+            : deliveryStatus === "no_subscription"
+              ? "warning"
+              : "info",
+        status: shouldNotifyRecipient ? "unread" : "archived",
+        targetRole: shouldNotifyRecipient ? role : "admin",
+        targetUserId: shouldNotifyRecipient ? userId : undefined,
+        targetPlayerId: shouldNotifyRecipient ? playerId : undefined,
+        referenceId,
+        url: "/player-of-match",
+        deliveryAttempts,
+        deliveryError: error,
+        deliveryStatus,
+        matchId: match.id,
+        matchLabel: formatMvpMatchLabel(match),
+        notificationKind: "mvp",
+        recipientName: userName,
+        recipientPlayerId: playerId,
+        recipientUserId: userId,
+      }),
+    );
+    recordedReferenceIds.add(referenceId);
+    recordedThisRun.add(referenceId);
+    onRecordCreated?.();
+  } catch {
+    onRecordFailed();
+  }
 }
 
 async function createMvpNotificationRecordWithRetry(createRecord: () => Promise<void>) {
@@ -924,6 +1050,10 @@ function isMvpNotificationForMatch(
   match: PlayerOfMatchMatch,
   stage?: PlayerOfMatchNotificationStage,
 ) {
+  if (!isDeliveredNotificationRecord(notification)) {
+    return false;
+  }
+
   if (stage && notification.referenceId === getMvpReferenceId(userId, match.id, stage)) {
     return true;
   }
@@ -1025,6 +1155,24 @@ function groupLatestNotificationByReferenceId(notifications: AppNotification[]) 
   }
 
   return latestByReferenceId;
+}
+
+function isDeliveredNotificationRecord(notification: AppNotification) {
+  return (
+    notification.deliveryStatus === "created" || notification.deliveryStatus === "sent"
+  );
+}
+
+function formatMvpMatchLabel(match: PlayerOfMatchMatch) {
+  return `${match.date} · ${match.sourceType.toUpperCase()} · vs ${match.rival}`;
+}
+
+function getDeliveryErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "No se pudo enviar a ningun dispositivo.";
 }
 
 function getTimestamp(value: string) {

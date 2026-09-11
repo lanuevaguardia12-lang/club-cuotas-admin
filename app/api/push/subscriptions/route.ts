@@ -57,7 +57,15 @@ export async function POST(request: NextRequest) {
   }
 
   const dataService = getDataService();
-  const playerId = parsed.data.playerId ?? user.playerId;
+  const playerId =
+    user.role === "player" ? user.playerId : (parsed.data.playerId ?? user.playerId);
+
+  if (user.role === "player" && !playerId) {
+    return NextResponse.json(
+      { message: "No encontramos un jugador asociado a tu usuario." },
+      { status: 400 },
+    );
+  }
 
   await dataService.upsertPushSubscription({
     userId: user.id,

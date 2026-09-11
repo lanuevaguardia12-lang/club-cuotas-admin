@@ -124,6 +124,7 @@ const adminNavigationHrefs = new Set([
   "/fee-calculator",
   "/coach-records",
   "/payments",
+  "/notifications",
   "/audit",
   "/api-docs",
   "/users",

@@ -155,6 +155,36 @@ async function sendPendingFeePushNotifications({
     const message = buildPendingFeeNotificationMessage(player.name, player.fee, period);
     const referenceId = buildPendingFeeReferenceId(player.id, period);
     let playerSent = 0;
+    let deliveryStatus: "failed" | "no_subscription" | "sent" = "no_subscription";
+    let deliveryError: string | undefined;
+
+    if (subscriptions.length === 0 || !isPushConfigured()) {
+      skippedNoPush += 1;
+      deliveryError = "Sin dispositivo push activo.";
+    } else {
+      for (const subscription of subscriptions) {
+        try {
+          await sendPushNotification(subscription, {
+            title: OVERDUE_FEE_NOTIFICATION_TITLE,
+            body: message,
+            tag: `fee-reminder-${player.id}-${period}`,
+            url: "/mi-cuota",
+          });
+          sent += 1;
+          playerSent += 1;
+        } catch (error) {
+          failed += 1;
+          deliveryError = getDeliveryErrorMessage(error);
+          await maybeDeactivateExpiredSubscription(
+            dataService,
+            subscription.endpoint,
+            error,
+          );
+        }
+      }
+
+      deliveryStatus = playerSent > 0 ? "sent" : "failed";
+    }
 
     if (
       !existingReferenceIds.has(referenceId) &&
@@ -164,11 +194,18 @@ async function sendPendingFeePushNotifications({
         await dataService.createNotification({
           title: OVERDUE_FEE_NOTIFICATION_TITLE,
           message,
-          type: "warning",
+          type: deliveryStatus === "failed" ? "danger" : "warning",
           targetRole: "player",
           targetPlayerId: player.id,
           referenceId,
           url: "/mi-cuota",
+          deliveryAttempts: subscriptions.length,
+          deliveryError,
+          deliveryStatus,
+          notificationKind: "fee-reminder",
+          period,
+          recipientName: player.name,
+          recipientPlayerId: player.id,
         });
         existingReferenceIds.add(referenceId);
         alreadyNotifiedToday.add(referenceId);
@@ -179,28 +216,7 @@ async function sendPendingFeePushNotifications({
     }
 
     if (subscriptions.length === 0 || !isPushConfigured()) {
-      skippedNoPush += 1;
       continue;
-    }
-
-    for (const subscription of subscriptions) {
-      try {
-        await sendPushNotification(subscription, {
-          title: OVERDUE_FEE_NOTIFICATION_TITLE,
-          body: message,
-          tag: `fee-reminder-${player.id}-${period}`,
-          url: "/mi-cuota",
-        });
-        sent += 1;
-        playerSent += 1;
-      } catch (error) {
-        failed += 1;
-        await maybeDeactivateExpiredSubscription(
-          dataService,
-          subscription.endpoint,
-          error,
-        );
-      }
     }
 
     if (playerSent > 0) {
@@ -318,6 +334,14 @@ function buildPendingFeeNotificationMessage(
   return `Hola, ${playerName}. Tenés vencida la cuota de ${formatPeriod(
     period,
   )}. El monto es ${fee}. Hacé el pago y registralo en la app para dejarla al día.`;
+}
+
+function getDeliveryErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "No se pudo enviar a ningun dispositivo.";
 }
 
 function buildPendingFeeReferenceId(playerId: string, period: string) {

@@ -84,46 +84,59 @@ export async function sendDefinedFeeNotifications({
     }
 
     const message = buildDefinedFeeNotificationMessage(calculation, period);
+    const subscriptions = await dataService.getPushSubscriptionsForPlayer(
+      calculation.playerId,
+    );
+    let deliveryStatus: "failed" | "no_subscription" | "sent" = "no_subscription";
+    let deliveryError: string | undefined;
+    let playerPushSent = 0;
+
+    if (subscriptions.length === 0 || !isPushConfigured()) {
+      result.skippedNoPush += 1;
+      deliveryError = "Sin dispositivo push activo.";
+    } else {
+      for (const subscription of subscriptions) {
+        try {
+          await sendPushNotification(subscription, {
+            title: NEW_FEE_NOTIFICATION_TITLE,
+            body: message,
+            tag: referenceId,
+            url: NEW_FEE_NOTIFICATION_URL,
+          });
+          result.pushSent += 1;
+          playerPushSent += 1;
+        } catch (error) {
+          result.failed += 1;
+          deliveryError = getDeliveryErrorMessage(error);
+          await maybeDeactivateExpiredSubscription(
+            dataService,
+            subscription.endpoint,
+            error,
+          );
+        }
+      }
+
+      deliveryStatus = playerPushSent > 0 ? "sent" : "failed";
+    }
 
     await dataService.createNotification({
       title: NEW_FEE_NOTIFICATION_TITLE,
       message,
-      type: "info",
+      type: deliveryStatus === "failed" ? "danger" : "info",
       targetRole: "player",
       targetPlayerId: calculation.playerId,
       referenceId,
       url: NEW_FEE_NOTIFICATION_URL,
+      deliveryAttempts: subscriptions.length,
+      deliveryError,
+      deliveryStatus,
+      notificationKind: "fee-defined",
+      period,
+      recipientName: calculation.playerName,
+      recipientPlayerId: calculation.playerId,
     });
     existingReferenceIds.add(referenceId);
     result.notificationsCreated += 1;
-
-    const subscriptions = await dataService.getPushSubscriptionsForPlayer(
-      calculation.playerId,
-    );
-
-    if (subscriptions.length === 0 || !isPushConfigured()) {
-      result.skippedNoPush += 1;
-      continue;
-    }
-
-    for (const subscription of subscriptions) {
-      try {
-        await sendPushNotification(subscription, {
-          title: NEW_FEE_NOTIFICATION_TITLE,
-          body: message,
-          tag: referenceId,
-          url: NEW_FEE_NOTIFICATION_URL,
-        });
-        result.pushSent += 1;
-      } catch (error) {
-        result.failed += 1;
-        await maybeDeactivateExpiredSubscription(
-          dataService,
-          subscription.endpoint,
-          error,
-        );
-      }
-    }
   }
 
   if (result.notificationsCreated > 0 || result.pushSent > 0 || result.failed > 0) {
@@ -204,6 +217,14 @@ function buildDefinedFeeNotificationMessage(
   return `${calculation.playerName}, ya está definida tu cuota para ${formatPeriod(
     period,
   )}: ${formatCurrency(calculation.finalQuota)}. Hacé click y registrá tu pago.`;
+}
+
+function getDeliveryErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "No se pudo enviar a ningun dispositivo.";
 }
 
 async function maybeDeactivateExpiredSubscription(

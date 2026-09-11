@@ -59,6 +59,16 @@ export interface AppLogEntry {
 
 export type NotificationType = "info" | "success" | "warning" | "danger";
 export type NotificationStatus = "unread" | "read" | "archived";
+export type NotificationDeliveryStatus =
+  "created" | "failed" | "no_subscription" | "sent" | "skipped";
+export type NotificationKind =
+  | "birthday"
+  | "fee-defined"
+  | "fee-reminder"
+  | "match-registration"
+  | "mvp"
+  | "other"
+  | "upcoming-match";
 
 export interface AppNotification {
   id: string;
@@ -73,6 +83,16 @@ export interface AppNotification {
   referenceId?: string;
   url?: string;
   readAt?: string;
+  deliveryAttempts?: number;
+  deliveryError?: string;
+  deliveryStatus: NotificationDeliveryStatus;
+  matchId?: string;
+  matchLabel?: string;
+  notificationKind: NotificationKind;
+  period?: string;
+  recipientName?: string;
+  recipientPlayerId?: string;
+  recipientUserId?: string;
 }
 
 export type ReminderStatus = "queued" | "processing" | "sent" | "failed" | "skipped";
@@ -172,11 +192,22 @@ export interface CreateNotificationInput {
   title: string;
   message: string;
   type?: NotificationType;
+  status?: NotificationStatus;
   targetRole?: AuthRole | "all";
   targetUserId?: string;
   targetPlayerId?: string;
   referenceId?: string;
   url?: string;
+  deliveryAttempts?: number;
+  deliveryError?: string;
+  deliveryStatus?: NotificationDeliveryStatus;
+  matchId?: string;
+  matchLabel?: string;
+  notificationKind?: NotificationKind;
+  period?: string;
+  recipientName?: string;
+  recipientPlayerId?: string;
+  recipientUserId?: string;
 }
 
 export interface CreateReminderJobInput {
