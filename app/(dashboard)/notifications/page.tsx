@@ -80,7 +80,7 @@ export default async function NotificationsPage({
       <EmptySection
         eyebrow="Acceso restringido"
         title="Notificaciones"
-        description="Solo un administrador puede auditar el estado de las notificaciones."
+        description="Solo un administrador puede ver el estado de las notificaciones."
       />
     );
   }
@@ -118,13 +118,13 @@ export default async function NotificationsPage({
           Notificaciones
         </h1>
         <p className="text-muted-foreground mt-2 max-w-3xl text-sm">
-          Auditoría de envíos por jugador para próximo partido, cuotas y votación MVP.
+          Estado de envíos por jugador para próximo partido, cuotas y votación MVP.
         </p>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-4">
         <MetricCard
-          title="Auditadas"
+          title="Registros"
           value={rows.length}
           detail="Registros guardados"
           icon={<Bell className="size-4" aria-hidden="true" />}

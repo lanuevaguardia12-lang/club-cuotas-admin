@@ -58,6 +58,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "cash-flow:read",
   },
   {
+    label: "Seguimiento de cuotas",
+    href: "/seguimiento-cuotas",
+    icon: "feeTracking",
+    permission: "notifications:manage",
+  },
+  {
     label: "Calculador de cuota",
     href: "/fee-calculator",
     icon: "feeCalculator",
@@ -80,12 +86,6 @@ export const navigationItems: NavigationItem[] = [
     href: "/notifications",
     icon: "notifications",
     permission: "notifications:manage",
-  },
-  {
-    label: "Auditoria",
-    href: "/audit",
-    icon: "audit",
-    permission: "audit:read",
   },
   {
     label: "API REST",
@@ -121,11 +121,11 @@ const adminNavigationHrefs = new Set([
   "/players",
   "/teams",
   "/cash-flow",
+  "/seguimiento-cuotas",
   "/fee-calculator",
   "/coach-records",
   "/payments",
   "/notifications",
-  "/audit",
   "/api-docs",
   "/users",
   "/reports",

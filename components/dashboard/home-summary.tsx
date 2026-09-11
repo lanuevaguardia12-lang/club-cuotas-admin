@@ -100,110 +100,217 @@ export function HomeSummary({
       : fixture.matches;
 
   return (
-    <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {playerProfile ? (
-        <Card className="club-animate-fade-up overflow-hidden">
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-3">
+    <section className="grid min-w-0 gap-4">
+      <div
+        className={cn(
+          "grid min-w-0 gap-4",
+          playerProfile ? "lg:grid-cols-2" : "lg:grid-cols-3",
+        )}
+      >
+        {playerProfile ? (
+          <Card className="club-animate-fade-up min-w-0 overflow-hidden">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <BadgeDollarSign className="text-primary size-5" />
+                    Mi ultima cuota
+                  </CardTitle>
+                  <p className="text-muted-foreground mt-2 text-sm">
+                    {latestQuota
+                      ? formatPeriod(latestQuota.period)
+                      : "Sin cuotas cargadas"}
+                  </p>
+                </div>
+                {latestQuota ? <QuotaStatusBadge month={latestQuota} /> : null}
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-4">
               <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <BadgeDollarSign className="text-primary size-5" />
-                  Mi ultima cuota
-                </CardTitle>
-                <p className="text-muted-foreground mt-2 text-sm">
-                  {latestQuota ? formatPeriod(latestQuota.period) : "Sin cuotas cargadas"}
+                <p className="text-3xl font-bold tracking-normal">
+                  {latestQuota?.amount ?? "-"}
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {latestQuota?.quotaStatus === "undefined"
+                    ? latestQuota.quotaStatusReason || "Monto parcial."
+                    : latestQuota?.paidAt
+                      ? `Pagada el ${latestQuota.paidAt}`
+                      : latestQuota?.dueDate
+                        ? `Vence ${latestQuota.dueDate}`
+                        : "Sin vencimiento cargado"}
                 </p>
               </div>
-              {latestQuota ? <QuotaStatusBadge month={latestQuota} /> : null}
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div>
-              <p className="text-3xl font-bold tracking-normal">
-                {latestQuota?.amount ?? "-"}
-              </p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {latestQuota?.quotaStatus === "undefined"
-                  ? latestQuota.quotaStatusReason || "Monto parcial."
-                  : latestQuota?.paidAt
-                    ? `Pagada el ${latestQuota.paidAt}`
-                    : latestQuota?.dueDate
-                      ? `Vence ${latestQuota.dueDate}`
-                      : "Sin vencimiento cargado"}
-              </p>
-            </div>
-            <div
-              className={cn(
-                "grid gap-2",
-                canRegisterLatestQuotaPayment || hasPaymentAlias ? "sm:grid-cols-2" : "",
-              )}
-            >
-              {canRegisterLatestQuotaPayment && latestQuota ? (
-                <PaymentFormButton
-                  className="w-full"
-                  period={latestQuota.period}
-                  playerName={playerProfile.name}
-                />
-              ) : null}
-              <PaymentAliasCopyButton
-                alias={paymentAlias}
-                className="w-full"
-                variant="outline"
-              />
-              <Button
-                asChild
-                className="w-full"
-                variant={
-                  canRegisterLatestQuotaPayment || hasPaymentAlias ? "outline" : "default"
-                }
+              <div
+                className={cn(
+                  "grid gap-2",
+                  canRegisterLatestQuotaPayment || hasPaymentAlias
+                    ? "sm:grid-cols-2"
+                    : "",
+                )}
               >
-                <Link href="/mi-cuota">
-                  <ExternalLink />
-                  Ver mi cuota
-                </Link>
-              </Button>
-            </div>
+                {canRegisterLatestQuotaPayment && latestQuota ? (
+                  <PaymentFormButton
+                    className="w-full"
+                    period={latestQuota.period}
+                    playerName={playerProfile.name}
+                  />
+                ) : null}
+                <PaymentAliasCopyButton
+                  alias={paymentAlias}
+                  className="w-full"
+                  variant="outline"
+                />
+                <Button
+                  asChild
+                  className="w-full"
+                  variant={
+                    canRegisterLatestQuotaPayment || hasPaymentAlias
+                      ? "outline"
+                      : "default"
+                  }
+                >
+                  <Link href="/mi-cuota">
+                    <ExternalLink />
+                    Ver mi cuota
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <Card className="club-animate-fade-up min-w-0 overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="text-primary size-5" />
+              Proximo partido
+            </CardTitle>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {nextMatch
+                ? `${nextMatch.competitionName} · ${nextMatch.categoryName}`
+                : `${fixture.selectedTournamentName} · ${fixture.selectedCategoryName}`}
+            </p>
+          </CardHeader>
+          <CardContent>
+            {nextMatch ? (
+              <HomeMatchCard
+                canManageConvocations={canManageConvocations}
+                canRegisterPlayers={canRegisterPlayers}
+                canUploadMedia={canUploadMedia}
+                coachName={coachName}
+                match={nextMatch}
+                matches={recentFormMatches}
+                playerOptions={playerOptions}
+                registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+                registrationStatusByMatchKey={registrationStatusByMatchKey}
+                rows={fixture.standings}
+                teamProfiles={teamProfiles}
+              />
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                No hay proximo partido publicado para {APP_TEAM_NAME}.
+              </p>
+            )}
           </CardContent>
         </Card>
-      ) : null}
 
-      <Card className="club-animate-fade-up overflow-hidden">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarDays className="text-primary size-5" />
-            Proximo partido
-          </CardTitle>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {nextMatch
-              ? `${nextMatch.competitionName} · ${nextMatch.categoryName}`
-              : `${fixture.selectedTournamentName} · ${fixture.selectedCategoryName}`}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {nextMatch ? (
-            <HomeMatchCard
-              canManageConvocations={canManageConvocations}
-              canRegisterPlayers={canRegisterPlayers}
-              canUploadMedia={canUploadMedia}
-              coachName={coachName}
-              match={nextMatch}
-              matches={recentFormMatches}
-              playerOptions={playerOptions}
-              registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
-              registrationStatusByMatchKey={registrationStatusByMatchKey}
-              rows={fixture.standings}
-              teamProfiles={teamProfiles}
-            />
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No hay proximo partido publicado para {APP_TEAM_NAME}.
+        <Card className="club-animate-fade-up min-w-0 overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CheckCircle2 className="text-primary size-5" />
+              Ultimo partido
+            </CardTitle>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {lastMatch
+                ? `${lastMatch.competitionName} · ${lastMatch.categoryName}`
+                : fixture.selectedCategoryName}
             </p>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {lastMatch ? (
+              <HomePlayedMatchCard
+                canRegisterPlayers={canRegisterPlayers}
+                canShareAlternateResultFormats={canShareAlternateResultFormats}
+                canUploadMedia={canUploadMedia}
+                match={lastMatch}
+                registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
+                registrationStatusByMatchKey={registrationStatusByMatchKey}
+                rows={fixture.standings}
+                teamProfiles={teamProfiles}
+              />
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                No hay partido anterior publicado para {APP_TEAM_NAME}.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="club-animate-fade-up min-w-0 overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Trophy className="text-primary size-5" />
+              Ultima tabla
+            </CardTitle>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {fixture.clubStanding
+                ? `${fixture.clubStanding.points} puntos para ${APP_TEAM_NAME}`
+                : fixture.selectedCategoryName}
+            </p>
+          </CardHeader>
+          <CardContent>
+            {standingsRows.length > 0 ? (
+              <div className="grid min-w-0 gap-2 overflow-hidden">
+                {standingsRows.map((row) => {
+                  const isClub =
+                    row.isClub || areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
+
+                  return (
+                    <div
+                      key={`${row.position}-${row.teamName}`}
+                      className={cn(
+                        "border-border bg-background grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-md border px-3 py-2 text-sm",
+                        isClub &&
+                          "border-primary/50 bg-primary/10 shadow-[inset_4px_0_0_var(--primary)]",
+                      )}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            "bg-muted text-muted-foreground grid size-7 shrink-0 place-items-center rounded-md text-xs font-bold",
+                            isClub &&
+                              "bg-primary text-primary-foreground ring-primary/20 ring-2",
+                          )}
+                        >
+                          {row.position}
+                        </span>
+                        <span
+                          className={cn("truncate font-medium", isClub && "font-bold")}
+                        >
+                          {row.teamName}
+                        </span>
+                      </div>
+                      <span
+                        className={cn(
+                          "shrink-0 font-bold whitespace-nowrap",
+                          isClub && "text-primary",
+                        )}
+                      >
+                        {row.points} pts
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">Sin tabla publicada.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <TeamStatsCard
-        className="md:col-span-2 xl:col-span-4"
+        className="min-w-0"
         matches={
           teamStatsMatches ??
           (fixture.allClubMatches.length > 0
@@ -214,98 +321,6 @@ export function HomeSummary({
         selectedYear={fixture.selectedYear}
         teamName={APP_TEAM_NAME}
       />
-
-      <Card className="club-animate-fade-up overflow-hidden">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CheckCircle2 className="text-primary size-5" />
-            Ultimo partido
-          </CardTitle>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {lastMatch
-              ? `${lastMatch.competitionName} · ${lastMatch.categoryName}`
-              : fixture.selectedCategoryName}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {lastMatch ? (
-            <HomePlayedMatchCard
-              canRegisterPlayers={canRegisterPlayers}
-              canShareAlternateResultFormats={canShareAlternateResultFormats}
-              canUploadMedia={canUploadMedia}
-              match={lastMatch}
-              registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
-              registrationStatusByMatchKey={registrationStatusByMatchKey}
-              rows={fixture.standings}
-              teamProfiles={teamProfiles}
-            />
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No hay partido anterior publicado para {APP_TEAM_NAME}.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="club-animate-fade-up overflow-hidden">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Trophy className="text-primary size-5" />
-            Ultima tabla
-          </CardTitle>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {fixture.clubStanding
-              ? `${fixture.clubStanding.points} puntos para ${APP_TEAM_NAME}`
-              : fixture.selectedCategoryName}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {standingsRows.length > 0 ? (
-            <div className="grid min-w-0 gap-2 overflow-hidden">
-              {standingsRows.map((row) => {
-                const isClub =
-                  row.isClub || areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
-
-                return (
-                  <div
-                    key={`${row.position}-${row.teamName}`}
-                    className={cn(
-                      "border-border bg-background grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-md border px-3 py-2 text-sm",
-                      isClub &&
-                        "border-primary/50 bg-primary/10 shadow-[inset_4px_0_0_var(--primary)]",
-                    )}
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          "bg-muted text-muted-foreground grid size-7 shrink-0 place-items-center rounded-md text-xs font-bold",
-                          isClub &&
-                            "bg-primary text-primary-foreground ring-primary/20 ring-2",
-                        )}
-                      >
-                        {row.position}
-                      </span>
-                      <span className={cn("truncate font-medium", isClub && "font-bold")}>
-                        {row.teamName}
-                      </span>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 font-bold whitespace-nowrap",
-                        isClub && "text-primary",
-                      )}
-                    >
-                      {row.points} pts
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">Sin tabla publicada.</p>
-          )}
-        </CardContent>
-      </Card>
     </section>
   );
 }
@@ -675,7 +690,7 @@ function TeamLine({
           <span className="block truncate font-semibold" title={name}>
             {displayName}
           </span>
-          <span className="text-xs opacity-75">
+          <span className="block truncate text-xs opacity-75">
             {[local ? "Local" : "Visita", position].filter(Boolean).join(" · ")}
           </span>
         </span>

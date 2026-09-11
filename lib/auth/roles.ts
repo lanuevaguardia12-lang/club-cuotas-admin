@@ -172,6 +172,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
     return hasPermission(user, "cash-flow:read");
   }
 
+  if (href.startsWith("/seguimiento-cuotas")) {
+    return hasPermission(user, "notifications:manage");
+  }
+
   if (href.startsWith("/coach-records")) {
     return hasPermission(user, "coach-records:manage");
   }
