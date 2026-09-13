@@ -385,7 +385,7 @@ function buildBirthdayNotificationContent(birthdayPerson: BirthdayPerson, self: 
   }
 
   return {
-    title: "Cumpleaños del club",
+    title: `Hoy cumpleaños ${birthdayPerson.name}`,
     message: `Hoy es un día muy especial: es el cumpleaños de ${birthdayPerson.name}.`,
   };
 }
