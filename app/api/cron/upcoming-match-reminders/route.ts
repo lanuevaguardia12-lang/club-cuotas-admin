@@ -39,13 +39,25 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => ({}))) as {
+    all?: unknown;
     ignoreAlreadyNotified?: unknown;
     playerId?: unknown;
   };
+  const all = body.all === true;
   const playerId = typeof body.playerId === "string" ? body.playerId.trim() : "";
 
-  if (!playerId) {
-    return NextResponse.json({ message: "Tenes que indicar playerId." }, { status: 400 });
+  if (all && playerId) {
+    return NextResponse.json(
+      { message: "Usá all:true o playerId. Solo una opción por vez." },
+      { status: 400 },
+    );
+  }
+
+  if (!all && !playerId) {
+    return NextResponse.json(
+      { message: "Tenes que indicar all:true o playerId." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -53,7 +65,7 @@ export async function POST(request: NextRequest) {
       actor: user ? userToAuditActor(user) : systemAuditActor,
       forceNextMatch: true,
       ignoreAlreadyNotified: body.ignoreAlreadyNotified === true,
-      targetPlayerId: playerId,
+      targetPlayerId: playerId || undefined,
     });
 
     return NextResponse.json(result);

@@ -11,6 +11,7 @@ import {
 
 import { markNotificationReadAction } from "@/app/(dashboard)/notifications/actions";
 import { EmptySection } from "@/components/layout/empty-section";
+import { NotificationManualRunPanel } from "@/components/notifications/manual-notification-runner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,6 +113,7 @@ export default async function NotificationsPage({
   const noSubscriptionCount = rows.filter(
     (row) => row.status === "no_subscription",
   ).length;
+  const currentPeriod = getArgentinaCurrentPeriod();
 
   return (
     <main className="grid gap-6">
@@ -155,14 +157,20 @@ export default async function NotificationsPage({
 
       <Card>
         <CardHeader className="grid gap-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <CardTitle className="flex items-center gap-2">
               <Filter className="text-primary size-5" aria-hidden="true" />
               Estado de notificaciones
             </CardTitle>
-            <p className="text-muted-foreground text-sm">
-              Mostrando {filteredRows.length} de {rows.length}
-            </p>
+            <div className="grid gap-2 sm:justify-items-end">
+              <p className="text-muted-foreground text-sm">
+                Mostrando {filteredRows.length} de {rows.length}
+              </p>
+              <NotificationManualRunPanel
+                period={currentPeriod}
+                selectedType={selectedType}
+              />
+            </div>
           </div>
           <div className="grid gap-3">
             <FilterBar
@@ -568,6 +576,17 @@ function buildFilterHref(tipo: NotificationAuditType, estado: NotificationAuditS
   const query = params.toString();
 
   return query ? `/notifications?${query}` : "/notifications";
+}
+
+function getArgentinaCurrentPeriod() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    month: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return `${values.get("year")}-${values.get("month")}`;
 }
 
 function getDeliveryStatusLabel(status: NotificationDeliveryStatus) {
