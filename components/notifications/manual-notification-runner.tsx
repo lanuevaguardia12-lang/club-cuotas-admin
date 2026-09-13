@@ -240,11 +240,32 @@ function buildSuccessMessage(
   }
 
   if (kind === "match-registration") {
-    const reason = typeof result?.reason === "string" ? ` Motivo: ${result.reason}.` : "";
+    const sent = numberValue(result?.sent);
+    const failed = numberValue(result?.failed);
+    const skipped = numberValue(result?.skipped);
+    const skippedNoSubscriptions = numberValue(result?.skippedNoSubscriptions);
+    const skippedAlreadyNotified = numberValue(result?.skippedAlreadyNotified);
+    const otherSkipped = Math.max(
+      0,
+      skipped - skippedNoSubscriptions - skippedAlreadyNotified,
+    );
+    const matchLabel =
+      typeof result?.matchLabel === "string" && result.matchLabel
+        ? ` Partido: ${result.matchLabel}.`
+        : "";
+    const reason =
+      typeof result?.reason === "string"
+        ? ` Motivo: ${getMatchRegistrationReasonLabel(result.reason)}.`
+        : "";
+    const details = [
+      `${sent} enviadas`,
+      `${skippedNoSubscriptions} sin dispositivo`,
+      skippedAlreadyNotified > 0 ? `${skippedAlreadyNotified} ya avisadas` : "",
+      otherSkipped > 0 ? `${otherSkipped} omitidas` : "",
+      `${failed} fallidas`,
+    ].filter(Boolean);
 
-    return `DT: ${numberValue(result?.sent)} enviadas, ${numberValue(
-      result?.skipped,
-    )} omitidas, ${numberValue(result?.failed)} fallidas.${reason}`;
+    return `DT: ${details.join(", ")}.${reason}${matchLabel}`;
   }
 
   return `Cumpleaños: ${numberValue(result?.birthdays)} cumpleaños, ${numberValue(
@@ -256,4 +277,20 @@ function buildSuccessMessage(
 
 function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getMatchRegistrationReasonLabel(reason: string) {
+  if (reason === "already-registered") {
+    return "el último partido ya tiene jugadores cargados";
+  }
+
+  if (reason === "no-played-match") {
+    return "no se encontró un último partido jugado";
+  }
+
+  if (reason === "registration-status-error") {
+    return "no se pudo verificar si el partido tiene jugadores cargados";
+  }
+
+  return reason;
 }

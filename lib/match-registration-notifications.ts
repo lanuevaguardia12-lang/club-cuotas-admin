@@ -32,6 +32,8 @@ export interface SendCoachMatchRegistrationNotificationResult {
   registered: boolean;
   sent: number;
   skipped: number;
+  skippedAlreadyNotified: number;
+  skippedNoSubscriptions: number;
 }
 
 interface SendCoachMatchRegistrationNotificationInput {
@@ -145,6 +147,8 @@ export async function sendCoachMatchRegistrationNotification({
   };
   let sent = 0;
   let skipped = 0;
+  let skippedAlreadyNotified = 0;
+  let skippedNoSubscriptions = 0;
   let failed = 0;
   let notificationRecordsFailed = 0;
 
@@ -168,11 +172,13 @@ export async function sendCoachMatchRegistrationNotification({
       notifiedThisRun.has(referenceId)
     ) {
       skipped += 1;
+      skippedAlreadyNotified += 1;
       continue;
     }
 
     if (userSubscriptions.length === 0) {
       skipped += 1;
+      skippedNoSubscriptions += 1;
       await createCoachMatchRegistrationDeliveryRecord({
         alreadyRecorded,
         coach,
@@ -269,6 +275,8 @@ export async function sendCoachMatchRegistrationNotification({
         registered: false,
         sent,
         skipped,
+        skippedAlreadyNotified,
+        skippedNoSubscriptions,
       },
     })
     .catch(() => undefined);
@@ -282,6 +290,8 @@ export async function sendCoachMatchRegistrationNotification({
     registered: false,
     sent,
     skipped,
+    skippedAlreadyNotified,
+    skippedNoSubscriptions,
   };
 }
 
@@ -411,6 +421,8 @@ function buildEmptyResult({
     registered,
     sent: 0,
     skipped: 0,
+    skippedAlreadyNotified: 0,
+    skippedNoSubscriptions: 0,
   };
 }
 
