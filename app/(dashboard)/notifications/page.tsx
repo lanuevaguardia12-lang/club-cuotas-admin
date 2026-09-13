@@ -22,7 +22,8 @@ import type { PlayerDirectoryItem } from "@/types/players";
 
 export const dynamic = "force-dynamic";
 
-type NotificationAuditType = "all" | "fee" | "mvp" | "upcoming-match";
+type NotificationAuditType =
+  "all" | "fee" | "match-registration" | "mvp" | "upcoming-match";
 type NotificationAuditStatus =
   "all" | "created" | "failed" | "no_subscription" | "sent" | "skipped";
 
@@ -55,6 +56,7 @@ const typeFilters: Array<{ label: string; value: NotificationAuditType }> = [
   { label: "Próximo partido", value: "upcoming-match" },
   { label: "Cuotas", value: "fee" },
   { label: "MVP", value: "mvp" },
+  { label: "Registros DT", value: "match-registration" },
 ];
 
 const statusFilters: Array<{ label: string; value: NotificationAuditStatus }> = [
@@ -417,6 +419,14 @@ function parseNotificationReference(notification: AppNotification) {
     };
   }
 
+  if (parts[0] === "match-registration") {
+    return {
+      detail: parts[2] ? `Partido ${parts[2]}` : "Carga de jugadores",
+      playerId: undefined,
+      userId: parts[1],
+    };
+  }
+
   return {
     detail: notification.message,
     playerId: undefined,
@@ -455,10 +465,18 @@ function getAuditTypeGroup(notification: AppNotification): NotificationAuditType
     return "upcoming-match";
   }
 
+  if (notification.notificationKind === "match-registration") {
+    return "match-registration";
+  }
+
   return "all";
 }
 
 function getNotificationTypeLabel(notification: AppNotification) {
+  if (notification.notificationKind === "match-registration") {
+    return "Registros DT";
+  }
+
   if (notification.notificationKind === "upcoming-match") {
     return "Próximo partido";
   }
@@ -479,7 +497,12 @@ function getNotificationTypeLabel(notification: AppNotification) {
 }
 
 function parseTypeFilter(value: string | undefined): NotificationAuditType {
-  if (value === "fee" || value === "mvp" || value === "upcoming-match") {
+  if (
+    value === "fee" ||
+    value === "match-registration" ||
+    value === "mvp" ||
+    value === "upcoming-match"
+  ) {
     return value;
   }
 

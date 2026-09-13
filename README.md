@@ -1046,6 +1046,11 @@ respaldo y tambien envia los avisos de mitad de votacion y cierre. Usa
 `reference_id` en `Notificaciones` para mandar una sola notificacion por
 usuario, partido y etapa.
 
+El cron `/api/cron/match-registration-reminders` corre todos los dias a las
+13:00 UTC (10:00 de Argentina). Busca el ultimo partido jugado del club y, si
+todavia no tiene jugadores cargados, avisa al DT con el push `Cargar jugadores`.
+Usa `reference_id` por DT/partido/dia para no repetir dentro del mismo dia.
+
 El cron `/api/cron/upcoming-match-reminders` corre todos los dias a las 22:00
 UTC (19:00 de Argentina). Si hay un partido programado para manana o pasado
 manana, envia a los jugadores suscriptos el push `Prepara los botines tu proximo
@@ -1116,6 +1121,8 @@ Rutas principales:
   cierre de votacion MVP.
 - `POST /api/cron/player-of-match-reminders`: prueba manual de push MVP para un
   `playerId` o `userId`.
+- `GET /api/cron/match-registration-reminders`: envia push diario al DT si falta
+  cargar jugadores del ultimo partido jugado.
 - `GET /api/cron/upcoming-match-reminders`: envia push si hay partido en los proximos dos dias.
 - `GET /api/cron/birthday-reminders`: envia saludos y avisos de cumpleaños del dia.
 - `POST /api/cron/birthday-reminders`: prueba manual de cumpleaños para fecha,

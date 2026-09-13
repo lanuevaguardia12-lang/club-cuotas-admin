@@ -27,6 +27,7 @@ const webhookEndpoints = [
   ["GET", "/api/cron/player-fee-defined", "Cron mensual de cuota definida"],
   ["GET", "/api/cron/player-fee-reminders", "Cron de cuota vencida"],
   ["GET", "/api/cron/player-of-match-reminders", "Cron de respaldo MVP"],
+  ["GET", "/api/cron/match-registration-reminders", "Cron diario de registros DT"],
   ["GET", "/api/cron/upcoming-match-reminders", "Cron de proximo partido"],
   ["GET", "/api/cron/coach-records-email", "Cron mensual de desglose DT"],
 ];
