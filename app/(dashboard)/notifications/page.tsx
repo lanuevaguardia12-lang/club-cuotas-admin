@@ -450,50 +450,60 @@ function buildNotificationDetail(
 }
 
 function getAuditTypeGroup(notification: AppNotification): NotificationAuditType {
+  if (isNotificationKind(notification, "match-registration")) {
+    return "match-registration";
+  }
+
   if (
-    notification.notificationKind === "fee-defined" ||
-    notification.notificationKind === "fee-reminder"
+    isNotificationKind(notification, "fee-defined") ||
+    isNotificationKind(notification, "fee-reminder")
   ) {
     return "fee";
   }
 
-  if (notification.notificationKind === "mvp") {
+  if (isNotificationKind(notification, "mvp")) {
     return "mvp";
   }
 
-  if (notification.notificationKind === "upcoming-match") {
+  if (isNotificationKind(notification, "upcoming-match")) {
     return "upcoming-match";
-  }
-
-  if (notification.notificationKind === "match-registration") {
-    return "match-registration";
   }
 
   return "all";
 }
 
 function getNotificationTypeLabel(notification: AppNotification) {
-  if (notification.notificationKind === "match-registration") {
+  if (isNotificationKind(notification, "match-registration")) {
     return "Registros DT";
   }
 
-  if (notification.notificationKind === "upcoming-match") {
+  if (isNotificationKind(notification, "upcoming-match")) {
     return "Próximo partido";
   }
 
-  if (notification.notificationKind === "fee-defined") {
+  if (isNotificationKind(notification, "fee-defined")) {
     return "Cuota definida";
   }
 
-  if (notification.notificationKind === "fee-reminder") {
+  if (isNotificationKind(notification, "fee-reminder")) {
     return "Cuota vencida";
   }
 
-  if (notification.notificationKind === "mvp") {
+  if (isNotificationKind(notification, "mvp")) {
     return "Votar MVP";
   }
 
   return "Otra";
+}
+
+function isNotificationKind(
+  notification: AppNotification,
+  kind: NonNullable<AppNotification["notificationKind"]>,
+) {
+  return (
+    notification.notificationKind === kind ||
+    notification.referenceId?.startsWith(`${kind}:`) === true
+  );
 }
 
 function parseTypeFilter(value: string | undefined): NotificationAuditType {

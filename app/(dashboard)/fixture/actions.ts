@@ -90,7 +90,7 @@ export async function updateFixtureMatchSchedule(
     const resultWasLoaded =
       typeof parsed.data.localScore === "number" &&
       typeof parsed.data.visitorScore === "number";
-    const match = resultWasLoaded
+    const baseMatch = resultWasLoaded
       ? await findFixtureMatch(dataService, parsed.data.matchId).catch((error) => {
           console.error("No se pudo encontrar el partido para notificar al DT", error);
           return undefined;
@@ -109,10 +109,10 @@ export async function updateFixtureMatchSchedule(
       visitorScore: parsed.data.visitorScore,
     });
 
-    if (match) {
+    if (baseMatch) {
       await sendCoachMatchRegistrationNotification({
         actor: userToAuditActor(user),
-        match,
+        match: applySubmittedFixtureResult(baseMatch, parsed.data),
       }).catch((error) => {
         console.error("No se pudo notificar al DT para registrar jugadores", error);
       });
@@ -188,6 +188,27 @@ export async function updateFixtureMatchConvocation(
         error instanceof Error ? error.message : "No se pudo guardar la convocatoria.",
     };
   }
+}
+
+function applySubmittedFixtureResult(
+  match: LeagueFixtureMatch,
+  input: z.infer<typeof fixtureScheduleSchema>,
+): LeagueFixtureMatch {
+  const [dateIso = match.dateIso, time = match.time] = input.dateTime.split("T");
+
+  return {
+    ...match,
+    dateIso,
+    goalEvents: input.goalScorers?.length ? [] : match.goalEvents,
+    goals: input.goalScorers?.length ? input.goalScorers : match.goals,
+    localPenaltyScore: input.localPenaltyScore,
+    localScore: input.localScore,
+    manualGoalScorers: input.goalScorers,
+    status: "played",
+    time,
+    visitorPenaltyScore: input.visitorPenaltyScore,
+    visitorScore: input.visitorScore,
+  };
 }
 
 async function findFixtureMatch(

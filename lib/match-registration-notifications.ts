@@ -496,8 +496,12 @@ function getRivalName(match: LeagueFixtureMatch) {
 function formatMatchLabel(match: LeagueFixtureMatch) {
   const date = match.dateIso || match.roundDate || "Fecha sin publicar";
   const rival = getRivalName(match);
+  const score =
+    typeof match.localScore === "number" && typeof match.visitorScore === "number"
+      ? ` · ${match.localTeam} ${match.localScore}-${match.visitorScore} ${match.visitorTeam}`
+      : "";
 
-  return `${date} · ${match.competitionKind.toUpperCase()} · vs ${rival}`;
+  return `${date} · ${match.competitionKind.toUpperCase()} · vs ${rival}${score}`;
 }
 
 function getCoachMatchRegistrationReferenceId(
