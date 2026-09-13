@@ -23,7 +23,7 @@ import type { PlayerDirectoryItem } from "@/types/players";
 export const dynamic = "force-dynamic";
 
 type NotificationAuditType =
-  "all" | "fee" | "match-registration" | "mvp" | "upcoming-match";
+  "all" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
 type NotificationAuditStatus =
   "all" | "created" | "failed" | "no_subscription" | "sent" | "skipped";
 
@@ -57,6 +57,7 @@ const typeFilters: Array<{ label: string; value: NotificationAuditType }> = [
   { label: "Cuotas", value: "fee" },
   { label: "MVP", value: "mvp" },
   { label: "Registros DT", value: "match-registration" },
+  { label: "Cumpleaños", value: "birthday" },
 ];
 
 const statusFilters: Array<{ label: string; value: NotificationAuditStatus }> = [
@@ -120,7 +121,8 @@ export default async function NotificationsPage({
           Notificaciones
         </h1>
         <p className="text-muted-foreground mt-2 max-w-3xl text-sm">
-          Estado de envíos por jugador para próximo partido, cuotas y votación MVP.
+          Estado de envíos por jugador para partidos, cuotas, MVP, registros DT y
+          cumpleaños.
         </p>
       </header>
 
@@ -427,6 +429,16 @@ function parseNotificationReference(notification: AppNotification) {
     };
   }
 
+  if (parts[0] === "birthday") {
+    return {
+      detail: `${parts[1] || "Fecha"} · ${
+        parts[4] === "self" ? "Cumpleaños propio" : "Cumpleaños del club"
+      }`,
+      playerId: parts[2],
+      userId: parts[3],
+    };
+  }
+
   return {
     detail: notification.message,
     playerId: undefined,
@@ -450,6 +462,10 @@ function buildNotificationDetail(
 }
 
 function getAuditTypeGroup(notification: AppNotification): NotificationAuditType {
+  if (isNotificationKind(notification, "birthday")) {
+    return "birthday";
+  }
+
   if (isNotificationKind(notification, "match-registration")) {
     return "match-registration";
   }
@@ -473,6 +489,10 @@ function getAuditTypeGroup(notification: AppNotification): NotificationAuditType
 }
 
 function getNotificationTypeLabel(notification: AppNotification) {
+  if (isNotificationKind(notification, "birthday")) {
+    return "Cumpleaños";
+  }
+
   if (isNotificationKind(notification, "match-registration")) {
     return "Registros DT";
   }
@@ -509,6 +529,7 @@ function isNotificationKind(
 function parseTypeFilter(value: string | undefined): NotificationAuditType {
   if (
     value === "fee" ||
+    value === "birthday" ||
     value === "match-registration" ||
     value === "mvp" ||
     value === "upcoming-match"

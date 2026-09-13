@@ -5,7 +5,12 @@ import { sendPushNotification } from "@/lib/push";
 import { getDataService } from "@/services/data-service";
 import type { AccountUser } from "@/types/account";
 import type { AuthRole } from "@/types/auth";
-import type { AuditActor, PushSubscriptionRecord } from "@/types/premium";
+import type {
+  AppNotification,
+  AuditActor,
+  NotificationDeliveryStatus,
+  PushSubscriptionRecord,
+} from "@/types/premium";
 import type { PlayerDirectoryItem } from "@/types/players";
 
 const ARGENTINA_TIME_ZONE = "America/Argentina/Buenos_Aires";
@@ -20,6 +25,7 @@ interface BirthdayPerson {
 }
 
 interface BirthdayRecipient {
+  name: string;
   userId: string;
   playerId?: string;
   personId: string;
@@ -80,8 +86,14 @@ export async function sendBirthdayNotifications({
     players: playersData.players,
     subscriptions,
   });
-  const alreadyNotified = new Set(
+  const alreadyRecorded = new Set(
     notifications
+      .map((notification) => notification.referenceId)
+      .filter((referenceId): referenceId is string => Boolean(referenceId)),
+  );
+  const alreadyDelivered = new Set(
+    notifications
+      .filter(isDeliveredBirthdayNotificationRecord)
       .map((notification) => notification.referenceId)
       .filter((referenceId): referenceId is string => Boolean(referenceId)),
   );
@@ -102,7 +114,7 @@ export async function sendBirthdayNotifications({
       });
 
       if (
-        (!ignoreAlreadyNotified && alreadyNotified.has(referenceId)) ||
+        (!ignoreAlreadyNotified && alreadyDelivered.has(referenceId)) ||
         notifiedThisRun.has(referenceId)
       ) {
         skipped += 1;
@@ -110,7 +122,29 @@ export async function sendBirthdayNotifications({
       }
 
       const notification = buildBirthdayNotificationContent(birthdayPerson, self);
+
+      if (recipient.subscriptions.length === 0) {
+        skipped += 1;
+        await createBirthdayDeliveryRecord({
+          alreadyRecorded,
+          birthdayPerson,
+          dataService,
+          deliveryStatus: "no_subscription",
+          notification,
+          notificationRecordsFailed: () => {
+            notificationRecordsFailed += 1;
+          },
+          recipient,
+          recordedThisRun: notifiedThisRun,
+          referenceId,
+          self,
+          targetDate,
+        });
+        continue;
+      }
+
       let recipientSent = 0;
+      let lastError = "";
 
       for (const subscription of recipient.subscriptions) {
         try {
@@ -124,6 +158,7 @@ export async function sendBirthdayNotifications({
           recipientSent += 1;
         } catch (error) {
           failed += 1;
+          lastError = getErrorMessage(error);
           await maybeDeactivateExpiredSubscription(
             dataService,
             subscription.endpoint,
@@ -133,22 +168,40 @@ export async function sendBirthdayNotifications({
       }
 
       if (recipientSent > 0) {
-        notifiedThisRun.add(referenceId);
-
-        try {
-          await dataService.createNotification({
-            title: notification.title,
-            message: notification.message,
-            type: "success",
-            targetRole: recipient.role,
-            targetUserId: recipient.userId,
-            targetPlayerId: recipient.playerId,
-            referenceId,
-            url: self ? "/account" : "/",
-          });
-        } catch {
-          notificationRecordsFailed += 1;
-        }
+        await createBirthdayDeliveryRecord({
+          alreadyRecorded,
+          birthdayPerson,
+          dataService,
+          deliveryAttempts: recipient.subscriptions.length,
+          deliveryStatus: "sent",
+          notification,
+          notificationRecordsFailed: () => {
+            notificationRecordsFailed += 1;
+          },
+          recipient,
+          recordedThisRun: notifiedThisRun,
+          referenceId,
+          self,
+          targetDate,
+        });
+      } else {
+        await createBirthdayDeliveryRecord({
+          alreadyRecorded,
+          birthdayPerson,
+          dataService,
+          deliveryAttempts: recipient.subscriptions.length,
+          deliveryStatus: "failed",
+          error: lastError || "No se pudo enviar el push de cumpleaños.",
+          notification,
+          notificationRecordsFailed: () => {
+            notificationRecordsFailed += 1;
+          },
+          recipient,
+          recordedThisRun: notifiedThisRun,
+          referenceId,
+          self,
+          targetDate,
+        });
       }
     }
   }
@@ -250,7 +303,35 @@ function groupRecipientsByUser({
   const inactivePlayerIds = new Set(
     players.filter((player) => player.status === "inactive").map((player) => player.id),
   );
+  const subscriptionsByUser = subscriptions.reduce((map, subscription) => {
+    const current = map.get(subscription.userId) ?? [];
+    current.push(subscription);
+    map.set(subscription.userId, current);
+    return map;
+  }, new Map<string, PushSubscriptionRecord[]>());
   const recipients = new Map<string, BirthdayRecipient>();
+
+  for (const account of accountUsers) {
+    if (account.role === "admin") {
+      continue;
+    }
+
+    if (account.playerId && inactivePlayerIds.has(account.playerId)) {
+      continue;
+    }
+
+    const personId = account.playerId || account.userId;
+    const person = peopleById.get(personId);
+
+    recipients.set(account.userId, {
+      name: account.name || person?.name || account.username,
+      userId: account.userId,
+      playerId: account.playerId || person?.playerId,
+      personId,
+      role: account.role,
+      subscriptions: subscriptionsByUser.get(account.userId) ?? [],
+    });
+  }
 
   for (const subscription of subscriptions) {
     const account = accountsByUserId.get(subscription.userId);
@@ -272,6 +353,7 @@ function groupRecipientsByUser({
     const person = peopleById.get(personId);
     const role = account?.role ?? person?.role ?? "player";
     const current = recipients.get(subscription.userId) ?? {
+      name: account?.name || person?.name || account?.username || subscription.userId,
       userId: subscription.userId,
       playerId: subscription.playerId || account?.playerId || person?.playerId,
       personId,
@@ -308,6 +390,90 @@ function buildBirthdayNotificationContent(birthdayPerson: BirthdayPerson, self: 
   };
 }
 
+async function createBirthdayDeliveryRecord({
+  alreadyRecorded,
+  birthdayPerson,
+  dataService,
+  deliveryAttempts = 0,
+  deliveryStatus,
+  error,
+  notification,
+  notificationRecordsFailed,
+  recipient,
+  recordedThisRun,
+  referenceId,
+  self,
+  targetDate,
+}: {
+  alreadyRecorded: Set<string>;
+  birthdayPerson: BirthdayPerson;
+  dataService: ReturnType<typeof getDataService>;
+  deliveryAttempts?: number;
+  deliveryStatus: Extract<
+    NotificationDeliveryStatus,
+    "failed" | "no_subscription" | "sent"
+  >;
+  error?: string;
+  notification: ReturnType<typeof buildBirthdayNotificationContent>;
+  notificationRecordsFailed: () => void;
+  recipient: BirthdayRecipient;
+  recordedThisRun: Set<string>;
+  referenceId: string;
+  self: boolean;
+  targetDate: string;
+}) {
+  if (recordedThisRun.has(referenceId)) {
+    return;
+  }
+
+  if (alreadyRecorded.has(referenceId) && deliveryStatus !== "sent") {
+    return;
+  }
+
+  const shouldNotifyRecipient = deliveryStatus === "sent";
+
+  try {
+    await dataService.createNotification({
+      title: notification.title,
+      message: notification.message,
+      type:
+        deliveryStatus === "failed"
+          ? "danger"
+          : deliveryStatus === "no_subscription"
+            ? "warning"
+            : "success",
+      status: shouldNotifyRecipient ? "unread" : "archived",
+      targetRole: shouldNotifyRecipient ? recipient.role : "admin",
+      targetUserId: shouldNotifyRecipient ? recipient.userId : undefined,
+      targetPlayerId: shouldNotifyRecipient ? recipient.playerId : undefined,
+      referenceId,
+      url: self ? "/account" : "/",
+      deliveryAttempts,
+      deliveryError: error,
+      deliveryStatus,
+      matchLabel: buildBirthdayDetail(birthdayPerson, targetDate, self),
+      notificationKind: "birthday",
+      recipientName: recipient.name,
+      recipientPlayerId: recipient.playerId,
+      recipientUserId: recipient.userId,
+    });
+    alreadyRecorded.add(referenceId);
+    recordedThisRun.add(referenceId);
+  } catch {
+    notificationRecordsFailed();
+  }
+}
+
+function buildBirthdayDetail(
+  birthdayPerson: BirthdayPerson,
+  targetDate: string,
+  self: boolean,
+) {
+  return self
+    ? `Cumpleaños propio · ${targetDate}`
+    : `Cumpleaños de ${birthdayPerson.name} · ${targetDate}`;
+}
+
 function isSamePerson(recipient: BirthdayRecipient, person: BirthdayPerson) {
   return (
     recipient.personId === person.id ||
@@ -330,6 +496,13 @@ function getBirthdayReferenceId({
   return `birthday:${dateIso}:${birthdayPersonId}:${recipientUserId}:${
     self ? "self" : "team"
   }`;
+}
+
+function isDeliveredBirthdayNotificationRecord(notification: AppNotification) {
+  return (
+    notification.referenceId?.startsWith("birthday:") === true &&
+    (notification.deliveryStatus === "created" || notification.deliveryStatus === "sent")
+  );
 }
 
 function isBirthdayOnDate(birthDate: string, dateIso: string) {
@@ -385,4 +558,12 @@ async function maybeDeactivateExpiredSubscription(
   if (statusCode === 404 || statusCode === 410) {
     await dataService.deletePushSubscription(endpoint).catch(() => undefined);
   }
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Error desconocido.";
 }
