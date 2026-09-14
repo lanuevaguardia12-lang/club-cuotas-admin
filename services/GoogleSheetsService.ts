@@ -3774,11 +3774,11 @@ export class GoogleSheetsService implements IDataService {
 
     return unstable_cache(
       async () => ({
-        auditRows: await this.readValues(this.config.auditRange),
-        logRows: await this.readValues(this.config.logsRange),
-        notificationRows: await this.readValues(this.config.notificationsRange),
-        reminderRows: await this.readValues(this.config.remindersRange),
-        paymentRows: await this.readValues(this.config.paymentsRange),
+        auditRows: await this.readOptionalValues(this.config.auditRange),
+        logRows: await this.readOptionalValues(this.config.logsRange),
+        notificationRows: await this.readOptionalValues(this.config.notificationsRange),
+        reminderRows: await this.readOptionalValues(this.config.remindersRange),
+        paymentRows: await this.readOptionalValues(this.config.paymentsRange),
       }),
       [
         "google-sheets-premium",

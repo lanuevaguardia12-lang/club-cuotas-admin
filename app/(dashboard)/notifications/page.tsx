@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isWhatsAppBotNotification } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
 import type { AccountUser } from "@/types/account";
 import type { AppNotification, NotificationDeliveryStatus } from "@/types/premium";
@@ -93,13 +94,18 @@ export default async function NotificationsPage({
   const selectedType = parseTypeFilter(params.tipo);
   const selectedStatus = parseStatusFilter(params.estado);
   const dataService = getDataService();
-  const [premium, playersData, accounts] = await Promise.all([
-    dataService.getPremiumData(),
+  const [notifications, playersData, accounts] = await Promise.all([
+    dataService
+      .getNotifications()
+      .then((items) =>
+        items.filter((notification) => !isWhatsAppBotNotification(notification)),
+      )
+      .catch(() => []),
     dataService.getPlayersData().catch(() => null),
     dataService.getAccountUsers().catch(() => [] as AccountUser[]),
   ]);
   const rows = buildNotificationAuditRows(
-    premium.notifications,
+    notifications,
     playersData?.players ?? [],
     accounts,
   );
