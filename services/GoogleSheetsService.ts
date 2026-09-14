@@ -777,11 +777,14 @@ export class GoogleSheetsService implements IDataService {
         user.role === "player"
           ? await this.findPlayerRecordForUser(user).catch(() => null)
           : null;
-      const attendance = player
-        ? buildPlayerAttendanceSummary(
-            player,
+      const attendanceMatches = player
+        ? canonicalizeMatchRecordsPlayers(
             await this.readPlayerOfMatchMatches().catch(() => []),
+            [player],
           )
+        : [];
+      const attendance = player
+        ? buildPlayerAttendanceSummary(player, attendanceMatches)
         : undefined;
       const mvpWins = player
         ? await this.getPlayerOfMatchData(user.id)
@@ -1699,10 +1702,14 @@ export class GoogleSheetsService implements IDataService {
       this.assertConfigured();
       assertValidPeriod(period);
 
-      const { costsRows, actualsRows, matchRows } = await this.readFeeCalculatorRows();
+      const [{ costsRows, actualsRows, matchRows }, playersRows] = await Promise.all([
+        this.readFeeCalculatorRows(),
+        this.readCachedPlayerDirectoryRows().catch(() => []),
+      ]);
+      const players = mapRowsToPlayers(playersRows);
       const costs = mapRowsToFeeCalculatorCosts(costsRows);
       const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
-      const matches = mapRowsToMatches(matchRows);
+      const matches = mapRowsToMatches(matchRows, players);
 
       return buildCoachRecordsData({
         period,
@@ -1759,7 +1766,7 @@ export class GoogleSheetsService implements IDataService {
     const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
     const playerStatuses = mapRowsToFeeCalculatorPlayerStatuses(playerStatusRows);
     const refundPolicy = mapRowsToRefundPolicy(refundPolicyRows);
-    const matches = mapRowsToMatches(matchRows);
+    const matches = mapRowsToMatches(matchRows, players);
     const expenseCredits = mapClubExpenseRowsToPlayerCredits(expenseRows);
     const status = players.length === 0 && costs.length === 0 ? "empty" : "ready";
     const message =
@@ -2600,12 +2607,15 @@ export class GoogleSheetsService implements IDataService {
         fixtureMatches,
         fixtureOverrides,
       );
-      const matches = applyPlayerOfMatchOverrides(
-        mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
-        overrides,
-      );
       const players = mapRowsToPlayers(playerRows).filter(
         (player) => !isDroppedPlayer(player),
+      );
+      const matches = canonicalizeMatchRecordsPlayers(
+        applyPlayerOfMatchOverrides(
+          mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
+          overrides,
+        ),
+        players,
       );
       const currentProfile = accountProfiles.find(
         (profile) => profile.userId === voterUserId,
@@ -2667,21 +2677,28 @@ export class GoogleSheetsService implements IDataService {
   async submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void> {
     this.assertConfigured();
 
-    const [sheetMatches, fixtureMatches, votes, overrides, fixtureOverrides] =
+    const [sheetMatches, fixtureMatches, votes, overrides, fixtureOverrides, playerRows] =
       await Promise.all([
         this.readPlayerOfMatchMatches(),
         getLeagueClubMatchesForYear().catch(() => []),
         this.readPlayerOfMatchVotes(),
         this.readPlayerOfMatchOverrides(),
         this.getFixtureMatchScheduleOverrides(),
+        this.readCachedPlayerDirectoryRows().catch(() => []),
       ]);
     const adjustedFixtureMatches = applyFixtureMatchScheduleOverrides(
       fixtureMatches,
       fixtureOverrides,
     );
-    const matches = applyPlayerOfMatchOverrides(
-      mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
-      overrides,
+    const players = mapRowsToPlayers(playerRows).filter(
+      (player) => !isDroppedPlayer(player),
+    );
+    const matches = canonicalizeMatchRecordsPlayers(
+      applyPlayerOfMatchOverrides(
+        mergePlayerOfMatchMatches(sheetMatches, adjustedFixtureMatches),
+        overrides,
+      ),
+      players,
     );
     const match = matches.find((candidate) => candidate.id === input.matchId);
 
@@ -4260,10 +4277,14 @@ export class GoogleSheetsService implements IDataService {
     const sourcePeriods = Array.from(
       new Set([...periods, ...periods.map(getPreviousPeriod)]),
     ).sort();
-    const { costsRows, actualsRows, matchRows } = await this.readFeeCalculatorRows();
+    const [{ costsRows, actualsRows, matchRows }, playersRows] = await Promise.all([
+      this.readFeeCalculatorRows(),
+      this.readCachedPlayerDirectoryRows().catch(() => []),
+    ]);
+    const players = mapRowsToPlayers(playersRows);
     const costs = mapRowsToFeeCalculatorCosts(costsRows);
     const actuals = mapRowsToFeeCalculatorActuals(actualsRows);
-    const matches = mapRowsToMatches(matchRows);
+    const matches = mapRowsToMatches(matchRows, players);
     const effectiveActuals = sourcePeriods.reduce(
       (mergedActuals, sourcePeriod) =>
         mergeInferredFeeCalculatorActuals(costs, mergedActuals, matches, sourcePeriod),
@@ -5610,8 +5631,12 @@ function mapRowsToRefundPolicy(rows: unknown[][]): FeeRefundPolicyRule[] {
   return rules.length > 0 ? rules : getDefaultRefundPolicy();
 }
 
-function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
+function mapRowsToMatches(
+  rows: unknown[][],
+  playerRecords: PlayerRecord[] = [],
+): MatchRecord[] {
   const matchesByKey = new Map<string, MatchRecord>();
+  const resolvePlayerName = createMatchPlayerNameResolver(playerRecords);
 
   for (const record of rowsToRecords(rows)) {
     const date = parseClubDateTime(
@@ -5678,9 +5703,9 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
       "jugaron",
       "asistieron",
     ]);
-    const players = splitPlayerNames(rawPlayers);
+    const matchPlayers = splitPlayerNames(rawPlayers).map(resolvePlayerName);
 
-    if (!date || players.length === 0) {
+    if (!date || matchPlayers.length === 0) {
       continue;
     }
 
@@ -5690,7 +5715,7 @@ function mapRowsToMatches(rows: unknown[][]): MatchRecord[] {
       date,
       period: getPeriodFromDate(date) ?? getCurrentPeriod(),
       rival,
-      players: uniquePlayerNames(players),
+      players: uniquePlayerNames(matchPlayers),
       venue,
       coachAttended,
       loadedAt: loadedAt ?? date,
@@ -6913,6 +6938,173 @@ function findMatchPlayerName(players: string[], value: string) {
   const normalizedValue = normalizeClubPlayerName(value);
 
   return players.find((player) => normalizeClubPlayerName(player) === normalizedValue);
+}
+
+function canonicalizeMatchRecordsPlayers(
+  matches: MatchRecord[],
+  playerRecords: PlayerRecord[],
+) {
+  if (matches.length === 0) {
+    return matches;
+  }
+
+  const resolvePlayerName = createMatchPlayerNameResolver(playerRecords);
+
+  return matches.map((match) => {
+    const players = uniquePlayerNames(match.players.map(resolvePlayerName));
+    const didChange =
+      players.length !== match.players.length ||
+      players.some((playerName, index) => playerName !== match.players[index]);
+
+    return didChange ? { ...match, players } : match;
+  });
+}
+
+function createMatchPlayerNameResolver(playerRecords: PlayerRecord[]) {
+  const candidatesByKey = buildMatchPlayerCandidatesByKey(playerRecords);
+
+  return (value: string) => {
+    const cleanedValue = cleanMatchPlayerNameToken(value);
+
+    if (!cleanedValue || candidatesByKey.size === 0) {
+      return cleanedValue;
+    }
+
+    const matches = new Map<string, PlayerRecord>();
+
+    for (const key of buildPlayerLookupKeys(value, cleanedValue)) {
+      const candidates = candidatesByKey.get(key);
+
+      if (!candidates) {
+        continue;
+      }
+
+      for (const candidate of candidates.values()) {
+        matches.set(getPlayerRecordLookupId(candidate), candidate);
+      }
+    }
+
+    if (matches.size === 1) {
+      const [player] = matches.values();
+
+      return player.name;
+    }
+
+    return cleanedValue;
+  };
+}
+
+function buildMatchPlayerCandidatesByKey(playerRecords: PlayerRecord[]) {
+  const candidatesByKey = new Map<string, Map<string, PlayerRecord>>();
+  const aliasOwnersByKey = new Map<string, Set<string>>();
+  const aliasValuesByPlayerKey = new Map<string, string[]>();
+
+  for (const player of playerRecords) {
+    const playerKey = getPlayerRecordLookupId(player);
+
+    if (!playerKey) {
+      continue;
+    }
+
+    for (const key of buildPlayerLookupKeys(
+      player.id,
+      player.name,
+      createClubPlayerId(player.name),
+    )) {
+      addPlayerCandidate(candidatesByKey, key, player);
+    }
+
+    const aliasValues = buildMatchPlayerNameAliases(player.name);
+
+    aliasValuesByPlayerKey.set(playerKey, aliasValues);
+
+    for (const aliasValue of aliasValues) {
+      for (const aliasKey of buildPlayerLookupKeys(aliasValue)) {
+        const owners = aliasOwnersByKey.get(aliasKey) ?? new Set<string>();
+
+        owners.add(playerKey);
+        aliasOwnersByKey.set(aliasKey, owners);
+      }
+    }
+  }
+
+  for (const player of playerRecords) {
+    const playerKey = getPlayerRecordLookupId(player);
+    const aliasValues = aliasValuesByPlayerKey.get(playerKey) ?? [];
+
+    for (const aliasValue of aliasValues) {
+      for (const aliasKey of buildPlayerLookupKeys(aliasValue)) {
+        if ((aliasOwnersByKey.get(aliasKey)?.size ?? 0) === 1) {
+          addPlayerCandidate(candidatesByKey, aliasKey, player);
+        }
+      }
+    }
+  }
+
+  return candidatesByKey;
+}
+
+function addPlayerCandidate(
+  candidatesByKey: Map<string, Map<string, PlayerRecord>>,
+  key: string,
+  player: PlayerRecord,
+) {
+  const normalizedKey = String(key).trim();
+
+  if (!normalizedKey) {
+    return;
+  }
+
+  const candidates =
+    candidatesByKey.get(normalizedKey) ?? new Map<string, PlayerRecord>();
+
+  candidates.set(getPlayerRecordLookupId(player), player);
+  candidatesByKey.set(normalizedKey, candidates);
+}
+
+function getPlayerRecordLookupId(player: PlayerRecord) {
+  return (
+    player.id || createClubPlayerId(player.name) || normalizeClubPlayerName(player.name)
+  );
+}
+
+function buildMatchPlayerNameAliases(name: string) {
+  const cleanedName = cleanMatchPlayerNameToken(name);
+  const parts = cleanedName.split(/\s+/).filter(Boolean);
+  const aliases = new Set<string>();
+
+  if (parts.length < 2) {
+    return [];
+  }
+
+  const firstName = parts[0];
+  const lastName = parts[parts.length - 1];
+  const givenNames = parts.slice(0, -1).join(" ");
+
+  aliases.add(firstName);
+  aliases.add(lastName);
+  aliases.add(givenNames);
+  aliases.add(`${lastName} ${givenNames}`);
+  aliases.add(`${lastName} ${firstName}`);
+
+  if (parts.length > 2) {
+    aliases.add(parts.slice(0, 2).join(" "));
+    aliases.add(parts.slice(-2).join(" "));
+    aliases.add(`${parts.slice(-2).join(" ")} ${givenNames}`);
+  }
+
+  aliases.delete(cleanedName);
+
+  return [...aliases].filter(Boolean);
+}
+
+function cleanMatchPlayerNameToken(value: string) {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/^[\s#]*(?:\d+|[a-z])[\).:-]\s+/i, "")
+    .replace(/^[-*]\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function createMatchId(date: string, rival: string) {
