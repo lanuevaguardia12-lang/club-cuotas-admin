@@ -39,7 +39,9 @@ export function buildMatchRegistrationFormUrl({
   );
 
   for (const playerName of playerNames) {
-    appendEntry(url, entries.players, playerName);
+    for (const playerValue of getMatchRegistrationPlayerValues(playerName, playerNames)) {
+      appendEntry(url, entries.players, playerValue);
+    }
   }
 
   return url.toString();
@@ -164,6 +166,139 @@ function appendEntry(url: URL, entryId: string | undefined, value: string) {
 
 function normalizeEntryKey(entryId: string) {
   return entryId.startsWith("entry.") ? entryId : `entry.${entryId}`;
+}
+
+function getMatchRegistrationPlayerValues(playerName: string, playerNames: string[]) {
+  const cleanedName = cleanMatchRegistrationPlayerName(playerName);
+  const values = new Set<string>();
+
+  addMatchRegistrationPlayerValue(values, playerName);
+  addMatchRegistrationPlayerValue(values, cleanedName);
+
+  for (const alias of getConfiguredMatchRegistrationPlayerAliases(cleanedName)) {
+    addMatchRegistrationPlayerValue(values, alias);
+  }
+
+  const parts = cleanedName.split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    const firstName = parts[0];
+    const lastName = parts[parts.length - 1];
+    const givenNames = parts.slice(0, -1).join(" ");
+
+    addMatchRegistrationPlayerValue(values, `${lastName} ${givenNames}`);
+    addMatchRegistrationPlayerValue(values, `${lastName} ${firstName}`);
+
+    if (isUniqueMatchRegistrationAlias(firstName, playerNames)) {
+      addMatchRegistrationPlayerValue(values, firstName);
+    }
+
+    if (
+      parts.length > 2 &&
+      givenNames !== firstName &&
+      isUniqueMatchRegistrationAlias(givenNames, playerNames)
+    ) {
+      addMatchRegistrationPlayerValue(values, givenNames);
+    }
+  }
+
+  return [...values];
+}
+
+function getConfiguredMatchRegistrationPlayerAliases(playerName: string) {
+  const aliasesByPlayer = parseMatchRegistrationPlayerAliases(
+    process.env.GOOGLE_FORMS_MATCH_PLAYER_ALIASES,
+  );
+  const normalizedPlayerName = normalizeRegistrationAliasKey(playerName);
+
+  return aliasesByPlayer.get(normalizedPlayerName) ?? [];
+}
+
+function parseMatchRegistrationPlayerAliases(value?: string) {
+  const aliasesByPlayer = new Map<string, string[]>();
+  const rawValue = value?.trim();
+
+  if (!rawValue) {
+    return aliasesByPlayer;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, string[] | string>;
+
+    for (const [playerName, aliases] of Object.entries(parsed)) {
+      aliasesByPlayer.set(
+        normalizeRegistrationAliasKey(playerName),
+        Array.isArray(aliases) ? aliases : [aliases],
+      );
+    }
+
+    return aliasesByPlayer;
+  } catch {
+    // Allows a compact env format: "Gonzalo Ladona=Gonzalo,Ladona Gonzalo;..."
+  }
+
+  for (const item of rawValue.split(/[;\n]/)) {
+    const [playerName, aliases] = item.split("=");
+
+    if (!playerName || !aliases) {
+      continue;
+    }
+
+    aliasesByPlayer.set(
+      normalizeRegistrationAliasKey(playerName),
+      aliases.split(",").map((alias) => alias.trim()),
+    );
+  }
+
+  return aliasesByPlayer;
+}
+
+function isUniqueMatchRegistrationAlias(alias: string, playerNames: string[]) {
+  const normalizedAlias = normalizeRegistrationAliasKey(alias);
+  let matches = 0;
+
+  for (const playerName of playerNames) {
+    const parts = cleanMatchRegistrationPlayerName(playerName)
+      .split(/\s+/)
+      .filter(Boolean);
+    const aliases = new Set([
+      parts[0],
+      parts.slice(0, -1).join(" "),
+      cleanMatchRegistrationPlayerName(playerName),
+    ]);
+
+    if (
+      [...aliases].some(
+        (value) => normalizeRegistrationAliasKey(value) === normalizedAlias,
+      )
+    ) {
+      matches += 1;
+    }
+  }
+
+  return matches === 1;
+}
+
+function addMatchRegistrationPlayerValue(values: Set<string>, value: string) {
+  const normalizedValue = value.trim();
+
+  if (normalizedValue) {
+    values.add(normalizedValue);
+  }
+}
+
+function cleanMatchRegistrationPlayerName(value: string) {
+  return value
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeRegistrationAliasKey(value: string) {
+  return cleanMatchRegistrationPlayerName(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 function getMatchRival(match: LeagueFixtureMatch) {
