@@ -92,6 +92,11 @@ import type {
   UpdateFixtureMatchScheduleInput,
 } from "@/types/fixture";
 import type {
+  CreateEquipmentAssignmentInput,
+  EquipmentAssignment,
+  EquipmentType,
+} from "@/types/equipment";
+import type {
   AppLogEntry,
   AppLogLevel,
   AppNotification,
@@ -168,6 +173,7 @@ interface GoogleSheetsConfig {
   playerOfMatchVotesRange: string;
   playerOfMatchOverridesRange: string;
   fixtureOverridesRange: string;
+  equipmentTrackingRange: string;
   feeCalculatorCostsRange: string;
   feeCalculatorActualsRange: string;
   feeCalculatorPlayerStatusesRange: string;
@@ -295,6 +301,7 @@ const DEFAULT_TEAMS_RANGE = "Equipos!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_VOTES_RANGE = "JugadorPartidoVotos!A:Z";
 const DEFAULT_PLAYER_OF_MATCH_OVERRIDES_RANGE = "JugadorPartidoAjustes!A:Z";
 const DEFAULT_FIXTURE_OVERRIDES_RANGE = "FixtureAjustes!A:Z";
+const DEFAULT_EQUIPMENT_TRACKING_RANGE = "SeguimientoCamisetas!A:Z";
 const DEFAULT_FEE_CALCULATOR_COSTS_RANGE = "CalculadoraCostos!A:Z";
 const DEFAULT_FEE_CALCULATOR_ACTUALS_RANGE = "CalculadoraReales!A:Z";
 const DEFAULT_FEE_CALCULATOR_PLAYER_STATUSES_RANGE = "CalculadoraJugadores!A:Z";
@@ -559,6 +566,21 @@ const fixtureOverrideHeaders = [
   "actualizado_en",
 ];
 
+const equipmentAssignmentHeaders = [
+  "id",
+  "tipo",
+  "jugador_id",
+  "jugador",
+  "fecha",
+  "partido_id",
+  "partido_fecha",
+  "partido",
+  "notas",
+  "creado_por_user_id",
+  "creado_por",
+  "creado_en",
+];
+
 function parseCommaSeparatedValues(value: string | undefined) {
   return (value ?? "")
     .split(",")
@@ -643,6 +665,10 @@ export class GoogleSheetsService implements IDataService {
         config.fixtureOverridesRange ??
         process.env.GOOGLE_SHEETS_FIXTURE_OVERRIDES_RANGE ??
         DEFAULT_FIXTURE_OVERRIDES_RANGE,
+      equipmentTrackingRange:
+        config.equipmentTrackingRange ??
+        process.env.GOOGLE_SHEETS_EQUIPMENT_TRACKING_RANGE ??
+        DEFAULT_EQUIPMENT_TRACKING_RANGE,
       feeCalculatorCostsRange:
         config.feeCalculatorCostsRange ??
         process.env.GOOGLE_SHEETS_FEE_CALCULATOR_COSTS_RANGE ??
@@ -2910,6 +2936,35 @@ export class GoogleSheetsService implements IDataService {
     }
 
     invalidatePlayerOfMatchCache();
+  }
+
+  async getEquipmentAssignments(): Promise<EquipmentAssignment[]> {
+    this.assertConfigured();
+
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      this.getAppSpreadsheetId(),
+      this.config.equipmentTrackingRange,
+    );
+
+    return mapRowsToEquipmentAssignments(rows);
+  }
+
+  async createEquipmentAssignment(input: CreateEquipmentAssignmentInput): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+
+    await this.ensureSheetForRange(this.config.equipmentTrackingRange, spreadsheetId);
+    await this.appendRowsWithHeaders(
+      this.config.equipmentTrackingRange,
+      equipmentAssignmentHeaders,
+      buildEquipmentAssignmentWritableRow(equipmentAssignmentHeaders, {
+        id: createId("equipment"),
+        createdAt: new Date().toISOString(),
+        input,
+      }),
+      spreadsheetId,
+    );
   }
 
   async getPremiumData(): Promise<PremiumData> {
@@ -8108,6 +8163,102 @@ function buildNotificationWritableRow(
   return headers.map((header) => values[header] ?? "");
 }
 
+function mapRowsToEquipmentAssignments(rows: unknown[][]): EquipmentAssignment[] {
+  return rowsToRecords(rows)
+    .map((record, index): EquipmentAssignment | null => {
+      const equipmentType = normalizeEquipmentType(
+        pick(record, ["tipo", "type", "equipment_type", "item"]),
+      );
+      const playerId = pick(record, [
+        "jugador_id",
+        "player_id",
+        "id_jugador",
+        "recipient_player_id",
+      ]);
+      const playerName = pick(record, ["jugador", "player", "player_name", "nombre"]);
+      const assignedAt =
+        parseDateTime(pick(record, ["fecha", "assigned_at", "date"])) ??
+        parseDateTime(pick(record, ["creado_en", "created_at"])) ??
+        new Date().toISOString();
+
+      if (!equipmentType || (!playerId && !playerName)) {
+        return null;
+      }
+
+      return {
+        id: pick(record, ["id", "assignment_id"]) || `equipment-${index + 1}`,
+        assignedAt,
+        createdAt:
+          parseDateTime(pick(record, ["creado_en", "created_at", "timestamp"])) ??
+          assignedAt,
+        createdByName: pick(record, ["creado_por", "created_by_name"]) || "Sistema",
+        createdByUserId:
+          pick(record, ["creado_por_user_id", "created_by_user_id"]) || "system",
+        equipmentType,
+        matchDate:
+          parseDateTime(pick(record, ["partido_fecha", "match_date"])) ?? undefined,
+        matchId: pick(record, ["partido_id", "match_id"]) || undefined,
+        matchLabel: pick(record, ["partido", "match_label", "match"]) || undefined,
+        notes: pick(record, ["notas", "notes", "observaciones"]) || undefined,
+        playerId: playerId || createClubPlayerId(playerName),
+        playerName,
+      };
+    })
+    .filter((assignment): assignment is EquipmentAssignment => Boolean(assignment))
+    .sort(compareByAssignedAtDesc);
+}
+
+function buildEquipmentAssignmentWritableRow(
+  headers: string[],
+  {
+    createdAt,
+    id,
+    input,
+  }: {
+    createdAt: string;
+    id: string;
+    input: CreateEquipmentAssignmentInput;
+  },
+) {
+  const values: Record<string, string> = {
+    id,
+    assignment_id: id,
+    tipo: input.equipmentType,
+    type: input.equipmentType,
+    equipment_type: input.equipmentType,
+    item: input.equipmentType,
+    jugador_id: input.playerId,
+    player_id: input.playerId,
+    id_jugador: input.playerId,
+    jugador: input.playerName,
+    player: input.playerName,
+    player_name: input.playerName,
+    nombre: input.playerName,
+    fecha: input.assignedAt,
+    assigned_at: input.assignedAt,
+    date: input.assignedAt,
+    partido_id: input.matchId ?? "",
+    match_id: input.matchId ?? "",
+    partido_fecha: input.matchDate ?? "",
+    match_date: input.matchDate ?? "",
+    partido: input.matchLabel ?? "",
+    match_label: input.matchLabel ?? "",
+    match: input.matchLabel ?? "",
+    notas: input.notes ?? "",
+    notes: input.notes ?? "",
+    observaciones: input.notes ?? "",
+    creado_por_user_id: input.createdByUserId,
+    created_by_user_id: input.createdByUserId,
+    creado_por: input.createdByName,
+    created_by_name: input.createdByName,
+    creado_en: createdAt,
+    created_at: createdAt,
+    timestamp: createdAt,
+  };
+
+  return headers.map((header) => values[header] ?? "");
+}
+
 function mapRowsToReminderJobs(rows: unknown[][]): ReminderJob[] {
   return rowsToRecords(rows)
     .map((record, index) => ({
@@ -11795,6 +11946,20 @@ function normalizeTargetRole(value: string): AppNotification["targetRole"] {
   return "all";
 }
 
+function normalizeEquipmentType(value: string): EquipmentType | undefined {
+  const type = normalizeText(value).replace(/[-\s]+/g, "_");
+
+  if (type === "shirt" || type === "camiseta" || type === "camisetas") {
+    return "shirt";
+  }
+
+  if (type === "balls" || type === "ball" || type === "pelota" || type === "pelotas") {
+    return "balls";
+  }
+
+  return undefined;
+}
+
 function normalizePlayerPaymentStatus(value: string): PlayerPaymentStatus {
   const status = normalizeText(value);
 
@@ -11883,6 +12048,13 @@ function compareByCreatedAtDesc(
   right: { createdAt: string },
 ) {
   return right.createdAt.localeCompare(left.createdAt);
+}
+
+function compareByAssignedAtDesc(
+  left: { assignedAt: string },
+  right: { assignedAt: string },
+) {
+  return right.assignedAt.localeCompare(left.assignedAt);
 }
 
 function compareByUpdatedAtDesc(

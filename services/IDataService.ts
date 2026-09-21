@@ -25,6 +25,10 @@ import type {
   UpsertFeeCalculatorCostInput,
 } from "@/types/fee-calculator";
 import type {
+  CreateEquipmentAssignmentInput,
+  EquipmentAssignment,
+} from "@/types/equipment";
+import type {
   FixtureMatchScheduleOverride,
   UpdateFixtureMatchScheduleInput,
 } from "@/types/fixture";
@@ -94,6 +98,8 @@ export interface IDataService {
   ): Promise<PlayerOfMatchData>;
   submitPlayerOfMatchVote(input: SubmitPlayerOfMatchVoteInput): Promise<void>;
   updatePlayerOfMatchMatch(input: UpdatePlayerOfMatchMatchInput): Promise<void>;
+  getEquipmentAssignments(): Promise<EquipmentAssignment[]>;
+  createEquipmentAssignment(input: CreateEquipmentAssignmentInput): Promise<void>;
   getPremiumData(): Promise<PremiumData>;
   getNotifications(): Promise<AppNotification[]>;
   recordAuditEvent(input: CreateAuditEventInput): Promise<void>;

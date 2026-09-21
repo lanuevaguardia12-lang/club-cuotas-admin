@@ -176,6 +176,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
     return hasPermission(user, "notifications:manage");
   }
 
+  if (href.startsWith("/seguimiento-camisetas")) {
+    return hasPermission(user, "notifications:manage");
+  }
+
   if (href.startsWith("/coach-records")) {
     return hasPermission(user, "coach-records:manage");
   }

@@ -64,6 +64,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "notifications:manage",
   },
   {
+    label: "Camisetas",
+    href: "/seguimiento-camisetas",
+    icon: "equipmentTracking",
+    permission: "notifications:manage",
+  },
+  {
     label: "Calculador de cuota",
     href: "/fee-calculator",
     icon: "feeCalculator",
@@ -122,6 +128,7 @@ const adminNavigationHrefs = new Set([
   "/teams",
   "/cash-flow",
   "/seguimiento-cuotas",
+  "/seguimiento-camisetas",
   "/fee-calculator",
   "/coach-records",
   "/payments",
