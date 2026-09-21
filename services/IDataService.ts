@@ -100,6 +100,7 @@ export interface IDataService {
   updatePlayerOfMatchMatch(input: UpdatePlayerOfMatchMatchInput): Promise<void>;
   getEquipmentAssignments(): Promise<EquipmentAssignment[]>;
   createEquipmentAssignment(input: CreateEquipmentAssignmentInput): Promise<void>;
+  deleteEquipmentAssignment(assignmentId: string): Promise<void>;
   getPremiumData(): Promise<PremiumData>;
   getNotifications(): Promise<AppNotification[]>;
   recordAuditEvent(input: CreateAuditEventInput): Promise<void>;

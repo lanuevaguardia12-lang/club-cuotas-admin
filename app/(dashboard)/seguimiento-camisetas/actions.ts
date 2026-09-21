@@ -75,3 +75,36 @@ export async function recordEquipmentAssignment(formData: FormData) {
 
   revalidatePath("/seguimiento-camisetas");
 }
+
+export async function deleteEquipmentAssignment(formData: FormData) {
+  const user = await getCurrentUser();
+  assertPermission(user, "notifications:manage");
+
+  if (!user) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  const assignmentId = z
+    .string()
+    .trim()
+    .min(1, "Falta el registro.")
+    .parse(String(formData.get("assignmentId") ?? ""));
+  const dataService = getDataService();
+
+  await dataService.deleteEquipmentAssignment(assignmentId);
+
+  await dataService
+    .recordAuditEvent({
+      actor: userToAuditActor(user),
+      action: "api.request",
+      entityType: "player",
+      entityId: assignmentId,
+      summary: "Registro de camiseta/pelotas eliminado.",
+      metadata: {
+        assignmentId,
+      },
+    })
+    .catch(() => undefined);
+
+  revalidatePath("/seguimiento-camisetas");
+}

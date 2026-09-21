@@ -2967,6 +2967,42 @@ export class GoogleSheetsService implements IDataService {
     );
   }
 
+  async deleteEquipmentAssignment(assignmentId: string): Promise<void> {
+    this.assertConfigured();
+
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const values = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.equipmentTrackingRange,
+    );
+
+    if (values.length === 0) {
+      return;
+    }
+
+    const [headerRow = [], ...dataRows] = values;
+    const headers = headerRow.map((header) => normalizeHeader(String(header)));
+    const idIndex = findHeaderIndex(headers, ["id", "assignment_id"]);
+    const targetRowIndex =
+      idIndex >= 0
+        ? dataRows.findIndex((row) => String(row[idIndex] ?? "").trim() === assignmentId)
+        : -1;
+
+    if (targetRowIndex < 0) {
+      return;
+    }
+
+    const sheetPrefix = getSheetPrefix(this.config.equipmentTrackingRange);
+    const spreadsheetRow = targetRowIndex + 2;
+    const width = Math.max(headerRow.length, equipmentAssignmentHeaders.length);
+
+    await this.createSheetsClient().spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(width - 1)}${spreadsheetRow}`,
+      requestBody: {},
+    });
+  }
+
   async getPremiumData(): Promise<PremiumData> {
     const cachedAt = new Date().toISOString();
 

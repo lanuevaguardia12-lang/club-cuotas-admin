@@ -12,6 +12,10 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { recordEquipmentAssignment } from "@/app/(dashboard)/seguimiento-camisetas/actions";
+import {
+  EquipmentAssignmentConfirmButton,
+  EquipmentAssignmentDeleteButton,
+} from "@/components/equipment/equipment-assignment-confirm-button";
 import { EquipmentAssignmentSubmitButton } from "@/components/equipment/equipment-assignment-submit-button";
 import { EmptySection } from "@/components/layout/empty-section";
 import { Badge } from "@/components/ui/badge";
@@ -260,6 +264,18 @@ export default async function ShirtTrackingPage() {
           <MasterPlayerTable match={nextMatch} players={trackingPlayers} />
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="text-primary size-5" aria-hidden="true" />
+            Historial de asignaciones
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EquipmentAssignmentHistoryTable assignments={assignments} />
+        </CardContent>
+      </Card>
     </main>
   );
 }
@@ -448,19 +464,19 @@ function AssignmentForm({
   player: PlayerDirectoryItem;
 }) {
   return (
-    <form action={recordEquipmentAssignment}>
-      <input name="equipmentType" type="hidden" value={equipmentType} />
-      <input name="playerId" type="hidden" value={player.id} />
-      <input name="playerName" type="hidden" value={player.name} />
-      <input name="assignedAt" type="hidden" value={assignmentDate} />
-      <input name="matchDate" type="hidden" value={match.dateIso ?? ""} />
-      <input name="matchId" type="hidden" value={match.id} />
-      <input name="matchLabel" type="hidden" value={formatMatchLabel(match)} />
-      <EquipmentAssignmentSubmitButton
-        label={equipmentType === "shirt" ? "Llevó camiseta" : "Llevó pelotas"}
-        pendingLabel="Guardando..."
-      />
-    </form>
+    <EquipmentAssignmentConfirmButton
+      fields={{
+        assignedAt: assignmentDate,
+        equipmentType,
+        matchDate: match.dateIso ?? "",
+        matchId: match.id,
+        matchLabel: formatMatchLabel(match),
+        playerId: player.id,
+        playerName: player.name,
+      }}
+      label={equipmentType === "shirt" ? "Llevó camiseta" : "Llevó pelotas"}
+      pendingLabel="Guardando registro..."
+    />
   );
 }
 
@@ -514,11 +530,88 @@ function AssignmentSummary({
   }
 
   return (
-    <div>
+    <div className="grid gap-2">
       <p className="font-medium">{formatDate(assignment.assignedAt)}</p>
       <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
         {assignment.matchLabel || assignment.notes || "Carga manual"}
       </p>
+      <EquipmentAssignmentDeleteButton
+        assignedAt={formatDate(assignment.assignedAt)}
+        assignmentId={assignment.id}
+        equipmentType={assignment.equipmentType}
+        matchLabel={assignment.matchLabel || assignment.notes}
+        playerName={assignment.playerName}
+      />
+    </div>
+  );
+}
+
+function EquipmentAssignmentHistoryTable({
+  assignments,
+}: {
+  assignments: EquipmentAssignment[];
+}) {
+  if (assignments.length === 0) {
+    return (
+      <div className="border-border bg-muted/30 rounded-md border p-4">
+        <p className="font-medium">Todavía no hay registros cargados.</p>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Cuando confirmes una camiseta o pelotas, va a aparecer acá.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-border overflow-x-auto rounded-md border">
+      <table className="w-full min-w-[860px] text-sm">
+        <thead className="bg-muted text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 text-left font-semibold">Fecha</th>
+            <th className="px-3 py-2 text-left font-semibold">Jugador</th>
+            <th className="px-3 py-2 text-left font-semibold">Elemento</th>
+            <th className="px-3 py-2 text-left font-semibold">Partido / notas</th>
+            <th className="px-3 py-2 text-left font-semibold">Cargado por</th>
+            <th className="px-3 py-2 text-left font-semibold">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assignments.map((assignment) => (
+            <tr key={assignment.id} className="border-border border-t">
+              <td className="px-3 py-2 align-top font-medium">
+                {formatDate(assignment.assignedAt)}
+              </td>
+              <td className="px-3 py-2 align-top">
+                <p className="font-medium">{assignment.playerName}</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {assignment.playerId}
+                </p>
+              </td>
+              <td className="px-3 py-2 align-top">
+                {assignment.equipmentType === "shirt" ? "Camiseta" : "Pelotas"}
+              </td>
+              <td className="px-3 py-2 align-top">
+                {assignment.matchLabel || assignment.notes || "Carga manual"}
+              </td>
+              <td className="px-3 py-2 align-top">
+                <p>{assignment.createdByName || "Sistema"}</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {formatDate(assignment.createdAt)}
+                </p>
+              </td>
+              <td className="px-3 py-2 align-top">
+                <EquipmentAssignmentDeleteButton
+                  assignedAt={formatDate(assignment.assignedAt)}
+                  assignmentId={assignment.id}
+                  equipmentType={assignment.equipmentType}
+                  matchLabel={assignment.matchLabel || assignment.notes}
+                  playerName={assignment.playerName}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

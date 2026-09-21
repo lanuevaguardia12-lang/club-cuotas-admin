@@ -546,6 +546,13 @@ export class DatabaseService implements IDataService {
     );
   }
 
+  async deleteEquipmentAssignment(_assignmentId: string): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async getPremiumData(): Promise<PremiumData> {
     return {
       summary: {
