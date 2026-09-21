@@ -34,6 +34,51 @@ interface LoadedTeamCrest {
   initials: string;
 }
 
+interface SharePlatePalette {
+  accent: string;
+  backgroundEnd: string;
+  backgroundMiddle: string;
+  backgroundStart: string;
+  frameStroke: string;
+  jerseyText: string;
+  listMiddle: string;
+  rowPrimary: string;
+  rowSecondary: string;
+  stripeStroke: string;
+  titleShadow: string;
+  topGlow: string;
+}
+
+const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
+  accent: "#f4ce0f",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#013a86",
+  backgroundStart: "#06162f",
+  frameStroke: "rgba(102,220,255,0.36)",
+  jerseyText: "#012f77",
+  listMiddle: "rgba(0,148,220,0.2)",
+  rowPrimary: "rgba(255,255,255,0.1)",
+  rowSecondary: "rgba(2,9,22,0.26)",
+  stripeStroke: "rgba(102,220,255,0.12)",
+  titleShadow: "rgba(102,220,255,0.34)",
+  topGlow: "rgba(0,148,220,0.72)",
+};
+
+const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
+  accent: "#f6c343",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#083f8f",
+  backgroundStart: "#07142d",
+  frameStroke: "rgba(246,195,67,0.52)",
+  jerseyText: "#08224f",
+  listMiddle: "rgba(246,195,67,0.16)",
+  rowPrimary: "rgba(255,255,255,0.11)",
+  rowSecondary: "rgba(7,20,45,0.34)",
+  stripeStroke: "rgba(246,195,67,0.16)",
+  titleShadow: "rgba(246,195,67,0.34)",
+  topGlow: "rgba(20,93,180,0.72)",
+};
+
 interface MatchConvocationButtonProps {
   className?: string;
   coachName?: string;
@@ -611,8 +656,9 @@ async function drawConvocationPlate(
   const footerY = height - (compact ? 64 : 104);
   const listY = compact ? 388 : 580;
   const listHeight = footerY - listY - (compact ? 52 : 82);
+  const palette = getCompetitionSharePlatePalette(match.competitionKind);
 
-  drawBackground(context, width, height);
+  drawBackground(context, width, height, palette);
 
   const logoSize = compact ? 112 : 132;
   drawTeamCrest(context, logo, width / 2 - logoSize / 2, compact ? 48 : 86, logoSize, {
@@ -626,7 +672,7 @@ async function drawConvocationPlate(
       : "900 94px Impact, Arial Black, sans-serif",
     maxWidth: width - 130,
     shadowBlur: 26,
-    shadowColor: "rgba(102,220,255,0.34)",
+    shadowColor: palette.titleShadow,
   });
 
   drawCenteredText(
@@ -648,7 +694,7 @@ async function drawConvocationPlate(
     compact ? 344 : 506,
     width - 140,
     {
-      color: "#f4ce0f",
+      color: palette.accent,
       font: compact
         ? "900 38px Arial Black, Impact, sans-serif"
         : "900 48px Arial Black, Impact, sans-serif",
@@ -662,6 +708,7 @@ async function drawConvocationPlate(
     compact,
     coachName,
     height: listHeight,
+    palette,
     players,
     width: width - (compact ? 112 : 128),
     x: compact ? 56 : 64,
@@ -682,6 +729,7 @@ function drawConvocationList(
     compact,
     coachName,
     height,
+    palette,
     players,
     width,
     x,
@@ -690,6 +738,7 @@ function drawConvocationList(
     compact: boolean;
     coachName?: string;
     height: number;
+    palette: SharePlatePalette;
     players: ConvokedPlayer[];
     width: number;
     x: number;
@@ -699,7 +748,7 @@ function drawConvocationList(
   context.save();
   const gradient = context.createLinearGradient(x, y, x + width, y + height);
   gradient.addColorStop(0, "rgba(255,255,255,0.18)");
-  gradient.addColorStop(0.55, "rgba(0,148,220,0.2)");
+  gradient.addColorStop(0.55, palette.listMiddle);
   gradient.addColorStop(1, "rgba(255,255,255,0.09)");
   context.fillStyle = gradient;
   roundedRect(context, x, y, width, height, 34);
@@ -737,16 +786,16 @@ function drawConvocationList(
       const isStriped = index % 2 === 0;
 
       context.save();
-      context.fillStyle = isStriped ? "rgba(255,255,255,0.1)" : "rgba(2,9,22,0.26)";
+      context.fillStyle = isStriped ? palette.rowPrimary : palette.rowSecondary;
       roundedRect(context, columnX, rowY, columnWidth, rowHeight - 8, 18);
       context.fill();
       context.restore();
 
       context.save();
-      context.fillStyle = "#f4ce0f";
+      context.fillStyle = palette.accent;
       roundedRect(context, columnX + 10, rowY + 8, jerseyWidth, rowHeight - 24, 12);
       context.fill();
-      context.fillStyle = "#012f77";
+      context.fillStyle = palette.jerseyText;
       context.font = `900 ${rowFont}px Arial Black, sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "middle";
@@ -823,22 +872,23 @@ function drawBackground(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
+  palette: SharePlatePalette,
 ) {
   const gradient = context.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#06162f");
-  gradient.addColorStop(0.42, "#013a86");
-  gradient.addColorStop(1, "#020916");
+  gradient.addColorStop(0, palette.backgroundStart);
+  gradient.addColorStop(0.42, palette.backgroundMiddle);
+  gradient.addColorStop(1, palette.backgroundEnd);
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 
   const glow = context.createRadialGradient(width / 2, 260, 20, width / 2, 260, 660);
-  glow.addColorStop(0, "rgba(0,148,220,0.72)");
+  glow.addColorStop(0, palette.topGlow);
   glow.addColorStop(1, "rgba(0,148,220,0)");
   context.fillStyle = glow;
   context.fillRect(0, 0, width, height);
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.12)";
+  context.strokeStyle = palette.stripeStroke;
   context.lineWidth = 2;
   for (let lineX = -height; lineX < width; lineX += 88) {
     context.beginPath();
@@ -849,7 +899,7 @@ function drawBackground(
   context.restore();
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.36)";
+  context.strokeStyle = palette.frameStroke;
   context.lineWidth = 3;
   roundedRect(context, 42, 42, width - 84, height - 84, 44);
   context.stroke();
@@ -1203,6 +1253,12 @@ function formatCompetition(kind: LeagueFixtureMatch["competitionKind"]) {
   };
 
   return labels[kind];
+}
+
+function getCompetitionSharePlatePalette(
+  kind: LeagueFixtureMatch["competitionKind"],
+): SharePlatePalette {
+  return kind === "cup" ? CUP_SHARE_PLATE_PALETTE : DEFAULT_SHARE_PLATE_PALETTE;
 }
 
 function formatMatchDate(match: LeagueFixtureMatch) {

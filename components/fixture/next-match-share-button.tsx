@@ -33,6 +33,60 @@ interface LoadedTeamCrest {
   initials: string;
 }
 
+interface SharePlatePalette {
+  accent: string;
+  accentBorder: string;
+  backgroundEnd: string;
+  backgroundMiddle: string;
+  backgroundStart: string;
+  cardMiddle: string;
+  cardStroke: string;
+  frameStroke: string;
+  lowerGlow: string;
+  pillBackground: string;
+  roleBackground: string;
+  roleStroke: string;
+  stripeStroke: string;
+  titleShadow: string;
+  topGlow: string;
+}
+
+const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
+  accent: "#f4ce0f",
+  accentBorder: "rgba(244,206,15,0.62)",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#012f77",
+  backgroundStart: "#06162f",
+  cardMiddle: "rgba(0,148,220,0.18)",
+  cardStroke: "rgba(102,220,255,0.5)",
+  frameStroke: "rgba(102,220,255,0.36)",
+  lowerGlow: "rgba(244,206,15,0.15)",
+  pillBackground: "rgba(255,255,255,0.12)",
+  roleBackground: "rgba(1,47,119,0.46)",
+  roleStroke: "rgba(255,255,255,0.2)",
+  stripeStroke: "rgba(102,220,255,0.12)",
+  titleShadow: "rgba(102,220,255,0.32)",
+  topGlow: "rgba(0,148,220,0.72)",
+};
+
+const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
+  accent: "#f6c343",
+  accentBorder: "rgba(246,195,67,0.76)",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#083f8f",
+  backgroundStart: "#07142d",
+  cardMiddle: "rgba(246,195,67,0.16)",
+  cardStroke: "rgba(246,195,67,0.62)",
+  frameStroke: "rgba(246,195,67,0.52)",
+  lowerGlow: "rgba(246,195,67,0.28)",
+  pillBackground: "rgba(7,20,45,0.44)",
+  roleBackground: "rgba(5,43,104,0.62)",
+  roleStroke: "rgba(246,195,67,0.24)",
+  stripeStroke: "rgba(246,195,67,0.16)",
+  titleShadow: "rgba(246,195,67,0.32)",
+  topGlow: "rgba(20,93,180,0.72)",
+};
+
 interface NextMatchShareButtonProps {
   className?: string;
   match: LeagueFixtureMatch;
@@ -189,6 +243,7 @@ async function drawNextMatchPlate(
   const width = format === "story" ? STORY_WIDTH : POST_WIDTH;
   const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
   const compact = format === "post";
+  const palette = getCompetitionSharePlatePalette(match.competitionKind);
   const clubCrest = await loadTeamCrestImage(teamProfiles, teamName, teamName);
   const localRecentMatches = getLastPlayedMatchesForTeam(matches, match.localTeam, match)
     .slice(0, 3)
@@ -205,7 +260,7 @@ async function drawNextMatchPlate(
       withDisplayRival(getTeamMatchOutcome(recentMatch, match.visitorTeam), teamProfiles),
     );
 
-  drawBackground(context, width, height);
+  drawBackground(context, width, height, palette);
 
   const logoSize = compact ? 118 : 144;
   drawTeamCrest(
@@ -224,7 +279,7 @@ async function drawNextMatchPlate(
       : "900 92px Impact, Arial Black, sans-serif",
     maxWidth: width - 120,
     shadowBlur: 24,
-    shadowColor: "rgba(102,220,255,0.32)",
+    shadowColor: palette.titleShadow,
   });
 
   drawCenteredText(
@@ -241,6 +296,7 @@ async function drawNextMatchPlate(
 
   drawTimePill(context, {
     compact,
+    palette,
     time: match.time || "Horario a confirmar",
     width,
     y: compact ? 422 : 552,
@@ -252,6 +308,7 @@ async function drawNextMatchPlate(
     localPosition: getTeamPositionLabel(standings, match.localTeam),
     localRecentMatches,
     localTeam: match.localTeam,
+    palette,
     visitorPosition: getTeamPositionLabel(standings, match.visitorTeam),
     visitorRecentMatches,
     visitorTeam: match.visitorTeam,
@@ -278,16 +335,17 @@ function drawBackground(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
+  palette: SharePlatePalette,
 ) {
   const gradient = context.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#06162f");
-  gradient.addColorStop(0.42, "#012f77");
-  gradient.addColorStop(1, "#020916");
+  gradient.addColorStop(0, palette.backgroundStart);
+  gradient.addColorStop(0.42, palette.backgroundMiddle);
+  gradient.addColorStop(1, palette.backgroundEnd);
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 
   const glow = context.createRadialGradient(width / 2, 250, 20, width / 2, 250, 640);
-  glow.addColorStop(0, "rgba(0,148,220,0.72)");
+  glow.addColorStop(0, palette.topGlow);
   glow.addColorStop(1, "rgba(0,148,220,0)");
   context.fillStyle = glow;
   context.fillRect(0, 0, width, height);
@@ -300,13 +358,13 @@ function drawBackground(
     height * 0.64,
     680,
   );
-  lowerGlow.addColorStop(0, "rgba(244,206,15,0.15)");
+  lowerGlow.addColorStop(0, palette.lowerGlow);
   lowerGlow.addColorStop(1, "rgba(244,206,15,0)");
   context.fillStyle = lowerGlow;
   context.fillRect(0, 0, width, height);
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.12)";
+  context.strokeStyle = palette.stripeStroke;
   context.lineWidth = 2;
   for (let x = -height; x < width; x += 88) {
     context.beginPath();
@@ -317,7 +375,7 @@ function drawBackground(
   context.restore();
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.36)";
+  context.strokeStyle = palette.frameStroke;
   context.lineWidth = 3;
   roundedRect(context, 42, 42, width - 84, height - 84, 44);
   context.stroke();
@@ -328,11 +386,13 @@ function drawTimePill(
   context: CanvasRenderingContext2D,
   {
     compact,
+    palette,
     time,
     width,
     y,
   }: {
     compact: boolean;
+    palette: SharePlatePalette;
     time: string;
     width: number;
     y: number;
@@ -343,8 +403,8 @@ function drawTimePill(
   const x = width / 2 - pillWidth / 2;
 
   context.save();
-  context.fillStyle = "rgba(255,255,255,0.12)";
-  context.strokeStyle = "rgba(244,206,15,0.62)";
+  context.fillStyle = palette.pillBackground;
+  context.strokeStyle = palette.accentBorder;
   context.lineWidth = 3;
   roundedRect(context, x, y, pillWidth, pillHeight, pillHeight / 2);
   context.fill();
@@ -357,7 +417,7 @@ function drawTimePill(
     width / 2,
     y + (compact ? 45 : 52),
     {
-      color: "#f4ce0f",
+      color: palette.accent,
       font: compact
         ? "900 34px Arial Black, sans-serif"
         : "900 40px Arial Black, sans-serif",
@@ -384,6 +444,7 @@ async function drawMatchup(
     localPosition,
     localRecentMatches,
     localTeam,
+    palette,
     teamProfiles,
     visitorPosition,
     visitorRecentMatches,
@@ -396,6 +457,7 @@ async function drawMatchup(
     localPosition: string;
     localRecentMatches: MatchOutcome[];
     localTeam: string;
+    palette: SharePlatePalette;
     teamProfiles: TeamProfile[];
     visitorPosition: string;
     visitorRecentMatches: MatchOutcome[];
@@ -437,10 +499,10 @@ async function drawMatchup(
     y + cardHeight,
   );
   cardGradient.addColorStop(0, "rgba(255,255,255,0.16)");
-  cardGradient.addColorStop(0.5, "rgba(0,148,220,0.18)");
+  cardGradient.addColorStop(0.5, palette.cardMiddle);
   cardGradient.addColorStop(1, "rgba(255,255,255,0.08)");
   context.fillStyle = cardGradient;
-  context.strokeStyle = "rgba(102,220,255,0.5)";
+  context.strokeStyle = palette.cardStroke;
   context.lineWidth = 4;
   roundedRect(context, cardX, y, cardWidth, cardHeight, 34);
   context.fill();
@@ -455,6 +517,7 @@ async function drawMatchup(
     label: localDisplayName,
     maxWidth: teamColumnWidth,
     nameFontSize: teamNameFontSize,
+    palette,
     role: `Local · ${localPosition}`,
     roleY,
     x: cardX + sidePadding + teamColumnWidth / 2,
@@ -469,6 +532,7 @@ async function drawMatchup(
     label: visitorDisplayName,
     maxWidth: teamColumnWidth,
     nameFontSize: teamNameFontSize,
+    palette,
     role: `Visita · ${visitorPosition}`,
     roleY,
     x: cardX + cardWidth - sidePadding - teamColumnWidth / 2,
@@ -476,12 +540,12 @@ async function drawMatchup(
   });
 
   drawMiddleText(context, "VS", width / 2, versusY, {
-    color: "#f4ce0f",
+    color: palette.accent,
     font: compact
       ? "900 94px Arial Black, Impact, sans-serif"
       : "900 112px Arial Black, Impact, sans-serif",
     shadowBlur: 28,
-    shadowColor: "rgba(244,206,15,0.22)",
+    shadowColor: palette.titleShadow,
   });
 
   drawRecentForm(context, {
@@ -511,6 +575,7 @@ function drawPlateTeamBlock(
     label,
     maxWidth,
     nameFontSize,
+    palette,
     role,
     roleY,
     x,
@@ -523,6 +588,7 @@ function drawPlateTeamBlock(
     label: string;
     maxWidth: number;
     nameFontSize: number;
+    palette: SharePlatePalette;
     role: string;
     roleY: number;
     x: number;
@@ -558,8 +624,8 @@ function drawPlateTeamBlock(
   );
   const roleX = x - roleWidth / 2;
 
-  context.fillStyle = "rgba(1,47,119,0.46)";
-  context.strokeStyle = "rgba(255,255,255,0.2)";
+  context.fillStyle = palette.roleBackground;
+  context.strokeStyle = palette.roleStroke;
   context.lineWidth = 2;
   roundedRect(context, roleX, roleY, roleWidth, roleHeight, roleHeight / 2);
   context.fill();
@@ -1053,6 +1119,10 @@ function formatCompetition(kind: LeagueCompetitionKind) {
   };
 
   return labels[kind] ?? "PARTIDO";
+}
+
+function getCompetitionSharePlatePalette(kind: LeagueCompetitionKind): SharePlatePalette {
+  return kind === "cup" ? CUP_SHARE_PLATE_PALETTE : DEFAULT_SHARE_PLATE_PALETTE;
 }
 
 type OutcomeKind = "draw" | "loss" | "none" | "win";

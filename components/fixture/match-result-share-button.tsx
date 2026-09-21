@@ -36,6 +36,72 @@ interface LoadedTeamCrest {
   initials: string;
 }
 
+interface SharePlatePalette {
+  accent: string;
+  backgroundEnd: string;
+  backgroundMiddle: string;
+  backgroundStart: string;
+  cardMiddle: string;
+  cardStroke: string;
+  frameStroke: string;
+  lowerGlow: string;
+  photoShadeEnd: string;
+  photoShadeMiddle: string;
+  photoShadeStart: string;
+  photoSideEdge: string;
+  photoSideMiddle: string;
+  scorerBackground: string;
+  scorerStroke: string;
+  scoreWinnerShadow: string;
+  stripeStroke: string;
+  titleShadow: string;
+  topGlow: string;
+}
+
+const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
+  accent: "#f4ce0f",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#012f77",
+  backgroundStart: "#06162f",
+  cardMiddle: "rgba(0,148,220,0.18)",
+  cardStroke: "rgba(102,220,255,0.5)",
+  frameStroke: "rgba(102,220,255,0.36)",
+  lowerGlow: "rgba(102,220,255,0.18)",
+  photoShadeEnd: "rgba(2,9,22,0.86)",
+  photoShadeMiddle: "rgba(1,47,119,0.62)",
+  photoShadeStart: "rgba(1,18,48,0.68)",
+  photoSideEdge: "rgba(1,12,30,0.58)",
+  photoSideMiddle: "rgba(0,148,220,0.12)",
+  scorerBackground: "rgba(0,36,93,0.72)",
+  scorerStroke: "rgba(244,206,15,0.46)",
+  scoreWinnerShadow: "rgba(244,206,15,0.2)",
+  stripeStroke: "rgba(102,220,255,0.12)",
+  titleShadow: "rgba(102,220,255,0.32)",
+  topGlow: "rgba(0,148,220,0.72)",
+};
+
+const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
+  accent: "#f6c343",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#083f8f",
+  backgroundStart: "#07142d",
+  cardMiddle: "rgba(246,195,67,0.16)",
+  cardStroke: "rgba(246,195,67,0.62)",
+  frameStroke: "rgba(246,195,67,0.52)",
+  lowerGlow: "rgba(246,195,67,0.26)",
+  photoShadeEnd: "rgba(2,9,22,0.88)",
+  photoShadeMiddle: "rgba(8,63,143,0.58)",
+  photoShadeStart: "rgba(7,20,45,0.7)",
+  photoSideEdge: "rgba(3,12,30,0.6)",
+  photoSideMiddle: "rgba(246,195,67,0.16)",
+  scorerBackground: "rgba(7,20,45,0.76)",
+  scorerStroke: "rgba(246,195,67,0.56)",
+  scoreWinnerShadow: "rgba(246,195,67,0.24)",
+  stripeStroke: "rgba(246,195,67,0.16)",
+  titleShadow: "rgba(246,195,67,0.32)",
+  topGlow: "rgba(20,93,180,0.72)",
+};
+
 interface PreparedPhotoShare {
   file: File;
   format: PhotoResultShareFormat;
@@ -349,6 +415,7 @@ async function drawMatchResultPlate(
   backgroundImageSrc?: string,
 ) {
   const { height, width } = getCanvasSize(format);
+  const palette = getCompetitionSharePlatePalette(match.competitionKind);
 
   if (isPhotoOverlayFormat(format)) {
     await drawPhotoOverlayMatchResultPlate(
@@ -358,6 +425,7 @@ async function drawMatchResultPlate(
       format,
       teamProfiles,
       backgroundImageSrc,
+      palette,
     );
     return;
   }
@@ -371,7 +439,7 @@ async function drawMatchResultPlate(
     loadTeamCrestImage(teamProfiles, match.visitorTeam, teamName),
   ]);
 
-  drawBackground(context, width, height);
+  drawBackground(context, width, height, palette);
 
   const logoSize = compact ? 118 : 144;
   drawTeamCrest(
@@ -390,7 +458,7 @@ async function drawMatchResultPlate(
       : "900 92px Impact, Arial Black, sans-serif",
     maxWidth: width - 130,
     shadowBlur: 24,
-    shadowColor: "rgba(102,220,255,0.32)",
+    shadowColor: palette.titleShadow,
   });
 
   drawCenteredText(
@@ -408,6 +476,7 @@ async function drawMatchResultPlate(
   drawScoreboard(context, {
     compact,
     localCrest,
+    palette,
     result,
     visitorCrest,
     width,
@@ -417,6 +486,7 @@ async function drawMatchResultPlate(
   if (scorers.length > 0) {
     drawScorersBlock(context, {
       compact,
+      palette,
       scorers,
       width,
       y: compact ? 850 : 1210,
@@ -444,6 +514,7 @@ async function drawPhotoOverlayMatchResultPlate(
   format: ResultShareFormat,
   teamProfiles: TeamProfile[],
   backgroundImageSrc?: string,
+  palette: SharePlatePalette = DEFAULT_SHARE_PLATE_PALETTE,
 ) {
   const { height, width } = getCanvasSize(format);
   const compact = format === "post-photo";
@@ -455,7 +526,7 @@ async function drawPhotoOverlayMatchResultPlate(
     loadTeamCrestImage(teamProfiles, match.visitorTeam, teamName),
   ]);
 
-  await drawPhotoOverlayBackground(context, width, height, backgroundImageSrc);
+  await drawPhotoOverlayBackground(context, width, height, backgroundImageSrc, palette);
 
   const logoSize = compact ? 92 : 132;
   drawTeamCrest(
@@ -494,6 +565,7 @@ async function drawPhotoOverlayMatchResultPlate(
   drawScoreboard(context, {
     compact,
     localCrest,
+    palette,
     result,
     visitorCrest,
     width,
@@ -503,6 +575,7 @@ async function drawPhotoOverlayMatchResultPlate(
   if (scorers.length > 0) {
     drawScorersBlock(context, {
       compact,
+      palette,
       scorers,
       width,
       y: compact ? 705 : 1170,
@@ -530,6 +603,7 @@ async function drawPhotoOverlayBackground(
   width: number,
   height: number,
   backgroundImageSrc?: string,
+  palette: SharePlatePalette = DEFAULT_SHARE_PLATE_PALETTE,
 ) {
   const image = await loadImage(backgroundImageSrc || RESULT_PHOTO_BACKGROUND_SRC).catch(
     () => undefined,
@@ -541,25 +615,25 @@ async function drawPhotoOverlayBackground(
     drawCoverImage(context, image, 0, 0, width, height);
     context.restore();
   } else {
-    drawBackground(context, width, height);
+    drawBackground(context, width, height, palette);
   }
 
   const shade = context.createLinearGradient(0, 0, 0, height);
-  shade.addColorStop(0, "rgba(1,18,48,0.68)");
-  shade.addColorStop(0.44, "rgba(1,47,119,0.62)");
-  shade.addColorStop(1, "rgba(2,9,22,0.86)");
+  shade.addColorStop(0, palette.photoShadeStart);
+  shade.addColorStop(0.44, palette.photoShadeMiddle);
+  shade.addColorStop(1, palette.photoShadeEnd);
   context.fillStyle = shade;
   context.fillRect(0, 0, width, height);
 
   const sideShade = context.createLinearGradient(0, 0, width, 0);
-  sideShade.addColorStop(0, "rgba(1,12,30,0.58)");
-  sideShade.addColorStop(0.5, "rgba(0,148,220,0.12)");
-  sideShade.addColorStop(1, "rgba(1,12,30,0.58)");
+  sideShade.addColorStop(0, palette.photoSideEdge);
+  sideShade.addColorStop(0.5, palette.photoSideMiddle);
+  sideShade.addColorStop(1, palette.photoSideEdge);
   context.fillStyle = sideShade;
   context.fillRect(0, 0, width, height);
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.15)";
+  context.strokeStyle = palette.stripeStroke;
   context.lineWidth = 2;
   for (let x = -height; x < width; x += 86) {
     context.beginPath();
@@ -570,7 +644,7 @@ async function drawPhotoOverlayBackground(
   context.restore();
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.42)";
+  context.strokeStyle = palette.frameStroke;
   context.lineWidth = 4;
   roundedRect(context, 42, 42, width - 84, height - 84, 46);
   context.stroke();
@@ -581,16 +655,17 @@ function drawBackground(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
+  palette: SharePlatePalette,
 ) {
   const gradient = context.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#06162f");
-  gradient.addColorStop(0.42, "#012f77");
-  gradient.addColorStop(1, "#020916");
+  gradient.addColorStop(0, palette.backgroundStart);
+  gradient.addColorStop(0.42, palette.backgroundMiddle);
+  gradient.addColorStop(1, palette.backgroundEnd);
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 
   const glow = context.createRadialGradient(width / 2, 250, 20, width / 2, 250, 620);
-  glow.addColorStop(0, "rgba(0,148,220,0.72)");
+  glow.addColorStop(0, palette.topGlow);
   glow.addColorStop(1, "rgba(0,148,220,0)");
   context.fillStyle = glow;
   context.fillRect(0, 0, width, height);
@@ -603,13 +678,13 @@ function drawBackground(
     height * 0.68,
     650,
   );
-  lowerGlow.addColorStop(0, "rgba(102,220,255,0.18)");
+  lowerGlow.addColorStop(0, palette.lowerGlow);
   lowerGlow.addColorStop(1, "rgba(102,220,255,0)");
   context.fillStyle = lowerGlow;
   context.fillRect(0, 0, width, height);
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.12)";
+  context.strokeStyle = palette.stripeStroke;
   context.lineWidth = 2;
   for (let x = -height; x < width; x += 88) {
     context.beginPath();
@@ -620,7 +695,7 @@ function drawBackground(
   context.restore();
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.36)";
+  context.strokeStyle = palette.frameStroke;
   context.lineWidth = 3;
   roundedRect(context, 42, 42, width - 84, height - 84, 44);
   context.stroke();
@@ -632,6 +707,7 @@ function drawScoreboard(
   {
     compact,
     localCrest,
+    palette,
     result,
     visitorCrest,
     width,
@@ -639,6 +715,7 @@ function drawScoreboard(
   }: {
     compact: boolean;
     localCrest: LoadedTeamCrest;
+    palette: SharePlatePalette;
     result: ResultView;
     visitorCrest: LoadedTeamCrest;
     width: number;
@@ -665,10 +742,10 @@ function drawScoreboard(
     y + cardHeight,
   );
   cardGradient.addColorStop(0, "rgba(255,255,255,0.16)");
-  cardGradient.addColorStop(0.5, "rgba(0,148,220,0.18)");
+  cardGradient.addColorStop(0.5, palette.cardMiddle);
   cardGradient.addColorStop(1, "rgba(255,255,255,0.08)");
   context.fillStyle = cardGradient;
-  context.strokeStyle = "rgba(102,220,255,0.5)";
+  context.strokeStyle = palette.cardStroke;
   context.lineWidth = 4;
   roundedRect(context, cardX, y, cardWidth, cardHeight, 34);
   context.fill();
@@ -699,18 +776,19 @@ function drawScoreboard(
     width / 2,
     mainScoreY,
     {
-      color: getAppTeamWonResult(result) ? "#f4ce0f" : "#ffffff",
+      color: getAppTeamWonResult(result) ? palette.accent : "#ffffff",
       font: compact
         ? "900 116px Arial Black, Impact, sans-serif"
         : "900 148px Arial Black, Impact, sans-serif",
       shadowBlur: 24,
-      shadowColor: "rgba(244,206,15,0.2)",
+      shadowColor: palette.scoreWinnerShadow,
     },
   );
 
   if (hasPenalties) {
     drawPenaltyScore(context, {
       compact,
+      palette,
       result,
       width,
       y: penaltyScoreY,
@@ -722,11 +800,13 @@ function drawPenaltyScore(
   context: CanvasRenderingContext2D,
   {
     compact,
+    palette,
     result,
     width,
     y,
   }: {
     compact: boolean;
+    palette: SharePlatePalette;
     result: ResultView;
     width: number;
     y: number;
@@ -744,13 +824,13 @@ function drawPenaltyScore(
     shadowColor: "rgba(0,0,0,0.3)",
   });
   drawCenteredText(context, "PEN", width / 2, y - (compact ? 6 : 8), {
-    color: "#f4ce0f",
+    color: palette.accent,
     font: compact
       ? "900 28px Arial Black, sans-serif"
       : "900 34px Arial Black, sans-serif",
     letterSpacing: 4,
     shadowBlur: 12,
-    shadowColor: "rgba(244,206,15,0.22)",
+    shadowColor: palette.scoreWinnerShadow,
   });
   drawCenteredText(context, `(${result.visitorPenaltyScore})`, rightX, y, {
     color: "#ffffff",
@@ -913,11 +993,13 @@ function drawScorersBlock(
   context: CanvasRenderingContext2D,
   {
     compact,
+    palette,
     scorers,
     width,
     y,
   }: {
     compact: boolean;
+    palette: SharePlatePalette;
     scorers: string[];
     width: number;
     y: number;
@@ -926,8 +1008,8 @@ function drawScorersBlock(
   const height = compact ? 190 : 230;
 
   context.save();
-  context.fillStyle = "rgba(0,36,93,0.72)";
-  context.strokeStyle = "rgba(244,206,15,0.46)";
+  context.fillStyle = palette.scorerBackground;
+  context.strokeStyle = palette.scorerStroke;
   context.lineWidth = 3;
   roundedRect(context, 120, y, width - 240, height, 30);
   context.fill();
@@ -935,7 +1017,7 @@ function drawScorersBlock(
   context.restore();
 
   drawCenteredText(context, "GOLES LNG", width / 2, y + (compact ? 58 : 68), {
-    color: "#f4ce0f",
+    color: palette.accent,
     font: compact
       ? "900 32px Arial Black, sans-serif"
       : "900 38px Arial Black, sans-serif",
@@ -1323,6 +1405,10 @@ function formatCompetition(kind: LeagueCompetitionKind) {
   };
 
   return labels[kind] ?? "PARTIDO";
+}
+
+function getCompetitionSharePlatePalette(kind: LeagueCompetitionKind): SharePlatePalette {
+  return kind === "cup" ? CUP_SHARE_PLATE_PALETTE : DEFAULT_SHARE_PLATE_PALETTE;
 }
 
 interface ResultView {
