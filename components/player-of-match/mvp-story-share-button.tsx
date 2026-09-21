@@ -21,6 +21,130 @@ interface LoadedTeamCrest {
   initials: string;
 }
 
+interface MvpStoryPalette {
+  accent: string;
+  avatarFillEnd: string;
+  avatarFillStart: string;
+  avatarInitialColor: string;
+  avatarShadow: string;
+  backgroundEnd: string;
+  backgroundMiddle: string;
+  backgroundStart: string;
+  baseEnd: string;
+  baseMiddle: string;
+  baseStart: string;
+  baseStroke: string;
+  featuredRankColor: string;
+  featuredStroke: string;
+  footerColor: string;
+  frameStroke: string;
+  lowerGlow: string;
+  metaColor: string;
+  nameColor: string;
+  rankColor: string;
+  rivalColor: string;
+  scoreBackground: string;
+  scoreStroke: string;
+  scoreTextColor: string;
+  stripeStroke: string;
+  titleColor: string;
+  titleShadow: string;
+  topGlow: string;
+}
+
+const DEFAULT_MVP_STORY_PALETTE: MvpStoryPalette = {
+  accent: "#f4ce0f",
+  avatarFillEnd: "#66c7ef",
+  avatarFillStart: "#eaf8ff",
+  avatarInitialColor: "#012f77",
+  avatarShadow: "rgba(102,220,255,0.38)",
+  backgroundEnd: "#020916",
+  backgroundMiddle: "#012f77",
+  backgroundStart: "#06162f",
+  baseEnd: "rgba(1,47,119,0.82)",
+  baseMiddle: "rgba(102,220,255,0.2)",
+  baseStart: "rgba(255,255,255,0.2)",
+  baseStroke: "rgba(102,220,255,0.58)",
+  featuredRankColor: "#f4ce0f",
+  featuredStroke: "rgba(244,206,15,0.65)",
+  footerColor: "rgba(255,255,255,0.72)",
+  frameStroke: "rgba(102,220,255,0.36)",
+  lowerGlow: "rgba(102,220,255,0.2)",
+  metaColor: "rgba(255,255,255,0.9)",
+  nameColor: "#ffffff",
+  rankColor: "#ffffff",
+  rivalColor: "#f4ce0f",
+  scoreBackground: "rgba(0,36,93,0.66)",
+  scoreStroke: "rgba(102,220,255,0.42)",
+  scoreTextColor: "rgba(255,255,255,0.94)",
+  stripeStroke: "rgba(102,220,255,0.12)",
+  titleColor: "#ffffff",
+  titleShadow: "rgba(102,220,255,0.28)",
+  topGlow: "rgba(0,148,220,0.72)",
+};
+
+const CUP_MVP_STORY_PALETTE: MvpStoryPalette = {
+  accent: "#fff2b8",
+  avatarFillEnd: "#ffe1a0",
+  avatarFillStart: "#fff7df",
+  avatarInitialColor: "#15304a",
+  avatarShadow: "rgba(18,11,2,0.28)",
+  backgroundEnd: "#2d1b03",
+  backgroundMiddle: "#b9780f",
+  backgroundStart: "#251604",
+  baseEnd: "rgba(22,15,8,0.74)",
+  baseMiddle: "rgba(17,24,39,0.44)",
+  baseStart: "rgba(255,255,255,0.18)",
+  baseStroke: "rgba(255,225,160,0.48)",
+  featuredRankColor: "#fff2b8",
+  featuredStroke: "rgba(255,225,160,0.72)",
+  footerColor: "rgba(255,240,184,0.8)",
+  frameStroke: "rgba(255,228,163,0.46)",
+  lowerGlow: "rgba(18,48,71,0.28)",
+  metaColor: "#fff0b8",
+  nameColor: "#fff8df",
+  rankColor: "#fff8df",
+  rivalColor: "#fff2b8",
+  scoreBackground: "rgba(22,15,8,0.58)",
+  scoreStroke: "rgba(255,225,160,0.42)",
+  scoreTextColor: "#fff8df",
+  stripeStroke: "rgba(255,241,194,0.12)",
+  titleColor: "#fff8df",
+  titleShadow: "rgba(18,11,2,0.64)",
+  topGlow: "rgba(255,212,106,0.62)",
+};
+
+const FRIENDLY_MVP_STORY_PALETTE: MvpStoryPalette = {
+  accent: "#0b2d68",
+  avatarFillEnd: "#dbeafe",
+  avatarFillStart: "#ffffff",
+  avatarInitialColor: "#0b2d68",
+  avatarShadow: "rgba(15,47,102,0.18)",
+  backgroundEnd: "#ffffff",
+  backgroundMiddle: "#f2f7ff",
+  backgroundStart: "#ffffff",
+  baseEnd: "rgba(255,255,255,0.96)",
+  baseMiddle: "rgba(234,242,255,0.94)",
+  baseStart: "rgba(255,255,255,0.96)",
+  baseStroke: "rgba(29,78,216,0.28)",
+  featuredRankColor: "#0b2d68",
+  featuredStroke: "rgba(29,78,216,0.46)",
+  footerColor: "rgba(11,45,104,0.78)",
+  frameStroke: "rgba(29,78,216,0.28)",
+  lowerGlow: "rgba(29,78,216,0.13)",
+  metaColor: "#0f3d82",
+  nameColor: "#0b2d68",
+  rankColor: "#0b2d68",
+  rivalColor: "#0b2d68",
+  scoreBackground: "#dbeafe",
+  scoreStroke: "rgba(29,78,216,0.18)",
+  scoreTextColor: "#0f3d82",
+  stripeStroke: "rgba(147,197,253,0.28)",
+  titleColor: "#0b2d68",
+  titleShadow: "rgba(147,197,253,0.34)",
+  topGlow: "rgba(191,219,254,0.88)",
+};
+
 interface MvpStoryShareButtonProps {
   disabled?: boolean;
   match: PlayerOfMatchMatch;
@@ -115,6 +239,7 @@ async function drawMvpStory(
   match: PlayerOfMatchMatch,
   teamProfiles: TeamProfile[],
 ) {
+  const palette = getMvpStoryPalette(match.sourceType);
   const logo = await loadTeamCrestImage(teamProfiles, APP_TEAM_NAME);
   const orderedPodium = getOrderedPodium(match.results);
   const podiumImages = await Promise.all(
@@ -125,15 +250,15 @@ async function drawMvpStory(
     ),
   );
 
-  drawBackground(context);
+  drawBackground(context, palette);
 
   drawTeamCrest(context, logo, STORY_WIDTH / 2 - 82, 88, 164, { framed: false });
 
   drawCenteredText(context, "MVP DEL PARTIDO", STORY_WIDTH / 2, 346, {
-    color: "#ffffff",
+    color: palette.titleColor,
     font: "900 94px Impact, Arial Black, sans-serif",
     shadowBlur: 24,
-    shadowColor: "rgba(102,220,255,0.28)",
+    shadowColor: palette.titleShadow,
   });
   drawCenteredText(
     context,
@@ -141,17 +266,17 @@ async function drawMvpStory(
     STORY_WIDTH / 2,
     448,
     {
-      color: "rgba(255,255,255,0.9)",
+      color: palette.metaColor,
       font: "800 40px Arial, sans-serif",
       letterSpacing: 0,
     },
   );
   drawCenteredText(context, `VS ${match.rival.toUpperCase()}`, STORY_WIDTH / 2, 528, {
-    color: "#f4ce0f",
+    color: palette.rivalColor,
     font: "900 52px Arial Black, Impact, sans-serif",
     maxWidth: 900,
     shadowBlur: 18,
-    shadowColor: "rgba(244,206,15,0.22)",
+    shadowColor: palette.titleShadow,
   });
 
   drawPodiumPlace(context, {
@@ -160,6 +285,7 @@ async function drawMvpStory(
     baseWidth: 270,
     centerX: 225,
     name: orderedPodium[1]?.playerName,
+    palette,
     place: 2,
     result: orderedPodium[1],
   });
@@ -170,6 +296,7 @@ async function drawMvpStory(
     centerX: 540,
     featured: true,
     name: orderedPodium[0]?.playerName,
+    palette,
     place: 1,
     result: orderedPodium[0],
   });
@@ -179,39 +306,40 @@ async function drawMvpStory(
     baseWidth: 250,
     centerX: 855,
     name: orderedPodium[2]?.playerName,
+    palette,
     place: 3,
     result: orderedPodium[2],
   });
 
   drawCenteredText(context, "LA NUEVA GUARDIA", STORY_WIDTH / 2, 1818, {
-    color: "rgba(255,255,255,0.72)",
+    color: palette.footerColor,
     font: "800 34px Arial, sans-serif",
     letterSpacing: 0,
   });
 }
 
-function drawBackground(context: CanvasRenderingContext2D) {
+function drawBackground(context: CanvasRenderingContext2D, palette: MvpStoryPalette) {
   const gradient = context.createLinearGradient(0, 0, 0, STORY_HEIGHT);
-  gradient.addColorStop(0, "#06162f");
-  gradient.addColorStop(0.38, "#012f77");
-  gradient.addColorStop(1, "#020916");
+  gradient.addColorStop(0, palette.backgroundStart);
+  gradient.addColorStop(0.38, palette.backgroundMiddle);
+  gradient.addColorStop(1, palette.backgroundEnd);
   context.fillStyle = gradient;
   context.fillRect(0, 0, STORY_WIDTH, STORY_HEIGHT);
 
   const glow = context.createRadialGradient(540, 330, 20, 540, 330, 560);
-  glow.addColorStop(0, "rgba(0,148,220,0.72)");
+  glow.addColorStop(0, palette.topGlow);
   glow.addColorStop(1, "rgba(0,148,220,0)");
   context.fillStyle = glow;
   context.fillRect(0, 0, STORY_WIDTH, STORY_HEIGHT);
 
   const lowerGlow = context.createRadialGradient(540, 1370, 80, 540, 1370, 640);
-  lowerGlow.addColorStop(0, "rgba(102,220,255,0.2)");
+  lowerGlow.addColorStop(0, palette.lowerGlow);
   lowerGlow.addColorStop(1, "rgba(102,220,255,0)");
   context.fillStyle = lowerGlow;
   context.fillRect(0, 0, STORY_WIDTH, STORY_HEIGHT);
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.12)";
+  context.strokeStyle = palette.stripeStroke;
   context.lineWidth = 2;
   for (let x = -STORY_HEIGHT; x < STORY_WIDTH; x += 90) {
     context.beginPath();
@@ -222,7 +350,7 @@ function drawBackground(context: CanvasRenderingContext2D) {
   context.restore();
 
   context.save();
-  context.strokeStyle = "rgba(102,220,255,0.36)";
+  context.strokeStyle = palette.frameStroke;
   context.lineWidth = 3;
   roundedRect(context, 42, 42, STORY_WIDTH - 84, STORY_HEIGHT - 84, 44);
   context.stroke();
@@ -238,6 +366,7 @@ function drawPodiumPlace(
     centerX,
     featured = false,
     name,
+    palette,
     place,
     result,
   }: {
@@ -247,6 +376,7 @@ function drawPodiumPlace(
     centerX: number;
     featured?: boolean;
     name?: string;
+    palette: MvpStoryPalette;
     place: 1 | 2 | 3;
     result?: PlayerOfMatchResult;
   },
@@ -260,18 +390,19 @@ function drawPodiumPlace(
   const scoreY = baseTop + (featured ? 134 : place === 3 ? 84 : 104);
   const rankY = baseTop + baseHeight * (featured ? 0.58 : place === 3 ? 0.7 : 0.66);
 
-  drawGlassBase(context, baseLeft, baseTop, baseWidth, baseHeight, featured);
+  drawGlassBase(context, baseLeft, baseTop, baseWidth, baseHeight, featured, palette);
   drawCircularAvatar(context, {
-    borderColor: featured ? "#f4ce0f" : "rgba(255,255,255,0.92)",
+    borderColor: featured ? palette.featuredStroke : palette.baseStroke,
     image: avatarImage,
     initials: getInitials(name ?? ""),
+    palette,
     size: avatarSize,
     x: centerX,
     y: avatarY,
   });
 
   drawWrappedCenteredText(context, name ?? "Sin votos", centerX, nameY, baseWidth + 20, {
-    color: "#ffffff",
+    color: palette.nameColor,
     font: `${featured ? "900 38px" : "900 34px"} Arial Black, Impact, sans-serif`,
     lineHeight: featured ? 40 : 36,
     maxLines: 2,
@@ -286,15 +417,16 @@ function drawPodiumPlace(
     result
       ? `${result.votes} ${result.votes === 1 ? "voto" : "votos"} · ${result.points} pts`
       : "-",
+    palette,
   );
 
   drawCenteredText(context, `#${place}`, centerX, rankY, {
-    color: featured ? "#f4ce0f" : "#ffffff",
+    color: featured ? palette.featuredRankColor : palette.rankColor,
     font: featured
       ? "900 118px Arial Black, Impact, sans-serif"
       : "900 96px Arial Black, Impact, sans-serif",
     shadowBlur: 18,
-    shadowColor: featured ? "rgba(244,206,15,0.28)" : "rgba(102,220,255,0.22)",
+    shadowColor: featured ? palette.titleShadow : palette.avatarShadow,
   });
 }
 
@@ -305,14 +437,15 @@ function drawGlassBase(
   width: number,
   height: number,
   featured: boolean,
+  palette: MvpStoryPalette,
 ) {
   context.save();
   const baseGradient = context.createLinearGradient(x, y, x + width, y + height);
-  baseGradient.addColorStop(0, "rgba(255,255,255,0.2)");
-  baseGradient.addColorStop(0.42, "rgba(102,220,255,0.2)");
-  baseGradient.addColorStop(1, "rgba(1,47,119,0.82)");
+  baseGradient.addColorStop(0, palette.baseStart);
+  baseGradient.addColorStop(0.42, palette.baseMiddle);
+  baseGradient.addColorStop(1, palette.baseEnd);
   context.fillStyle = baseGradient;
-  context.strokeStyle = featured ? "rgba(244,206,15,0.65)" : "rgba(102,220,255,0.58)";
+  context.strokeStyle = featured ? palette.featuredStroke : palette.baseStroke;
   context.lineWidth = featured ? 6 : 4;
   roundedRect(context, x, y, width, height, 30);
   context.fill();
@@ -327,9 +460,9 @@ function drawGlassBase(
   context.closePath();
   context.fill();
 
-  context.shadowColor = featured ? "rgba(244,206,15,0.45)" : "rgba(102,220,255,0.42)";
+  context.shadowColor = featured ? palette.titleShadow : palette.avatarShadow;
   context.shadowBlur = 28;
-  context.strokeStyle = featured ? "rgba(244,206,15,0.78)" : "rgba(102,220,255,0.78)";
+  context.strokeStyle = featured ? palette.featuredStroke : palette.baseStroke;
   context.lineWidth = 5;
   context.beginPath();
   context.moveTo(x + 24, y + 18);
@@ -344,6 +477,7 @@ function drawCircularAvatar(
     borderColor,
     image,
     initials,
+    palette,
     size,
     x,
     y,
@@ -351,6 +485,7 @@ function drawCircularAvatar(
     borderColor: string;
     image?: HTMLImageElement;
     initials: string;
+    palette: MvpStoryPalette;
     size: number;
     x: number;
     y: number;
@@ -359,9 +494,9 @@ function drawCircularAvatar(
   const radius = size / 2;
 
   context.save();
-  context.shadowColor = "rgba(102,220,255,0.38)";
+  context.shadowColor = palette.avatarShadow;
   context.shadowBlur = 28;
-  context.fillStyle = "#eaf8ff";
+  context.fillStyle = palette.avatarFillStart;
   context.beginPath();
   context.arc(x, y, radius, 0, Math.PI * 2);
   context.fill();
@@ -381,12 +516,12 @@ function drawCircularAvatar(
       x + radius,
       y + radius,
     );
-    gradient.addColorStop(0, "#eaf8ff");
-    gradient.addColorStop(1, "#66c7ef");
+    gradient.addColorStop(0, palette.avatarFillStart);
+    gradient.addColorStop(1, palette.avatarFillEnd);
     context.fillStyle = gradient;
     context.fillRect(x - radius, y - radius, size, size);
     drawCenteredText(context, initials || "-", x, y + 18, {
-      color: "#012f77",
+      color: palette.avatarInitialColor,
       font: `900 ${Math.round(size * 0.28)}px Arial Black, sans-serif`,
     });
   }
@@ -514,6 +649,7 @@ function drawScorePill(
   x: number,
   y: number,
   label: string,
+  palette: MvpStoryPalette,
 ) {
   context.save();
   context.font = "800 27px Arial, sans-serif";
@@ -521,14 +657,14 @@ function drawScorePill(
   const width = Math.max(metrics.width + 44, 170);
   const height = 50;
 
-  context.fillStyle = "rgba(0,36,93,0.66)";
-  context.strokeStyle = "rgba(102,220,255,0.42)";
+  context.fillStyle = palette.scoreBackground;
+  context.strokeStyle = palette.scoreStroke;
   context.lineWidth = 2;
   roundedRect(context, x - width / 2, y - height / 2, width, height, 25);
   context.fill();
   context.stroke();
   drawCenteredText(context, label, x, y + 9, {
-    color: "rgba(255,255,255,0.94)",
+    color: palette.scoreTextColor,
     font: "800 27px Arial, sans-serif",
   });
   context.restore();
@@ -691,12 +827,29 @@ function formatStoryDate(value: string) {
     return value || "Fecha a definir";
   }
 
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "numeric",
-    month: "long",
+  return formatPlateDate(date);
+}
+
+function formatPlateDate(date: Date) {
+  const formatterOptions = {
     timeZone: "America/Argentina/Buenos_Aires",
+  } satisfies Intl.DateTimeFormatOptions;
+  const day = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    day: "numeric",
+  }).format(date);
+  const month = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    month: "long",
+  })
+    .format(date)
+    .toLocaleUpperCase("es-AR");
+  const year = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
     year: "numeric",
   }).format(date);
+
+  return `${day} ${month} ${year}`;
 }
 
 function parseStoryDate(value: string) {
@@ -717,6 +870,20 @@ function formatCompetition(sourceType: PlayerOfMatchMatch["sourceType"]) {
   };
 
   return labels[sourceType] ?? "PARTIDO";
+}
+
+function getMvpStoryPalette(
+  sourceType: PlayerOfMatchMatch["sourceType"],
+): MvpStoryPalette {
+  if (sourceType === "cup") {
+    return CUP_MVP_STORY_PALETTE;
+  }
+
+  if (sourceType === "friendly") {
+    return FRIENDLY_MVP_STORY_PALETTE;
+  }
+
+  return DEFAULT_MVP_STORY_PALETTE;
 }
 
 function loadImage(source: string) {
