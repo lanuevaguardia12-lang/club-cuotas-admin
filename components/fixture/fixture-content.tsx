@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
+  ShieldCheck,
   Table2,
   Trophy,
 } from "lucide-react";
@@ -17,6 +18,10 @@ import { MatchConvocationButton } from "@/components/fixture/match-convocation-b
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
 import { NextMatchShareButton } from "@/components/fixture/next-match-share-button";
+import {
+  RankingShareButton,
+  type RankingShareRow,
+} from "@/components/fixture/ranking-share-button";
 import { StandingsShareButton } from "@/components/fixture/standings-share-button";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
@@ -60,7 +65,15 @@ interface FixtureContentProps {
   teamProfiles?: TeamProfile[];
 }
 
-type FixtureTab = "resumen" | "posiciones" | "goleadores" | "fixture";
+type FixtureTab = "resumen" | "posiciones" | "goleadores" | "valla" | "fixture";
+
+interface LeastBeatenRow {
+  goalsAgainst: number;
+  goalDifference: number;
+  played: number;
+  rank: number;
+  teamName: string;
+}
 
 export function FixtureContent({
   activeTab,
@@ -109,7 +122,16 @@ export function FixtureContent({
       {tab === "posiciones" ? (
         <StandingsTable data={data} teamProfiles={teamProfiles} />
       ) : null}
-      {tab === "goleadores" ? <ScorersTable rows={data.scorers} /> : null}
+      {tab === "goleadores" ? (
+        <ScorersTable data={data} rows={data.scorers} teamProfiles={teamProfiles} />
+      ) : null}
+      {tab === "valla" ? (
+        <LeastBeatenTable
+          data={data}
+          rows={getLeastBeatenRows(data.standings)}
+          teamProfiles={teamProfiles}
+        />
+      ) : null}
       {tab === "fixture" ? (
         <FixtureRounds
           canManage={canManage}
@@ -141,6 +163,7 @@ function FixtureTabNav({
     { label: "Posiciones", value: "posiciones" },
     { label: "Fixture", value: "fixture" },
     { label: "Goleadores", value: "goleadores" },
+    { label: "Valla menos vencida", value: "valla" },
   ];
 
   return (
@@ -531,14 +554,37 @@ function StandingsTable({
   );
 }
 
-function ScorersTable({ rows }: { rows: LeagueScorerRow[] }) {
+function ScorersTable({
+  data,
+  rows,
+  teamProfiles,
+}: {
+  data: LeagueFixtureData;
+  rows: LeagueScorerRow[];
+  teamProfiles: TeamProfile[];
+}) {
+  const shareRows = getScorerShareRows(rows);
+
   return (
     <Card>
-      <CardHeader className="p-3">
+      <CardHeader className="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_16rem] sm:items-start">
         <CardTitle className="flex items-center gap-2 text-base">
           <Trophy className="text-primary size-4" />
           Tabla de goleadores
         </CardTitle>
+        <RankingShareButton
+          filePrefix="goleadores"
+          primaryLabel="Jugador"
+          rows={shareRows}
+          secondaryLabel="Club"
+          shareText="Tabla de goleadores de La Nueva Guardia"
+          shareTitle="Goleadores"
+          subtitle={getTournamentSubtitle(data)}
+          teamName={APP_TEAM_NAME}
+          teamProfiles={teamProfiles}
+          title="Goleadores"
+          valueLabel="Goles"
+        />
       </CardHeader>
       <CardContent className="p-0">
         {rows.length > 0 ? (
@@ -553,23 +599,45 @@ function ScorersTable({ rows }: { rows: LeagueScorerRow[] }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => (
-                  <tr
-                    key={`${row.playerName}-${row.teamName}`}
-                    className="border-border border-t"
-                  >
-                    <td className="px-2 py-2 font-bold">{index + 1}</td>
-                    <td className="px-2 py-2">
-                      <span className="line-clamp-2 font-semibold">{row.playerName}</span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className="line-clamp-2">{row.teamName}</span>
-                    </td>
-                    <td className="px-2 py-2 text-center text-base font-bold">
-                      {row.goals}
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((row, index) => {
+                  const isClub = areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
+
+                  return (
+                    <tr
+                      key={`${row.playerName}-${row.teamName}`}
+                      className={cn(
+                        "border-border border-t",
+                        isClub &&
+                          "border-y-2 border-yellow-300 bg-yellow-50/80 font-semibold shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70 dark:bg-yellow-950/30",
+                      )}
+                    >
+                      <td className="px-2 py-2 font-bold">{index + 1}</td>
+                      <td className="px-2 py-2">
+                        <span className="line-clamp-2 font-semibold">
+                          {row.playerName}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2">
+                        <span
+                          className={cn(
+                            "line-clamp-2",
+                            isClub && "text-yellow-800 dark:text-yellow-200",
+                          )}
+                        >
+                          {row.teamName}
+                        </span>
+                      </td>
+                      <td
+                        className={cn(
+                          "px-2 py-2 text-center text-base font-bold",
+                          isClub && "text-yellow-700 dark:text-yellow-200",
+                        )}
+                      >
+                        {row.goals}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -578,6 +646,94 @@ function ScorersTable({ rows }: { rows: LeagueScorerRow[] }) {
             <EmptyInline
               title="Sin goleadores"
               detail="La liga todavia no publico detalle de goles para esta competencia."
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeastBeatenTable({
+  data,
+  rows,
+  teamProfiles,
+}: {
+  data: LeagueFixtureData;
+  rows: LeastBeatenRow[];
+  teamProfiles: TeamProfile[];
+}) {
+  const shareRows = getLeastBeatenShareRows(rows);
+
+  return (
+    <Card>
+      <CardHeader className="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_16rem] sm:items-start">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="text-primary size-4" />
+          Valla menos vencida
+        </CardTitle>
+        <RankingShareButton
+          filePrefix="valla-menos-vencida"
+          primaryLabel="Club"
+          rows={shareRows}
+          shareText="Valla menos vencida de La Nueva Guardia"
+          shareTitle="Valla menos vencida"
+          subtitle={getTournamentSubtitle(data)}
+          teamName={APP_TEAM_NAME}
+          teamProfiles={teamProfiles}
+          title="Valla menos vencida"
+          valueLabel="GC"
+        />
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length > 0 ? (
+          <div className="border-border max-h-[72dvh] overflow-y-auto border-t">
+            <table className="w-full table-fixed text-xs sm:text-sm">
+              <thead className="bg-muted text-muted-foreground sticky top-0 z-10">
+                <tr>
+                  <th className="w-10 px-2 py-2 text-left font-semibold">#</th>
+                  <th className="px-2 py-2 text-left font-semibold">Club</th>
+                  <th className="w-16 px-2 py-2 text-center font-semibold">PJ</th>
+                  <th className="w-20 px-2 py-2 text-center font-semibold">GC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const isClub = areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
+
+                  return (
+                    <tr
+                      key={`${row.rank}-${row.teamName}`}
+                      className={cn(
+                        "border-border border-t",
+                        isClub &&
+                          "border-y-2 border-yellow-300 bg-yellow-50/80 font-semibold shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70 dark:bg-yellow-950/30",
+                      )}
+                    >
+                      <td className="px-2 py-2 font-bold">{row.rank}</td>
+                      <td className="px-2 py-2">
+                        <span className="line-clamp-2 font-semibold">{row.teamName}</span>
+                      </td>
+                      <td className="px-2 py-2 text-center">{row.played}</td>
+                      <td
+                        className={cn(
+                          "px-2 py-2 text-center text-base font-bold",
+                          isClub && "text-yellow-700 dark:text-yellow-200",
+                        )}
+                      >
+                        {row.goalsAgainst}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-6">
+            <EmptyInline
+              title="Sin datos de valla"
+              detail="La liga todavia no publico goles en contra para esta competencia."
             />
           </div>
         )}
@@ -1171,9 +1327,60 @@ interface MatchOutcome {
 }
 
 function normalizeFixtureTab(value?: string): FixtureTab {
-  return value === "posiciones" || value === "goleadores" || value === "fixture"
+  return value === "posiciones" ||
+    value === "goleadores" ||
+    value === "valla" ||
+    value === "fixture"
     ? value
     : "resumen";
+}
+
+function getTournamentSubtitle(data: LeagueFixtureData) {
+  return [data.selectedTournamentName, data.selectedCategoryName]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function getScorerShareRows(rows: LeagueScorerRow[]): RankingShareRow[] {
+  return rows.map((row, index) => ({
+    highlight: areSameFixtureTeam(row.teamName, APP_TEAM_NAME),
+    id: `${row.playerName}-${row.teamName}`,
+    position: index + 1,
+    primary: row.playerName,
+    secondary: row.teamName,
+    value: row.goals,
+  }));
+}
+
+function getLeastBeatenRows(rows: LeagueStandingRow[]): LeastBeatenRow[] {
+  const playedRows = rows.filter((row) => row.played > 0);
+  const sourceRows = playedRows.length > 0 ? playedRows : rows;
+
+  return [...sourceRows]
+    .sort(
+      (left, right) =>
+        left.goalsAgainst - right.goalsAgainst ||
+        right.played - left.played ||
+        right.goalDifference - left.goalDifference ||
+        left.teamName.localeCompare(right.teamName, "es-AR"),
+    )
+    .map((row, index) => ({
+      goalsAgainst: row.goalsAgainst,
+      goalDifference: row.goalDifference,
+      played: row.played,
+      rank: index + 1,
+      teamName: row.teamName,
+    }));
+}
+
+function getLeastBeatenShareRows(rows: LeastBeatenRow[]): RankingShareRow[] {
+  return rows.map((row) => ({
+    highlight: areSameFixtureTeam(row.teamName, APP_TEAM_NAME),
+    id: row.teamName,
+    position: row.rank,
+    primary: row.teamName,
+    value: row.goalsAgainst,
+  }));
 }
 
 function buildFixtureHref(data: LeagueFixtureData, tab: FixtureTab) {
