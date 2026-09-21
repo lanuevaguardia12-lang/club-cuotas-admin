@@ -257,7 +257,7 @@ export default async function ShirtTrackingPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <MasterPlayerTable players={trackingPlayers} />
+          <MasterPlayerTable match={nextMatch} players={trackingPlayers} />
         </CardContent>
       </Card>
     </main>
@@ -389,16 +389,23 @@ function ConvokedTable({
   );
 }
 
-function MasterPlayerTable({ players }: { players: TrackingPlayer[] }) {
+function MasterPlayerTable({
+  match,
+  players,
+}: {
+  match?: LeagueFixtureMatch;
+  players: TrackingPlayer[];
+}) {
   return (
     <div className="border-border overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[940px] text-sm">
         <thead className="bg-muted text-muted-foreground">
           <tr>
             <th className="px-3 py-2 text-left font-semibold">Jugador</th>
             <th className="px-3 py-2 text-left font-semibold">Teléfono</th>
             <th className="px-3 py-2 text-left font-semibold">Camiseta</th>
             <th className="px-3 py-2 text-left font-semibold">Pelotas</th>
+            <th className="px-3 py-2 text-left font-semibold">WhatsApp</th>
           </tr>
         </thead>
         <tbody>
@@ -414,6 +421,12 @@ function MasterPlayerTable({ players }: { players: TrackingPlayer[] }) {
               </td>
               <td className="px-3 py-2 align-top">
                 <AssignmentSummary assignment={lastBalls} empty="Sin registro" />
+              </td>
+              <td className="px-3 py-2 align-top">
+                <div className="flex flex-wrap gap-2">
+                  <WhatsAppButton equipmentType="shirt" match={match} player={player} />
+                  <WhatsAppButton equipmentType="balls" match={match} player={player} />
+                </div>
               </td>
             </tr>
           ))}
@@ -457,7 +470,7 @@ function WhatsAppButton({
   player,
 }: {
   equipmentType: EquipmentType;
-  match: LeagueFixtureMatch;
+  match?: LeagueFixtureMatch;
   player: PlayerDirectoryItem;
 }) {
   const phone = sanitizeWhatsAppPhone(player.phone);
@@ -471,7 +484,9 @@ function WhatsAppButton({
     );
   }
 
-  const text = `Buenas ${getFirstName(player.name)}, ¿cómo estás? Te toca llevar ${equipmentLabels[equipmentType]} para el partido vs ${getMatchRival(match)} del ${formatDate(match.dateIso ?? match.roundDate)}. ¿Podés?`;
+  const text = match
+    ? `Buenas ${getFirstName(player.name)}, ¿cómo estás? Te toca llevar ${equipmentLabels[equipmentType]} para el partido vs ${getMatchRival(match)} del ${formatDate(match.dateIso ?? match.roundDate)}. ¿Podés?`
+    : `Buenas ${getFirstName(player.name)}, ¿cómo estás? Te escribo por el seguimiento de ${equipmentLabels[equipmentType]} del equipo.`;
 
   return (
     <Button asChild size="sm" variant="outline">
@@ -481,7 +496,7 @@ function WhatsAppButton({
         target="_blank"
       >
         <MessageCircle />
-        WhatsApp
+        {equipmentType === "shirt" ? "WhatsApp camiseta" : "WhatsApp pelotas"}
       </a>
     </Button>
   );
