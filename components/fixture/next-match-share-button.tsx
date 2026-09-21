@@ -70,21 +70,21 @@ const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
 };
 
 const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
-  accent: "#f6c343",
-  accentBorder: "rgba(246,195,67,0.76)",
-  backgroundEnd: "#020916",
-  backgroundMiddle: "#083f8f",
-  backgroundStart: "#07142d",
-  cardMiddle: "rgba(246,195,67,0.16)",
-  cardStroke: "rgba(246,195,67,0.62)",
-  frameStroke: "rgba(246,195,67,0.52)",
-  lowerGlow: "rgba(246,195,67,0.28)",
-  pillBackground: "rgba(7,20,45,0.44)",
-  roleBackground: "rgba(5,43,104,0.62)",
-  roleStroke: "rgba(246,195,67,0.24)",
-  stripeStroke: "rgba(246,195,67,0.16)",
-  titleShadow: "rgba(246,195,67,0.32)",
-  topGlow: "rgba(20,93,180,0.72)",
+  accent: "#083f8f",
+  accentBorder: "rgba(8,63,143,0.76)",
+  backgroundEnd: "#2a1a00",
+  backgroundMiddle: "#d99a18",
+  backgroundStart: "#3a2602",
+  cardMiddle: "rgba(8,63,143,0.24)",
+  cardStroke: "rgba(8,63,143,0.58)",
+  frameStroke: "rgba(8,63,143,0.58)",
+  lowerGlow: "rgba(8,63,143,0.26)",
+  pillBackground: "rgba(246,195,67,0.24)",
+  roleBackground: "rgba(7,20,45,0.58)",
+  roleStroke: "rgba(8,63,143,0.3)",
+  stripeStroke: "rgba(8,63,143,0.14)",
+  titleShadow: "rgba(8,63,143,0.34)",
+  topGlow: "rgba(246,195,67,0.78)",
 };
 
 interface NextMatchShareButtonProps {

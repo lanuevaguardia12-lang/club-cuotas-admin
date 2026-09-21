@@ -65,18 +65,18 @@ const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
 };
 
 const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
-  accent: "#f6c343",
-  backgroundEnd: "#020916",
-  backgroundMiddle: "#083f8f",
-  backgroundStart: "#07142d",
-  frameStroke: "rgba(246,195,67,0.52)",
-  jerseyText: "#08224f",
-  listMiddle: "rgba(246,195,67,0.16)",
-  rowPrimary: "rgba(255,255,255,0.11)",
-  rowSecondary: "rgba(7,20,45,0.34)",
-  stripeStroke: "rgba(246,195,67,0.16)",
-  titleShadow: "rgba(246,195,67,0.34)",
-  topGlow: "rgba(20,93,180,0.72)",
+  accent: "#083f8f",
+  backgroundEnd: "#2a1a00",
+  backgroundMiddle: "#d99a18",
+  backgroundStart: "#3a2602",
+  frameStroke: "rgba(8,63,143,0.58)",
+  jerseyText: "#f6c343",
+  listMiddle: "rgba(8,63,143,0.24)",
+  rowPrimary: "rgba(255,255,255,0.13)",
+  rowSecondary: "rgba(58,38,2,0.34)",
+  stripeStroke: "rgba(8,63,143,0.14)",
+  titleShadow: "rgba(8,63,143,0.34)",
+  topGlow: "rgba(246,195,67,0.78)",
 };
 
 interface MatchConvocationButtonProps {
