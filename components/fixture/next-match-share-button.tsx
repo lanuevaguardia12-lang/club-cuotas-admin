@@ -70,21 +70,21 @@ const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
 };
 
 const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
-  accent: "#083f8f",
-  accentBorder: "rgba(8,63,143,0.76)",
-  backgroundEnd: "#2a1a00",
-  backgroundMiddle: "#d99a18",
-  backgroundStart: "#3a2602",
-  cardMiddle: "rgba(8,63,143,0.24)",
-  cardStroke: "rgba(8,63,143,0.58)",
-  frameStroke: "rgba(8,63,143,0.58)",
-  lowerGlow: "rgba(8,63,143,0.26)",
-  pillBackground: "rgba(246,195,67,0.24)",
-  roleBackground: "rgba(7,20,45,0.58)",
-  roleStroke: "rgba(8,63,143,0.3)",
-  stripeStroke: "rgba(8,63,143,0.14)",
-  titleShadow: "rgba(8,63,143,0.34)",
-  topGlow: "rgba(246,195,67,0.78)",
+  accent: "#fff2b8",
+  accentBorder: "rgba(255,225,160,0.58)",
+  backgroundEnd: "#2d1b03",
+  backgroundMiddle: "#b9780f",
+  backgroundStart: "#251604",
+  cardMiddle: "rgba(17,24,39,0.44)",
+  cardStroke: "rgba(255,225,160,0.48)",
+  frameStroke: "rgba(255,228,163,0.46)",
+  lowerGlow: "rgba(18,48,71,0.28)",
+  pillBackground: "rgba(255,241,186,0.18)",
+  roleBackground: "rgba(21,27,34,0.62)",
+  roleStroke: "rgba(255,241,190,0.22)",
+  stripeStroke: "rgba(255,241,194,0.12)",
+  titleShadow: "rgba(18,11,2,0.64)",
+  topGlow: "rgba(255,212,106,0.62)",
 };
 
 interface NextMatchShareButtonProps {
@@ -244,6 +244,7 @@ async function drawNextMatchPlate(
   const height = format === "story" ? STORY_HEIGHT : POST_HEIGHT;
   const compact = format === "post";
   const palette = getCompetitionSharePlatePalette(match.competitionKind);
+  const showStandingPositions = match.competitionKind === "league";
   const clubCrest = await loadTeamCrestImage(teamProfiles, teamName, teamName);
   const localRecentMatches = getLastPlayedMatchesForTeam(matches, match.localTeam, match)
     .slice(0, 3)
@@ -282,13 +283,14 @@ async function drawNextMatchPlate(
     shadowColor: palette.titleShadow,
   });
 
-  drawCenteredText(
+  drawPlateMetaText(
     context,
     `${formatCompetition(match.competitionKind)} / ${formatMatchDate(match)}`,
     width / 2,
     compact ? 374 : 492,
     {
-      color: "rgba(255,255,255,0.9)",
+      background: match.competitionKind === "cup",
+      color: match.competitionKind === "cup" ? "#fff0b8" : "rgba(255,255,255,0.9)",
       font: compact ? "800 34px Arial, sans-serif" : "800 40px Arial, sans-serif",
       maxWidth: width - 140,
     },
@@ -305,11 +307,15 @@ async function drawNextMatchPlate(
   await drawMatchup(context, {
     clubTeamName: teamName,
     compact,
-    localPosition: getTeamPositionLabel(standings, match.localTeam),
+    localPosition: showStandingPositions
+      ? getTeamPositionLabel(standings, match.localTeam)
+      : undefined,
     localRecentMatches,
     localTeam: match.localTeam,
     palette,
-    visitorPosition: getTeamPositionLabel(standings, match.visitorTeam),
+    visitorPosition: showStandingPositions
+      ? getTeamPositionLabel(standings, match.visitorTeam)
+      : undefined,
     visitorRecentMatches,
     visitorTeam: match.visitorTeam,
     teamProfiles,
@@ -454,12 +460,12 @@ async function drawMatchup(
   }: {
     clubTeamName: string;
     compact: boolean;
-    localPosition: string;
+    localPosition?: string;
     localRecentMatches: MatchOutcome[];
     localTeam: string;
     palette: SharePlatePalette;
     teamProfiles: TeamProfile[];
-    visitorPosition: string;
+    visitorPosition?: string;
     visitorRecentMatches: MatchOutcome[];
     visitorTeam: string;
     width: number;
@@ -518,7 +524,7 @@ async function drawMatchup(
     maxWidth: teamColumnWidth,
     nameFontSize: teamNameFontSize,
     palette,
-    role: `Local · ${localPosition}`,
+    role: localPosition ? `Local · ${localPosition}` : "Local",
     roleY,
     x: cardX + sidePadding + teamColumnWidth / 2,
     y: nameTop,
@@ -533,7 +539,7 @@ async function drawMatchup(
     maxWidth: teamColumnWidth,
     nameFontSize: teamNameFontSize,
     palette,
-    role: `Visita · ${visitorPosition}`,
+    role: visitorPosition ? `Visita · ${visitorPosition}` : "Visita",
     roleY,
     x: cardX + cardWidth - sidePadding - teamColumnWidth / 2,
     y: nameTop,
@@ -797,6 +803,45 @@ function drawRecentForm(
       maxWidth,
     );
     context.restore();
+  });
+}
+
+function drawPlateMetaText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  {
+    background,
+    color,
+    font,
+    maxWidth,
+  }: {
+    background: boolean;
+    color: string;
+    font: string;
+    maxWidth: number;
+  },
+) {
+  context.save();
+  context.font = font;
+
+  if (background) {
+    const textWidth = Math.min(maxWidth, context.measureText(text).width);
+    const boxWidth = textWidth + 64;
+    const boxHeight = 58;
+
+    context.fillStyle = "rgba(22,15,8,0.45)";
+    roundedRect(context, x - boxWidth / 2, y - 42, boxWidth, boxHeight, boxHeight / 2);
+    context.fill();
+  }
+
+  context.restore();
+
+  drawCenteredText(context, text, x, y, {
+    color,
+    font,
+    maxWidth,
   });
 }
 
@@ -1099,16 +1144,33 @@ function formatMatchDate(match: LeagueFixtureMatch) {
     const date = new Date(`${match.dateIso}T12:00:00-03:00`);
 
     if (!Number.isNaN(date.getTime())) {
-      return new Intl.DateTimeFormat("es-AR", {
-        day: "numeric",
-        month: "long",
-        timeZone: "America/Argentina/Buenos_Aires",
-        year: "numeric",
-      }).format(date);
+      return formatPlateDate(date);
     }
   }
 
   return match.roundDate || "Fecha a definir";
+}
+
+function formatPlateDate(date: Date) {
+  const formatterOptions = {
+    timeZone: "America/Argentina/Buenos_Aires",
+  } satisfies Intl.DateTimeFormatOptions;
+  const day = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    day: "numeric",
+  }).format(date);
+  const month = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    month: "long",
+  })
+    .format(date)
+    .toLocaleUpperCase("es-AR");
+  const year = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    year: "numeric",
+  }).format(date);
+
+  return `${day} ${month} ${year}`;
 }
 
 function formatCompetition(kind: LeagueCompetitionKind) {

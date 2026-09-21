@@ -65,18 +65,18 @@ const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
 };
 
 const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
-  accent: "#083f8f",
-  backgroundEnd: "#2a1a00",
-  backgroundMiddle: "#d99a18",
-  backgroundStart: "#3a2602",
-  frameStroke: "rgba(8,63,143,0.58)",
-  jerseyText: "#f6c343",
-  listMiddle: "rgba(8,63,143,0.24)",
+  accent: "#fff2b8",
+  backgroundEnd: "#2d1b03",
+  backgroundMiddle: "#b9780f",
+  backgroundStart: "#251604",
+  frameStroke: "rgba(255,228,163,0.46)",
+  jerseyText: "#15304a",
+  listMiddle: "rgba(17,24,39,0.44)",
   rowPrimary: "rgba(255,255,255,0.13)",
-  rowSecondary: "rgba(58,38,2,0.34)",
-  stripeStroke: "rgba(8,63,143,0.14)",
-  titleShadow: "rgba(8,63,143,0.34)",
-  topGlow: "rgba(246,195,67,0.78)",
+  rowSecondary: "rgba(22,15,8,0.34)",
+  stripeStroke: "rgba(255,241,194,0.12)",
+  titleShadow: "rgba(18,11,2,0.64)",
+  topGlow: "rgba(255,212,106,0.62)",
 };
 
 interface MatchConvocationButtonProps {
@@ -675,13 +675,14 @@ async function drawConvocationPlate(
     shadowColor: palette.titleShadow,
   });
 
-  drawCenteredText(
+  drawPlateMetaText(
     context,
     formatConvocationMatchMeta(match),
     width / 2,
     compact ? 292 : 426,
     {
-      color: "rgba(255,255,255,0.88)",
+      background: match.competitionKind === "cup",
+      color: match.competitionKind === "cup" ? "#fff0b8" : "rgba(255,255,255,0.88)",
       font: compact ? "800 30px Arial, sans-serif" : "800 36px Arial, sans-serif",
       maxWidth: width - 160,
     },
@@ -996,6 +997,45 @@ function getTeamInitials(teamName: string) {
     .join("");
 }
 
+function drawPlateMetaText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  {
+    background,
+    color,
+    font,
+    maxWidth,
+  }: {
+    background: boolean;
+    color: string;
+    font: string;
+    maxWidth: number;
+  },
+) {
+  context.save();
+  context.font = font;
+
+  if (background) {
+    const textWidth = Math.min(maxWidth, context.measureText(text).width);
+    const boxWidth = textWidth + 64;
+    const boxHeight = 58;
+
+    context.fillStyle = "rgba(22,15,8,0.45)";
+    roundedRect(context, x - boxWidth / 2, y - 42, boxWidth, boxHeight, boxHeight / 2);
+    context.fill();
+  }
+
+  context.restore();
+
+  drawCenteredText(context, text, x, y, {
+    color,
+    font,
+    maxWidth,
+  });
+}
+
 function drawCenteredText(
   context: CanvasRenderingContext2D,
   text: string,
@@ -1269,12 +1309,29 @@ function formatMatchDate(match: LeagueFixtureMatch) {
     return value || "Fecha a definir";
   }
 
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "numeric",
-    month: "long",
+  return formatPlateDate(date);
+}
+
+function formatPlateDate(date: Date) {
+  const formatterOptions = {
     timeZone: "America/Argentina/Buenos_Aires",
+  } satisfies Intl.DateTimeFormatOptions;
+  const day = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    day: "numeric",
+  }).format(date);
+  const month = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    month: "long",
+  })
+    .format(date)
+    .toLocaleUpperCase("es-AR");
+  const year = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
     year: "numeric",
   }).format(date);
+
+  return `${day} ${month} ${year}`;
 }
 
 function toDateTimeLocalValue(match: LeagueFixtureMatch) {

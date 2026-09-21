@@ -81,25 +81,25 @@ const DEFAULT_SHARE_PLATE_PALETTE: SharePlatePalette = {
 };
 
 const CUP_SHARE_PLATE_PALETTE: SharePlatePalette = {
-  accent: "#083f8f",
-  backgroundEnd: "#2a1a00",
-  backgroundMiddle: "#d99a18",
-  backgroundStart: "#3a2602",
-  cardMiddle: "rgba(8,63,143,0.24)",
-  cardStroke: "rgba(8,63,143,0.58)",
-  frameStroke: "rgba(8,63,143,0.58)",
-  lowerGlow: "rgba(8,63,143,0.26)",
-  photoShadeEnd: "rgba(58,38,2,0.88)",
-  photoShadeMiddle: "rgba(217,154,24,0.48)",
-  photoShadeStart: "rgba(58,38,2,0.72)",
-  photoSideEdge: "rgba(58,38,2,0.58)",
-  photoSideMiddle: "rgba(8,63,143,0.18)",
-  scorerBackground: "rgba(58,38,2,0.74)",
-  scorerStroke: "rgba(8,63,143,0.52)",
-  scoreWinnerShadow: "rgba(8,63,143,0.24)",
-  stripeStroke: "rgba(8,63,143,0.14)",
-  titleShadow: "rgba(8,63,143,0.34)",
-  topGlow: "rgba(246,195,67,0.78)",
+  accent: "#fff2b8",
+  backgroundEnd: "#2d1b03",
+  backgroundMiddle: "#b9780f",
+  backgroundStart: "#251604",
+  cardMiddle: "rgba(17,24,39,0.44)",
+  cardStroke: "rgba(255,225,160,0.48)",
+  frameStroke: "rgba(255,228,163,0.46)",
+  lowerGlow: "rgba(18,48,71,0.28)",
+  photoShadeEnd: "rgba(45,27,3,0.88)",
+  photoShadeMiddle: "rgba(185,120,15,0.5)",
+  photoShadeStart: "rgba(37,22,4,0.72)",
+  photoSideEdge: "rgba(37,22,4,0.58)",
+  photoSideMiddle: "rgba(18,48,71,0.18)",
+  scorerBackground: "rgba(22,15,8,0.58)",
+  scorerStroke: "rgba(255,225,160,0.42)",
+  scoreWinnerShadow: "rgba(18,11,2,0.64)",
+  stripeStroke: "rgba(255,241,194,0.12)",
+  titleShadow: "rgba(18,11,2,0.64)",
+  topGlow: "rgba(255,212,106,0.62)",
 };
 
 interface PreparedPhotoShare {
@@ -461,13 +461,14 @@ async function drawMatchResultPlate(
     shadowColor: palette.titleShadow,
   });
 
-  drawCenteredText(
+  drawPlateMetaText(
     context,
     `${formatResultDate(match.dateIso)} / ${formatCompetition(match.competitionKind)}`,
     width / 2,
     compact ? 382 : 494,
     {
-      color: "rgba(255,255,255,0.88)",
+      background: match.competitionKind === "cup",
+      color: match.competitionKind === "cup" ? "#fff0b8" : "rgba(255,255,255,0.88)",
       font: compact ? "800 34px Arial, sans-serif" : "800 38px Arial, sans-serif",
       maxWidth: width - 150,
     },
@@ -548,13 +549,14 @@ async function drawPhotoOverlayMatchResultPlate(
     shadowColor: "rgba(0,0,0,0.45)",
   });
 
-  drawCenteredText(
+  drawPlateMetaText(
     context,
     `${formatResultDate(match.dateIso)} / ${formatCompetition(match.competitionKind)}`,
     width / 2,
     compact ? 268 : 466,
     {
-      color: "rgba(255,255,255,0.9)",
+      background: match.competitionKind === "cup",
+      color: match.competitionKind === "cup" ? "#fff0b8" : "rgba(255,255,255,0.9)",
       font: compact ? "800 30px Arial, sans-serif" : "800 38px Arial, sans-serif",
       maxWidth: width - 150,
       shadowBlur: 14,
@@ -1113,6 +1115,51 @@ function isSupportedResultPhotoFile(file: File) {
   );
 }
 
+function drawPlateMetaText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  {
+    background,
+    color,
+    font,
+    maxWidth,
+    shadowBlur = 0,
+    shadowColor = "transparent",
+  }: {
+    background: boolean;
+    color: string;
+    font: string;
+    maxWidth: number;
+    shadowBlur?: number;
+    shadowColor?: string;
+  },
+) {
+  context.save();
+  context.font = font;
+
+  if (background) {
+    const textWidth = Math.min(maxWidth, context.measureText(text).width);
+    const boxWidth = textWidth + 64;
+    const boxHeight = 58;
+
+    context.fillStyle = "rgba(22,15,8,0.45)";
+    roundedRect(context, x - boxWidth / 2, y - 42, boxWidth, boxHeight, boxHeight / 2);
+    context.fill();
+  }
+
+  context.restore();
+
+  drawCenteredText(context, text, x, y, {
+    color,
+    font,
+    maxWidth,
+    shadowBlur,
+    shadowColor,
+  });
+}
+
 function drawCenteredText(
   context: CanvasRenderingContext2D,
   text: string,
@@ -1389,12 +1436,29 @@ function formatResultDate(value?: string) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "numeric",
-    month: "long",
+  return formatPlateDate(date);
+}
+
+function formatPlateDate(date: Date) {
+  const formatterOptions = {
     timeZone: "America/Argentina/Buenos_Aires",
+  } satisfies Intl.DateTimeFormatOptions;
+  const day = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    day: "numeric",
+  }).format(date);
+  const month = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
+    month: "long",
+  })
+    .format(date)
+    .toLocaleUpperCase("es-AR");
+  const year = new Intl.DateTimeFormat("es-AR", {
+    ...formatterOptions,
     year: "numeric",
   }).format(date);
+
+  return `${day} ${month} ${year}`;
 }
 
 function formatCompetition(kind: LeagueCompetitionKind) {
