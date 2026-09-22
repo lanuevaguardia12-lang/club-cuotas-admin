@@ -282,8 +282,28 @@ function isUniqueMatchRegistrationAlias(alias: string, playerNames: string[]) {
 function addMatchRegistrationPlayerValue(values: Set<string>, value: string) {
   const normalizedValue = value.trim();
 
-  if (normalizedValue) {
-    values.add(normalizedValue);
+  if (!normalizedValue) {
+    return;
+  }
+
+  const accentlessValue = removeMatchRegistrationAccents(normalizedValue);
+  const variants = [
+    normalizedValue,
+    formatMatchRegistrationNameCase(normalizedValue),
+    normalizedValue.toLocaleLowerCase("es-AR"),
+    normalizedValue.toLocaleUpperCase("es-AR"),
+    accentlessValue,
+    formatMatchRegistrationNameCase(accentlessValue),
+    accentlessValue.toLocaleLowerCase("es-AR"),
+    accentlessValue.toLocaleUpperCase("es-AR"),
+  ];
+
+  for (const variant of variants) {
+    const cleanedVariant = cleanMatchRegistrationPlayerName(variant);
+
+    if (cleanedVariant) {
+      values.add(cleanedVariant);
+    }
   }
 }
 
@@ -299,6 +319,23 @@ function normalizeRegistrationAliasKey(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+}
+
+function removeMatchRegistrationAccents(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function formatMatchRegistrationNameCase(value: string) {
+  return cleanMatchRegistrationPlayerName(value)
+    .split(/\s+/)
+    .map((word) => {
+      const lowerWord = word.toLocaleLowerCase("es-AR");
+
+      return lowerWord
+        ? `${lowerWord[0]?.toLocaleUpperCase("es-AR") ?? ""}${lowerWord.slice(1)}`
+        : lowerWord;
+    })
+    .join(" ");
 }
 
 function getMatchRival(match: LeagueFixtureMatch) {
