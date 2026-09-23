@@ -212,6 +212,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
           emptyText="No hay una cuota posterior cargada."
           icon="next"
           month={nextMonth}
+          playerName={profile.name}
           title="Siguiente cuota"
         />
         <MonthPreviewCard
@@ -219,6 +220,7 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
           emptyText="No hay una cuota anterior cargada."
           icon="previous"
           month={previousMonth}
+          playerName={profile.name}
           title="Cuota anterior"
         />
       </section>
@@ -260,15 +262,18 @@ function MonthPreviewCard({
   emptyText,
   icon,
   month,
+  playerName,
   title,
 }: {
   currentPeriod: string;
   emptyText: string;
   icon: "next" | "previous";
   month?: PlayerYearMonth;
+  playerName: string;
   title: string;
 }) {
   const Icon = icon === "next" ? CalendarClock : CalendarDays;
+  const canPayMonth = month ? isPayablePendingMonth(month, currentPeriod) : false;
 
   return (
     <Card className="club-animate-fade-up">
@@ -297,6 +302,11 @@ function MonthPreviewCard({
                 <p className="text-muted-foreground">Pagada el {month.paidAt}</p>
               ) : null}
             </div>
+            {canPayMonth ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <PaymentFormButton period={month.period} playerName={playerName} />
+              </div>
+            ) : null}
           </div>
         ) : (
           <p className="text-muted-foreground text-sm">Sin datos para mostrar.</p>
