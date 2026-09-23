@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { useLoadingRouter } from "@/hooks/use-loading-router";
@@ -11,13 +12,18 @@ interface DashboardPeriodSelectorProps {
 
 export function DashboardPeriodSelector({ period }: DashboardPeriodSelectorProps) {
   const router = useLoadingRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   function goToPeriod(nextPeriod: string) {
     if (!/^\d{4}-\d{2}$/.test(nextPeriod) || nextPeriod === period) {
       return;
     }
 
-    router.push(`/?period=${nextPeriod}`, "Cargando dashboard del mes...");
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.set("period", nextPeriod);
+    router.push(`${pathname}?${params.toString()}`, "Cargando dashboard del mes...");
   }
 
   return (
