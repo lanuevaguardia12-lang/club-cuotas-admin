@@ -228,6 +228,7 @@ interface CashFlowTransactionRecord extends CashFlowTransaction {
 
 interface MatchRecord {
   id: string;
+  legacyIds?: string[];
   date: string;
   period: string;
   rival: string;
@@ -2726,7 +2727,7 @@ export class GoogleSheetsService implements IDataService {
       ),
       players,
     );
-    const match = matches.find((candidate) => candidate.id === input.matchId);
+    const match = findPlayerOfMatchRecordById(matches, input.matchId);
 
     if (!match) {
       throw new DataServiceError(
@@ -2751,7 +2752,7 @@ export class GoogleSheetsService implements IDataService {
     if (
       votes.some(
         (vote) =>
-          vote.matchId === match.id &&
+          getPlayerOfMatchRecordIdSet(match).has(vote.matchId) &&
           isPlayerOfMatchVoteFromVoter(vote, voterLookupKeys),
       )
     ) {
@@ -5880,9 +5881,14 @@ function mergePlayerOfMatchMatches(
 
       const rival = getFixtureRival(fixtureMatch);
       const date = fixtureMatch.dateIso ?? sheetMatch?.date ?? "";
+      const stableMatchId = createFixturePlayerOfMatchId(fixtureMatch);
+      const legacyIds = Array.from(
+        new Set([sheetMatch?.id].filter((id): id is string => Boolean(id))),
+      );
 
       return {
-        id: sheetMatch?.id ?? createFixturePlayerOfMatchId(fixtureMatch),
+        id: stableMatchId,
+        legacyIds: legacyIds.filter((legacyId) => legacyId !== stableMatchId),
         date,
         period: getPeriodFromDate(date) ?? getCurrentPeriod(),
         rival,
@@ -5959,6 +5965,14 @@ function isFriendlyMatchRecord(match: MatchRecord) {
 
 function isEditablePlayerOfMatchRecord(match: MatchRecord) {
   return Boolean(match.canEdit && match.sourceType === "friendly");
+}
+
+function getPlayerOfMatchRecordIdSet(match: MatchRecord) {
+  return new Set([match.id, ...(match.legacyIds ?? [])].filter(Boolean));
+}
+
+function findPlayerOfMatchRecordById(matches: MatchRecord[], matchId: string) {
+  return matches.find((match) => getPlayerOfMatchRecordIdSet(match).has(matchId));
 }
 
 function isCompatiblePlayerOfMatchCompetition(
@@ -6383,13 +6397,13 @@ function buildPlayerOfMatchData({
   votes: PlayerOfMatchVote[];
   voterVotes: PlayerOfMatchVote[];
 }): PlayerOfMatchData {
-  const votesByMatchId = new Map(voterVotes.map((vote) => [vote.matchId, vote]));
   const playerPhotoMap = buildPlayerOfMatchPhotoMap(matches, accountProfiles, players);
   const formattedMatches = [...matches]
     .sort((left, right) => right.date.localeCompare(left.date))
     .map<PlayerOfMatchMatch>((match) => {
       const votingWindow = getPlayerOfMatchVotingWindow(match);
-      const matchVotes = votes.filter((vote) => vote.matchId === match.id);
+      const matchIds = getPlayerOfMatchRecordIdSet(match);
+      const matchVotes = votes.filter((vote) => matchIds.has(vote.matchId));
       const sourceType = match.sourceType ?? "league";
 
       return {
@@ -6410,7 +6424,7 @@ function buildPlayerOfMatchData({
         }, 0),
         totalVoters: matchVotes.length,
         canEdit: isEditablePlayerOfMatchRecord(match),
-        userVote: votesByMatchId.get(match.id),
+        userVote: voterVotes.find((vote) => matchIds.has(vote.matchId)),
         votingEndsAt: votingWindow.endsAt,
         votingStartsAt: votingWindow.startsAt,
         votingStatus: votingWindow.status,
