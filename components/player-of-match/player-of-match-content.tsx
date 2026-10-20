@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Crown,
   Eye,
-  Flame,
   Lock,
   Medal,
   Pencil,
@@ -34,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { StreakFlame } from "@/components/ui/streak-flame";
 import { cn } from "@/lib/utils";
 import {
   playerOfMatchEditSchema,
@@ -107,7 +107,7 @@ export function PlayerOfMatchContent({
             aria-pressed={activeTab === tab.value}
             onClick={() => setActiveTab(tab.value)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
+              "club-pressable rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
               activeTab === tab.value
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -317,7 +317,7 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
 
   return (
     <section className="grid min-w-0 gap-5">
-      <div>
+      <div className="club-animate-fade-up">
         <p className="text-muted-foreground text-sm font-medium">Rachas y asistencia</p>
         <h2 className="mt-1 text-xl font-semibold tracking-normal text-balance">
           Ranking de jugadores con mayor cantidad de asistencia consecutiva
@@ -336,7 +336,10 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
               photoDataUrl={current.photoDataUrl}
             />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-white/80">Tu racha</p>
+              <p className="flex items-center gap-2 text-sm font-medium text-white/80">
+                <StreakFlame active={current.currentStreak > 0} />
+                Tu racha
+              </p>
               <h2 className="mt-1 text-xl font-semibold text-balance">
                 Tenés {current.currentStreak} partidos consecutivos
               </h2>
@@ -347,7 +350,10 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
                 Tu récord histórico: {current.bestStreak} partidos.
               </p>
             </div>
-            <div className="grid size-16 place-items-center rounded-md bg-white text-2xl font-semibold text-[#012f77]">
+            <div
+              key={current.currentStreak}
+              className="club-animate-pop-in grid size-16 place-items-center rounded-md bg-white text-2xl font-semibold text-[#012f77]"
+            >
               {current.currentStreak}
             </div>
           </CardContent>
@@ -360,7 +366,9 @@ function StreaksTab({ data }: { data: PlayerOfMatchData }) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Flame className="text-primary size-5" />
+              <StreakFlame
+                active={data.rankings.streaks.some((row) => row.currentStreak > 0)}
+              />
               Rachas al día de hoy
             </CardTitle>
           </CardHeader>
@@ -410,11 +418,12 @@ function HistoricalStreakPodium({ rows }: { rows: PlayerHistoricalStreakRankingR
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-3 gap-2">
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <div
               key={row.playerId}
+              style={{ "--club-list-delay": `${index * 65}ms` } as CSSProperties}
               className={cn(
-                "bg-muted/50 grid min-w-0 gap-2 rounded-md border p-2 text-center",
+                "club-animate-list-in bg-muted/50 grid min-w-0 gap-2 rounded-md border p-2 text-center",
                 row.rank === 1 && "border-[#f4ce0f] bg-[#f4ce0f]/15",
               )}
             >
@@ -473,8 +482,14 @@ function StreakRankingTable({ rows }: { rows: PlayerStreakRankingRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.playerId} className="border-border border-b last:border-0">
+          {rows.map((row, index) => (
+            <tr
+              key={row.playerId}
+              style={
+                { "--club-list-delay": `${Math.min(index, 5) * 35}ms` } as CSSProperties
+              }
+              className="club-animate-row-in border-border border-b last:border-0"
+            >
               <td className="px-2 py-3 font-semibold sm:px-4">#{row.rank}</td>
               <td className="min-w-0 px-2 py-3 sm:px-4">
                 <RankingPlayer
@@ -485,7 +500,10 @@ function StreakRankingTable({ rows }: { rows: PlayerStreakRankingRow[] }) {
               </td>
               <td className="px-2 py-3 text-center sm:px-4">
                 <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold">
-                  <Flame className="size-3.5 fill-current sm:size-4" />
+                  <StreakFlame
+                    active={row.currentStreak > 0}
+                    className="size-3.5 sm:size-4"
+                  />
                   {row.currentStreak}
                 </span>
               </td>

@@ -94,7 +94,7 @@ export function Sidebar({ className, onNavigate, user }: SidebarProps) {
               href={item.href}
               loadingMessage={`Cargando ${item.label}...`}
               onClick={onNavigate}
-              className="text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors"
+              className="club-nav-link text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors"
             >
               <Icon className="size-4" aria-hidden="true" />
               {item.label}

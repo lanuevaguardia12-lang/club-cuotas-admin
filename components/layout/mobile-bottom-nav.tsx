@@ -71,7 +71,7 @@ export function MobileBottomNav({ user }: MobileBottomNavProps) {
               href={item.href}
               loadingMessage={`Cargando ${item.label}...`}
               className={cn(
-                "flex min-w-[4.75rem] flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-[0.7rem] leading-tight font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white",
+                "club-nav-link flex min-w-[4.75rem] flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-[0.7rem] leading-tight font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white",
                 active && "text-primary hover:text-primary bg-white hover:bg-white",
               )}
             >

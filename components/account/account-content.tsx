@@ -32,6 +32,7 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { StreakFlame } from "@/components/ui/streak-flame";
 import { PLAYER_POSITIONS, isPlayerPosition } from "@/lib/player-positions";
 import type { AccountProfile } from "@/types/account";
 
@@ -179,7 +180,7 @@ export function AccountContent({ profile }: AccountContentProps) {
     <section className="mx-auto grid w-full max-w-5xl gap-4">
       <LoadingModal open={isLoading} description={loadingMessage || "Guardando..."} />
 
-      <section className="from-primary to-secondary text-primary-foreground overflow-hidden rounded-md bg-linear-to-br">
+      <section className="club-card-enter from-primary to-secondary text-primary-foreground overflow-hidden rounded-md bg-linear-to-br">
         <div className="grid gap-4 p-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-5">
           <div className="relative size-28">
             <div className="grid size-28 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-white/70 bg-white/15">
@@ -263,7 +264,10 @@ export function AccountContent({ profile }: AccountContentProps) {
           <CardContent className="grid gap-3">
             <div className="border-accent bg-accent/15 grid gap-3 rounded-md border p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
               <div className="bg-accent text-accent-foreground grid size-12 place-items-center rounded-md">
-                <Flame className="size-6" aria-hidden="true" />
+                <StreakFlame
+                  active={(attendance?.currentStreak ?? 0) > 0}
+                  className="size-6"
+                />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold">Racha activa</p>
@@ -281,7 +285,10 @@ export function AccountContent({ profile }: AccountContentProps) {
                   Mejor racha histórica: {attendance?.bestStreak ?? 0} partidos.
                 </p>
               </div>
-              <div className="bg-primary text-primary-foreground grid size-14 place-items-center rounded-md text-2xl font-semibold">
+              <div
+                key={attendance?.currentStreak ?? 0}
+                className="club-animate-pop-in bg-primary text-primary-foreground grid size-14 place-items-center rounded-md text-2xl font-semibold"
+              >
                 {attendance?.currentStreak ?? 0}
               </div>
             </div>

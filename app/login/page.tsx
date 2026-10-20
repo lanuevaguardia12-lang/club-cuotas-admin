@@ -19,7 +19,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
-      <section className="border-border bg-card text-card-foreground w-full max-w-md rounded-lg border p-6 shadow-sm">
+      <section className="club-card-enter border-border bg-card text-card-foreground w-full max-w-md rounded-lg border p-6 shadow-sm">
         <div className="mb-6 flex items-start gap-3">
           <BrandMark className="size-12 rounded-full" />
           <div>
