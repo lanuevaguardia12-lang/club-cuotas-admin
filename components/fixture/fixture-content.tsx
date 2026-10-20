@@ -23,6 +23,12 @@ import {
   type RankingShareRow,
 } from "@/components/fixture/ranking-share-button";
 import { StandingsShareButton } from "@/components/fixture/standings-share-button";
+import { StandingsLegend } from "@/components/fixture/standings-legend";
+import {
+  getStandingsClassifications,
+  getStandingClassificationStyle,
+  type StandingClassificationStyle,
+} from "@/lib/standings-classification";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -524,6 +530,10 @@ function StandingsTable({
   data,
   teamProfiles = [],
 }: Pick<FixtureContentProps, "data" | "teamProfiles">) {
+  const classifications = getStandingsClassifications(
+    data.selectedCategoryName,
+    data.standings,
+  );
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -543,8 +553,12 @@ function StandingsTable({
       <CardContent className="p-0">
         {data.standings.length > 0 ? (
           <div className="grid gap-2">
-            <UnifiedStandingsTable matches={data.matches} rows={data.standings} />
-            <StandingsLegend />
+            <UnifiedStandingsTable
+              matches={data.matches}
+              rows={data.standings}
+              classifications={classifications}
+            />
+            <StandingsLegend classifications={classifications} className="px-3 pb-3" />
           </div>
         ) : (
           <EmptyInline title="Sin tabla" detail="La liga no devolvio posiciones." />
@@ -745,9 +759,11 @@ function LeastBeatenTable({
 function UnifiedStandingsTable({
   matches,
   rows,
+  classifications,
 }: {
   matches: LeagueFixtureMatch[];
   rows: LeagueStandingRow[];
+  classifications: StandingClassificationStyle[];
 }) {
   return (
     <div className="border-border max-h-[72dvh] overflow-y-auto border-t">
@@ -770,14 +786,19 @@ function UnifiedStandingsTable({
         <tbody>
           {rows.map((row) => {
             const versus = getVersusClubResult(matches, row.teamName);
+            const classification = getStandingClassificationStyle(
+              row.position,
+              classifications,
+            );
             const isClub = row.isClub || areSameFixtureTeam(row.teamName, APP_TEAM_NAME);
 
             return (
               <tr
                 key={`${row.position}-${row.teamName}`}
+                title={classification?.label}
                 className={cn(
                   "border-border border-t transition-colors",
-                  getPositionRowClassName(row.position),
+                  classification?.rowClassName ?? "bg-card",
                   isClub &&
                     "border-y-2 border-yellow-300 font-semibold shadow-[inset_4px_0_0_#f4ce0f] dark:border-yellow-400/70",
                 )}
@@ -786,7 +807,7 @@ function UnifiedStandingsTable({
                   <span
                     className={cn(
                       "inline-grid size-5 place-items-center rounded-sm text-[0.65rem] font-bold sm:size-7 sm:rounded-md sm:text-xs",
-                      getPositionBadgeClassName(row.position),
+                      classification?.badgeClassName ?? "bg-muted text-muted-foreground",
                       isClub && "ring-2 ring-yellow-100 dark:ring-yellow-100/40",
                     )}
                   >
@@ -837,16 +858,6 @@ function UnifiedStandingsTable({
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function StandingsLegend() {
-  return (
-    <div className="text-muted-foreground flex flex-wrap gap-1.5 px-3 pb-3 text-[0.65rem] sm:text-xs">
-      <LegendPill className="bg-amber-100 text-amber-900" label="1° Campeón" />
-      <LegendPill className="bg-sky-100 text-sky-900" label="2° Ascenso" />
-      <LegendPill className="bg-violet-100 text-violet-900" label="3°/4° Promoción" />
     </div>
   );
 }
@@ -1518,44 +1529,6 @@ function getOutcomeClassName(kind: OutcomeKind) {
     none: "bg-muted text-muted-foreground",
     win: "bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200",
   }[kind];
-}
-
-function getPositionRowClassName(position: number) {
-  if (position === 1) {
-    return "bg-amber-100/70 dark:bg-amber-950/30";
-  }
-
-  if (position === 2) {
-    return "bg-sky-100/70 dark:bg-sky-950/30";
-  }
-
-  if (position === 3 || position === 4) {
-    return "bg-violet-100/70 dark:bg-violet-950/30";
-  }
-
-  return "bg-card";
-}
-
-function getPositionBadgeClassName(position: number) {
-  if (position === 1) {
-    return "bg-amber-500 text-white";
-  }
-
-  if (position === 2) {
-    return "bg-sky-500 text-white";
-  }
-
-  if (position === 3 || position === 4) {
-    return "bg-violet-500 text-white";
-  }
-
-  return "bg-muted text-muted-foreground";
-}
-
-function LegendPill({ className, label }: { className: string; label: string }) {
-  return (
-    <span className={cn("rounded-md px-2 py-1 font-medium", className)}>{label}</span>
-  );
 }
 
 function isTeamInMatch(match: LeagueFixtureMatch, teamName: string) {

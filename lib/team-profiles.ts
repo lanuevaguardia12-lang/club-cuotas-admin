@@ -74,11 +74,13 @@ export function getTeamCrestFit(
   });
 }
 
-export function normalizeTeamCrestFit(input?: {
-  offsetX?: unknown;
-  offsetY?: unknown;
-  zoom?: unknown;
-} | null): TeamCrestFit {
+export function normalizeTeamCrestFit(
+  input?: {
+    offsetX?: unknown;
+    offsetY?: unknown;
+    zoom?: unknown;
+  } | null,
+): TeamCrestFit {
   return {
     offsetX: clampFiniteNumber(input?.offsetX, -50, 50, DEFAULT_TEAM_CREST_FIT.offsetX),
     offsetY: clampFiniteNumber(input?.offsetY, -50, 50, DEFAULT_TEAM_CREST_FIT.offsetY),

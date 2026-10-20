@@ -46,7 +46,7 @@ export default async function AccountPage() {
             algún dato personal.
           </p>
           {data.source.message ? (
-            <p className="text-muted-foreground mt-2 break-words text-xs">
+            <p className="text-muted-foreground mt-2 text-xs break-words">
               Detalle: {data.source.message}
             </p>
           ) : null}

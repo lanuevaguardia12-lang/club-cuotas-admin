@@ -24,10 +24,7 @@ const clubSettingsSchema = z.object({
     .trim()
     .min(2, "Ingresá el nombre del club.")
     .max(80, "El nombre no puede superar los 80 caracteres."),
-  paymentAlias: z
-    .string()
-    .trim()
-    .max(80, "El alias no puede superar los 80 caracteres."),
+  paymentAlias: z.string().trim().max(80, "El alias no puede superar los 80 caracteres."),
   whatsAppMessageTemplate: z
     .string()
     .trim()

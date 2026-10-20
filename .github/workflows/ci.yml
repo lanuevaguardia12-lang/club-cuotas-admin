@@ -40,6 +40,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Run tests
+        run: npm test
+
       - name: Audit production dependencies
         run: npm run audit:prod
 

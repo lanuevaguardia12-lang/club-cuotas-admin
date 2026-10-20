@@ -226,9 +226,7 @@ function isContentPixel(
   }
 
   const colorDistance =
-    Math.abs(r - background.r) +
-    Math.abs(g - background.g) +
-    Math.abs(b - background.b);
+    Math.abs(r - background.r) + Math.abs(g - background.g) + Math.abs(b - background.b);
   const alphaDistance = Math.abs(a - background.a);
 
   return colorDistance > 46 || alphaDistance > 46;

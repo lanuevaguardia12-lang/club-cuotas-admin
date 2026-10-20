@@ -1,13 +1,7 @@
 "use client";
 
 import { Camera, CheckCircle2, ImagePlus, X } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ChangeEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 

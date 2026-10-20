@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
     "audit:prod": "npm audit --audit-level=high --omit=dev",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm run audit:prod && npm run build",
     "format": "prettier --write .",

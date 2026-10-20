@@ -8,6 +8,11 @@ import { LoadingModal } from "@/components/ui/loading-modal";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
+import {
+  getStandingsClassifications,
+  getStandingClassificationStyle,
+  type StandingClassificationStyle,
+} from "@/lib/standings-classification";
 import type { LeagueStandingRow } from "@/types/fixture";
 import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
@@ -16,47 +21,7 @@ const STORY_HEIGHT = 1920;
 const POST_WIDTH = 1080;
 const POST_HEIGHT = 1350;
 const BRAND_LOGO_SRC = "/brand/escudo-la-nueva-guardia.png";
-const STANDINGS_LEGEND_ITEMS: StandingClassificationStyle[] = [
-  {
-    badgeFill: "#f59e0b",
-    label: "1° Campeón",
-    legendFill: "#fef3c7",
-    legendText: "#78350f",
-    positions: [1],
-    rowFill: "rgba(245,158,11,0.24)",
-    rowStroke: "rgba(245,158,11,0.58)",
-  },
-  {
-    badgeFill: "#0ea5e9",
-    label: "2° Ascenso",
-    legendFill: "#e0f2fe",
-    legendText: "#075985",
-    positions: [2],
-    rowFill: "rgba(14,165,233,0.22)",
-    rowStroke: "rgba(14,165,233,0.56)",
-  },
-  {
-    badgeFill: "#8b5cf6",
-    label: "3°/4° Promoción",
-    legendFill: "#ede9fe",
-    legendText: "#5b21b6",
-    positions: [3, 4],
-    rowFill: "rgba(139,92,246,0.22)",
-    rowStroke: "rgba(139,92,246,0.56)",
-  },
-];
-
 type StandingsShareFormat = "post" | "story";
-
-interface StandingClassificationStyle {
-  badgeFill: string;
-  label: string;
-  legendFill: string;
-  legendText: string;
-  positions: number[];
-  rowFill: string;
-  rowStroke: string;
-}
 
 interface LoadedTeamCrest {
   fit: TeamCrestFit;
@@ -220,7 +185,18 @@ async function drawStandingsPlate(
   const tableY = compact ? 338 : 474;
   const tableX = compact ? 58 : 64;
   const tableWidth = width - tableX * 2;
-  const legendY = footerY - (compact ? 86 : 124);
+  const classifications = getStandingsClassifications(categoryName, rows);
+  const legendRows = getStandingsLegendRows(
+    context,
+    classifications,
+    compact,
+    tableWidth,
+  );
+  const pillHeight = compact ? 42 : 48;
+  const legendGap = compact ? 12 : 14;
+  const legendHeight =
+    legendRows.length * pillHeight + Math.max(legendRows.length - 1, 0) * legendGap;
+  const legendY = footerY - (compact ? 44 : 76) - legendHeight;
   const tableBottom = legendY - (compact ? 26 : 42);
 
   drawBackground(context, width, height);
@@ -253,6 +229,7 @@ async function drawStandingsPlate(
   drawStandingsTable(context, {
     height: tableBottom - tableY,
     rows,
+    classifications,
     tableX,
     tableY,
     tableWidth,
@@ -261,6 +238,7 @@ async function drawStandingsPlate(
 
   drawStandingsLegend(context, {
     compact,
+    legendRows,
     tableWidth,
     tableX,
     y: legendY,
@@ -279,6 +257,7 @@ function drawStandingsTable(
   {
     height,
     rows,
+    classifications,
     tableX,
     tableY,
     tableWidth,
@@ -286,6 +265,7 @@ function drawStandingsTable(
   }: {
     height: number;
     rows: LeagueStandingRow[];
+    classifications: StandingClassificationStyle[];
     tableX: number;
     tableY: number;
     tableWidth: number;
@@ -294,7 +274,7 @@ function drawStandingsTable(
 ) {
   const headerHeight = 58;
   const rowHeight = Math.max(
-    38,
+    28,
     Math.min(64, Math.floor((height - headerHeight - 20) / Math.max(rows.length, 1))),
   );
   const tableHeight = headerHeight + rows.length * rowHeight + 18;
@@ -337,7 +317,7 @@ function drawStandingsTable(
   rows.forEach((row, index) => {
     const y = tableY + headerHeight + 18 + index * rowHeight;
     const isClub = row.isClub || areSameTeam(row.teamName, teamName);
-    const classification = getStandingClassificationStyle(row.position);
+    const classification = getStandingClassificationStyle(row.position, classifications);
 
     context.save();
 
@@ -373,6 +353,7 @@ function drawStandingsTable(
     drawPositionBadge(context, row.position, columns[0].x, y + rowHeight / 2 - 3, {
       classification,
       isClub,
+      size: Math.min(38, rowHeight - 8),
     });
     drawTableText(
       context,
@@ -406,15 +387,60 @@ function drawStandingsTable(
   });
 }
 
+interface StandingsLegendItem {
+  style: StandingClassificationStyle;
+  width: number;
+}
+
+function getStandingsLegendRows(
+  context: CanvasRenderingContext2D,
+  classifications: StandingClassificationStyle[],
+  compact: boolean,
+  tableWidth: number,
+): StandingsLegendItem[][] {
+  const gap = compact ? 14 : 18;
+  const horizontalPadding = compact ? 18 : 22;
+  const swatchSize = compact ? 18 : 22;
+  const rows: StandingsLegendItem[][] = [];
+  let row: StandingsLegendItem[] = [];
+  let rowWidth = 0;
+
+  context.save();
+  context.font = compact ? "900 20px Arial, sans-serif" : "900 24px Arial, sans-serif";
+
+  classifications.forEach((style) => {
+    const width =
+      Math.ceil(context.measureText(style.label).width) +
+      horizontalPadding * 2 +
+      swatchSize +
+      12;
+
+    if (row.length > 0 && rowWidth + gap + width > tableWidth) {
+      rows.push(row);
+      row = [];
+      rowWidth = 0;
+    }
+
+    rowWidth += (row.length > 0 ? gap : 0) + width;
+    row.push({ style, width });
+  });
+
+  if (row.length > 0) rows.push(row);
+  context.restore();
+  return rows;
+}
+
 function drawStandingsLegend(
   context: CanvasRenderingContext2D,
   {
     compact,
+    legendRows,
     tableWidth,
     tableX,
     y,
   }: {
     compact: boolean;
+    legendRows: StandingsLegendItem[][];
     tableWidth: number;
     tableX: number;
     y: number;
@@ -425,54 +451,49 @@ function drawStandingsLegend(
   const swatchSize = compact ? 18 : 22;
   const horizontalPadding = compact ? 18 : 22;
   const font = compact ? "900 20px Arial, sans-serif" : "900 24px Arial, sans-serif";
+  const rowGap = compact ? 12 : 14;
 
   context.save();
   context.font = font;
 
-  const itemWidths = STANDINGS_LEGEND_ITEMS.map(
-    (item) =>
-      Math.ceil(context.measureText(item.label).width) +
-      horizontalPadding * 2 +
-      swatchSize +
-      12,
-  );
-  const totalWidth =
-    itemWidths.reduce((total, itemWidth) => total + itemWidth, 0) +
-    gap * Math.max(STANDINGS_LEGEND_ITEMS.length - 1, 0);
-  let x = tableX + Math.max((tableWidth - totalWidth) / 2, 0);
+  legendRows.forEach((row, rowIndex) => {
+    const totalWidth =
+      row.reduce((total, item) => total + item.width, 0) +
+      gap * Math.max(row.length - 1, 0);
+    let x = tableX + Math.max((tableWidth - totalWidth) / 2, 0);
+    const rowY = y + rowIndex * (pillHeight + rowGap);
 
-  STANDINGS_LEGEND_ITEMS.forEach((item, index) => {
-    const width = itemWidths[index] ?? 0;
+    row.forEach(({ style: item, width }) => {
+      context.fillStyle = item.legendFill;
+      context.strokeStyle = "rgba(255,255,255,0.26)";
+      context.lineWidth = 2;
+      roundedRect(context, x, rowY, width, pillHeight, 14);
+      context.fill();
+      context.stroke();
 
-    context.fillStyle = item.legendFill;
-    context.strokeStyle = "rgba(255,255,255,0.26)";
-    context.lineWidth = 2;
-    roundedRect(context, x, y, width, pillHeight, 14);
-    context.fill();
-    context.stroke();
+      context.fillStyle = item.badgeFill;
+      roundedRect(
+        context,
+        x + horizontalPadding,
+        rowY + (pillHeight - swatchSize) / 2,
+        swatchSize,
+        swatchSize,
+        5,
+      );
+      context.fill();
 
-    context.fillStyle = item.badgeFill;
-    roundedRect(
-      context,
-      x + horizontalPadding,
-      y + (pillHeight - swatchSize) / 2,
-      swatchSize,
-      swatchSize,
-      5,
-    );
-    context.fill();
+      context.fillStyle = item.legendText;
+      context.font = font;
+      context.textAlign = "left";
+      context.textBaseline = "middle";
+      context.fillText(
+        item.label,
+        x + horizontalPadding + swatchSize + 12,
+        rowY + pillHeight / 2 + 1,
+      );
 
-    context.fillStyle = item.legendText;
-    context.font = font;
-    context.textAlign = "left";
-    context.textBaseline = "middle";
-    context.fillText(
-      item.label,
-      x + horizontalPadding + swatchSize + 12,
-      y + pillHeight / 2 + 1,
-    );
-
-    x += width + gap;
+      x += width + gap;
+    });
   });
 
   context.restore();
@@ -537,13 +558,13 @@ function drawPositionBadge(
   {
     classification,
     isClub,
+    size = 38,
   }: {
     classification?: StandingClassificationStyle;
     isClub: boolean;
+    size?: number;
   },
 ) {
-  const size = 38;
-
   context.save();
   context.fillStyle =
     classification?.badgeFill ?? (isClub ? "#f4ce0f" : "rgba(255,255,255,0.12)");
@@ -553,15 +574,11 @@ function drawPositionBadge(
   context.fill();
   context.stroke();
   context.fillStyle = classification || !isClub ? "#ffffff" : "#012f77";
-  context.font = "900 21px Arial Black, sans-serif";
+  context.font = `900 ${Math.min(21, Math.round(size * 0.6))}px Arial Black, sans-serif`;
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillText(String(position), x, centerY + 1, size - 6);
   context.restore();
-}
-
-function getStandingClassificationStyle(position: number) {
-  return STANDINGS_LEGEND_ITEMS.find((item) => item.positions.includes(position));
 }
 
 function drawStatCell(
