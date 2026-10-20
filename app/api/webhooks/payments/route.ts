@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     received: true,
-    expired: ["google-sheets", "google-sheets:dashboard", "google-sheets:player-profile"],
+    expired: ["google-sheets:dashboard", "google-sheets:player-profile"],
   });
 }
 
@@ -67,11 +67,7 @@ async function readPayload(request: NextRequest): Promise<PaymentsFormWebhookPay
 
 function expirePaymentsCache() {
   try {
-    unstable_expireTag(
-      "google-sheets",
-      "google-sheets:dashboard",
-      "google-sheets:player-profile",
-    );
+    unstable_expireTag("google-sheets:dashboard", "google-sheets:player-profile");
   } catch {
     // Cache expiration is best-effort. The webhook must still answer Apps Script
     // even if Next has no cache store in the current runtime context.

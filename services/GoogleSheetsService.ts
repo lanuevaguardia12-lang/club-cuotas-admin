@@ -1,7 +1,7 @@
 import "server-only";
 
-import { revalidateTag, unstable_cache } from "next/cache";
-import { google, type sheets_v4 } from "googleapis";
+import { unstable_cache, unstable_expireTag } from "next/cache";
+import type { sheets_v4 } from "googleapis";
 
 import {
   APP_SETTINGS_ROWS,
@@ -11,7 +11,12 @@ import {
   parseBooleanValue,
 } from "@/lib/app-settings";
 import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
-import { APP_TEAM_NAME, getLeagueClubMatchesForYear } from "@/lib/league-fixture";
+import {
+  APP_TEAM_NAME,
+  getLeagueClubMatchesForYear,
+  LEAGUE_CACHE_TAG,
+  withLeagueSnapshot,
+} from "@/lib/league-fixture";
 import {
   createTeamProfileId,
   getDefaultTeamShortName,
@@ -136,19 +141,12 @@ import type {
 } from "@/types/players";
 import type { TeamProfile, TeamsData, UpsertTeamProfileInput } from "@/types/teams";
 
-type RevalidateTagWithProfile = (
-  tag: string,
-  profile: "max" | { expire?: number },
-) => void;
-
-const revalidateTagWithProfile = revalidateTag as unknown as RevalidateTagWithProfile;
-
 function revalidateGoogleSheetsTag(tag: string) {
   try {
-    revalidateTagWithProfile(tag, "max");
+    unstable_expireTag(tag);
   } catch {
-    // Revalidation is a cache optimization. Data writes must still succeed in
-    // scripts, tests, or server contexts where Next has no static generation store.
+    // Scripts and tests may run without a Next cache store. A completed data
+    // write must not fail just because its derived cache could not be expired.
   }
 }
 
@@ -591,6 +589,7 @@ function parseCommaSeparatedValues(value: string | undefined) {
 
 export class GoogleSheetsService implements IDataService {
   private readonly config: GoogleSheetsConfig;
+  private sheetsClient?: Promise<sheets_v4.Sheets>;
 
   constructor(config: Partial<GoogleSheetsConfig> = {}) {
     const spreadsheetId =
@@ -777,7 +776,7 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     const settings = normalizeAppSettings(input);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.settingsRange);
 
     await this.ensureSheetForRange(this.config.settingsRange, this.config.spreadsheetId);
@@ -795,64 +794,114 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async getAccountProfile(user: AuthUser) {
-    const cachedAt = new Date().toISOString();
-
     try {
       this.assertConfigured();
-      const account = await this.findAccountProfile(user.id, user.username);
-      const player =
-        user.role === "player"
-          ? await this.findPlayerRecordForUser(user).catch(() => null)
-          : null;
-      const attendanceMatches = player
-        ? canonicalizeMatchRecordsPlayers(
-            await this.readPlayerOfMatchMatches().catch(() => []),
-            [player],
-          )
-        : [];
-      const attendance = player
-        ? buildPlayerAttendanceSummary(player, attendanceMatches)
-        : undefined;
-      const mvpWins = player
-        ? await this.getPlayerOfMatchData(user.id)
-            .then((data) => countPlayerOfMatchWins(player, data.matches))
-            .catch(() => 0)
-        : 0;
-
-      if (player && attendance) {
-        await this.upsertPlayerAttendanceSnapshot({
-          ...attendance,
-          id: `attendance-${attendance.seasonYear}-${player.id}`,
-          playerId: player.id,
-          playerName: player.name,
-          updatedAt: new Date().toISOString(),
-        }).catch(() => undefined);
-      }
-
-      return {
-        profile: buildAccountProfile(user, account, player, attendance, mvpWins),
-        source: {
-          provider: "google-sheets" as const,
-          status: "ready" as const,
-          message: "Cuenta obtenida desde Google Sheets.",
-          cachedAt,
-          revalidateSeconds: this.config.cacheTtlSeconds,
-        },
-      };
+      const loadProfile = (leagueRevision = "") =>
+        unstable_cache(
+          async (accountUser: AuthUser) => this.buildCachedAccountProfile(accountUser),
+          [
+            "google-sheets-account-profile-v1",
+            ...this.getProfileCacheIdentity(),
+            getCurrentPeriod(),
+            leagueRevision,
+          ],
+          {
+            revalidate: false,
+            tags: [
+              "google-sheets:account-profile",
+              "google-sheets:accounts",
+              "google-sheets:players",
+              "google-sheets:account-statistics",
+              LEAGUE_CACHE_TAG,
+            ],
+          },
+        )(user);
+      return await (user.role === "player"
+        ? withLeagueSnapshot(loadProfile)
+        : loadProfile());
     } catch (error) {
       const serviceError = normalizeGoogleSheetsError(error);
-
       return {
         profile: buildAccountProfile(user),
         source: {
           provider: "google-sheets" as const,
           status: "error" as const,
           message: serviceError.message,
-          cachedAt,
-          revalidateSeconds: this.config.cacheTtlSeconds,
+          cachedAt: new Date().toISOString(),
+          revalidateSeconds: 0,
         },
       };
     }
+  }
+
+  private async buildCachedAccountProfile(user: AuthUser) {
+    const [account, player] = await Promise.all([
+      this.findAccountProfile(user.id, user.username),
+      user.role === "player" ? this.findPlayerRecordForUser(user) : null,
+    ]);
+    const [attendanceMatches, playerOfMatchData] = player
+      ? await Promise.all([
+          this.readPlayerOfMatchMatches(),
+          this.getPlayerOfMatchData(user.id, user.playerId),
+        ])
+      : [[], null];
+    const attendance = player
+      ? buildPlayerAttendanceSummary(
+          player,
+          canonicalizeMatchRecordsPlayers(attendanceMatches, [player]),
+        )
+      : undefined;
+
+    if (player && attendance) {
+      await this.upsertPlayerAttendanceSnapshot({
+        ...attendance,
+        id: `attendance-${attendance.seasonYear}-${player.id}`,
+        playerId: player.id,
+        playerName: player.name,
+        updatedAt: new Date().toISOString(),
+      }).catch(() => undefined);
+    }
+
+    return {
+      profile: buildAccountProfile(
+        user,
+        account,
+        player,
+        attendance,
+        player && playerOfMatchData
+          ? countPlayerOfMatchWins(player, playerOfMatchData.matches)
+          : 0,
+      ),
+      source: {
+        provider: "google-sheets" as const,
+        status: "ready" as const,
+        message: "Cuenta obtenida desde Google Sheets.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  private getProfileCacheIdentity() {
+    return [
+      this.getAppSpreadsheetId(),
+      this.getClubSpreadsheetId(),
+      this.config.clientEmail ?? "",
+      this.config.matchesSpreadsheetId ?? "",
+      this.config.accountProfilesRange,
+      this.config.playersRange,
+      this.config.feesRange,
+      this.config.formResponsesRange,
+      this.config.feeCalculatorCostsRange,
+      this.config.feeCalculatorActualsRange,
+      this.config.feeCalculatorPlayerStatusesRange,
+      this.config.matchesRange,
+      this.config.expensesRange,
+      this.config.refundPolicyRange,
+      this.config.playerOfMatchVotesRange,
+      this.config.playerOfMatchOverridesRange,
+      this.config.fixtureOverridesRange,
+    ];
   }
 
   async updateAccountProfile(input: UpdateAccountProfileInput): Promise<void> {
@@ -1167,7 +1216,7 @@ export class GoogleSheetsService implements IDataService {
       spreadsheetId,
       this.config.cashFlowRange,
     );
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
     const now = new Date().toISOString();
 
@@ -1283,7 +1332,7 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const [headerRow = [], ...dataRows] = values;
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
     let headers = normalizeWritableHeaders(headerRow, cashFlowHeaders);
     headers = await this.ensureWritableHeaders(
@@ -1391,7 +1440,7 @@ export class GoogleSheetsService implements IDataService {
       spreadsheetId,
       playersRange,
     );
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(playersRange);
     const now = new Date().toISOString();
 
@@ -1489,7 +1538,7 @@ export class GoogleSheetsService implements IDataService {
 
       return normalized;
     });
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const lastColumn = toColumnName(playerDirectoryHeaders.length - 1);
 
     await this.ensureSheetForRange(playersRange, spreadsheetId);
@@ -1555,7 +1604,7 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const spreadsheetRow = targetRowIndex + 2;
 
     await sheets.spreadsheets.values.clear({
@@ -1621,7 +1670,7 @@ export class GoogleSheetsService implements IDataService {
     const spreadsheetId = this.getAppSpreadsheetId();
     const teamsRange = this.config.teamsRange;
     const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, teamsRange);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(teamsRange);
     const now = new Date().toISOString();
 
@@ -1829,7 +1878,7 @@ export class GoogleSheetsService implements IDataService {
       this.config.feeCalculatorCostsRange,
     );
     const now = new Date().toISOString();
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
 
     await this.ensureSheetForRange(
@@ -1965,7 +2014,7 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
     const spreadsheetRow = targetRowIndex + 2;
     const data = [
@@ -1996,7 +2045,7 @@ export class GoogleSheetsService implements IDataService {
     this.assertConfigured();
 
     const spreadsheetId = this.getAppSpreadsheetId();
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const costsSheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
     const actualsSheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
 
@@ -2050,7 +2099,7 @@ export class GoogleSheetsService implements IDataService {
       this.config.feeCalculatorActualsRange,
     );
     const now = new Date().toISOString();
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
 
     await this.ensureSheetForRange(
@@ -2154,7 +2203,7 @@ export class GoogleSheetsService implements IDataService {
       this.config.feeCalculatorPlayerStatusesRange,
     );
     const now = new Date().toISOString();
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorPlayerStatusesRange);
 
     await this.ensureSheetForRange(
@@ -2266,7 +2315,7 @@ export class GoogleSheetsService implements IDataService {
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const rules = normalizeFeeRefundPolicyInput(input);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.refundPolicyRange);
 
     await this.ensureSheetForRange(
@@ -2315,34 +2364,49 @@ export class GoogleSheetsService implements IDataService {
   async getPlayerProfile(playerId: string, year = new Date().getFullYear()) {
     try {
       this.assertConfigured();
-      const spreadsheetId = this.getAppSpreadsheetId();
-      const clubSpreadsheetId = this.getClubSpreadsheetId();
-
-      return await unstable_cache(
-        async () => this.buildCachedPlayerProfile(playerId, year),
+      // Cache the common season data once, rather than recalculating all twelve
+      // months for each player. Only the requested profile leaves this service.
+      const profiles = await unstable_cache(
+        async () => {
+          const [records, feeCalculatorData] = await Promise.all([
+            this.readDashboardRecords(),
+            this.buildFeeCalculatorDataForPeriods(buildYearPeriods(year)),
+          ]);
+          const players = new Map(records.players.map((player) => [player.id, player]));
+          for (const fee of records.fees) {
+            if (!players.has(fee.playerId)) {
+              const player = buildPlayerFromFees(fee.playerId, records.fees);
+              if (player) players.set(player.id, player);
+            }
+          }
+          // Store only finished profiles and lookup keys. Photos and repeated
+          // calculator inputs do not belong in the shared financial snapshot.
+          return [...players.values()].map((player) => ({
+            lookupKeys: [
+              ...buildPlayerLookupKeys(
+                player.id,
+                player.name,
+                player.email,
+                player.phone,
+              ),
+            ],
+            profile: this.buildPlayerProfileFromSeason(
+              player.id,
+              year,
+              records,
+              feeCalculatorData,
+            ),
+          }));
+        },
         [
-          "google-sheets-player-profile",
-          spreadsheetId,
-          clubSpreadsheetId,
-          this.config.matchesSpreadsheetId ?? "",
-          this.config.playersRange,
-          this.config.feesRange,
-          this.config.formResponsesRange,
-          this.config.feeCalculatorCostsRange,
-          this.config.feeCalculatorActualsRange,
-          this.config.feeCalculatorPlayerStatusesRange,
-          this.config.matchesRange,
-          this.config.expensesRange,
-          this.config.refundPolicyRange,
-          "form-responses-cache",
-          String(this.config.formResponsesCacheTtlSeconds),
-          playerId,
+          "google-sheets-player-season-v3",
+          ...this.getProfileCacheIdentity(),
           String(year),
+          getCurrentPeriod(),
         ],
         {
-          revalidate: this.getPaymentAwareCacheTtlSeconds(),
+          revalidate: false,
           tags: [
-            "google-sheets",
             "google-sheets:player-profile",
             "google-sheets:dashboard",
             "google-sheets:players",
@@ -2350,13 +2414,23 @@ export class GoogleSheetsService implements IDataService {
           ],
         },
       )();
+
+      const lookupKeys = buildPlayerLookupKeys(playerId);
+      return (
+        profiles.find((item) => item.lookupKeys.some((key) => lookupKeys.has(key)))
+          ?.profile ?? null
+      );
     } catch {
       return null;
     }
   }
 
-  private async buildCachedPlayerProfile(playerId: string, year: number) {
-    const { players, fees } = await this.readDashboardRecords();
+  private buildPlayerProfileFromSeason(
+    playerId: string,
+    year: number,
+    { players, fees }: DashboardRecords,
+    feeCalculatorData: FeeCalculatorData[],
+  ) {
     const lookupKeys = buildPlayerLookupKeys(playerId);
     const player =
       players.find((candidate) => playerMatchesLookup(candidate, lookupKeys)) ??
@@ -2366,7 +2440,6 @@ export class GoogleSheetsService implements IDataService {
       return null;
     }
 
-    const feeCalculatorData = await this.readPlayerProfileFeeCalculatorData(year);
     const playerProfileLookupKeys = buildPlayerLookupKeys(player.id, player.name);
     const playerCalculations: FeePlayerCalculation[] = [];
     const matchSummaries = new Map<string, PlayerMonthMatchSummary>();
@@ -2412,14 +2485,6 @@ export class GoogleSheetsService implements IDataService {
       matchSummaries,
       quotaDefinitions,
     );
-  }
-
-  private async readPlayerProfileFeeCalculatorData(year: number) {
-    try {
-      return await this.buildFeeCalculatorDataForPeriods(buildYearPeriods(year));
-    } catch {
-      return [];
-    }
   }
 
   async updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput) {
@@ -2508,10 +2573,19 @@ export class GoogleSheetsService implements IDataService {
   async getFixtureMatchScheduleOverrides(): Promise<FixtureMatchScheduleOverride[]> {
     this.assertConfigured();
 
-    const rows = await this.readOptionalValuesFromSpreadsheet(
-      this.getAppSpreadsheetId(),
-      this.config.fixtureOverridesRange,
-    );
+    const rows = await unstable_cache(
+      () =>
+        this.readOptionalValuesFromSpreadsheet(
+          this.getAppSpreadsheetId(),
+          this.config.fixtureOverridesRange,
+        ),
+      [
+        "google-sheets-fixture-overrides-v1",
+        this.getAppSpreadsheetId(),
+        this.config.fixtureOverridesRange,
+      ],
+      { revalidate: false, tags: ["google-sheets:fixture"] },
+    )();
 
     return mapRowsToFixtureMatchScheduleOverrides(rows);
   }
@@ -2577,7 +2651,7 @@ export class GoogleSheetsService implements IDataService {
       visitorScore: getFixtureOverrideScoreInput(input, "visitorScore", existingOverride),
     };
     const row = buildFixtureOverrideWritableRow(headers, override);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
 
     if (targetRowIndex >= 0) {
       await sheets.spreadsheets.values.update({
@@ -2869,7 +2943,7 @@ export class GoogleSheetsService implements IDataService {
       updatedByName: input.updatedByName,
       updatedAt: new Date().toISOString(),
     };
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.playerOfMatchOverridesRange);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
@@ -2997,7 +3071,9 @@ export class GoogleSheetsService implements IDataService {
     const spreadsheetRow = targetRowIndex + 2;
     const width = Math.max(headerRow.length, equipmentAssignmentHeaders.length);
 
-    await this.createSheetsClient().spreadsheets.values.clear({
+    await (
+      await this.createSheetsClient()
+    ).spreadsheets.values.clear({
       spreadsheetId,
       range: `${sheetPrefix}!A${spreadsheetRow}:${toColumnName(width - 1)}${spreadsheetRow}`,
       requestBody: {},
@@ -3054,10 +3130,19 @@ export class GoogleSheetsService implements IDataService {
   async getNotifications() {
     this.assertConfigured();
 
-    const rows = await this.readValuesFromSpreadsheet(
-      this.getAppSpreadsheetId(),
-      this.config.notificationsRange,
-    ).catch(() => []);
+    const rows = await unstable_cache(
+      () =>
+        this.readOptionalValuesFromSpreadsheet(
+          this.getAppSpreadsheetId(),
+          this.config.notificationsRange,
+        ),
+      [
+        "google-sheets-notifications-v1",
+        this.getAppSpreadsheetId(),
+        this.config.notificationsRange,
+      ],
+      { revalidate: 30, tags: ["google-sheets:notifications"] },
+    )();
 
     return mapRowsToNotifications(rows);
   }
@@ -3094,7 +3179,7 @@ export class GoogleSheetsService implements IDataService {
     const isEmptySheet = values.length === 0;
     const [headerRow = []] = values;
     let headers = normalizeWritableHeaders(headerRow, notificationHeaders);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
 
     if (isEmptySheet) {
       await sheets.spreadsheets.values.update({
@@ -3165,7 +3250,7 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.notificationsRange);
     const readAt = new Date().toISOString();
     const data = dataRows.flatMap((row, index) => {
@@ -3295,7 +3380,9 @@ export class GoogleSheetsService implements IDataService {
       });
     }
 
-    await this.createSheetsClient().spreadsheets.values.batchUpdate({
+    await (
+      await this.createSheetsClient()
+    ).spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
         valueInputOption: "USER_ENTERED",
@@ -3345,7 +3432,7 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.paymentsRange);
     const spreadsheetRow = targetRowIndex + 2;
 
@@ -3367,7 +3454,7 @@ export class GoogleSheetsService implements IDataService {
     const range = this.config.pushSubscriptionsRange;
     const sheetPrefix = getSheetPrefix(range);
     const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const now = new Date().toISOString();
 
     await this.ensureSheetForRange(range, spreadsheetId);
@@ -3498,7 +3585,9 @@ export class GoogleSheetsService implements IDataService {
       });
     }
 
-    await this.createSheetsClient().spreadsheets.values.batchUpdate({
+    await (
+      await this.createSheetsClient()
+    ).spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
         valueInputOption: "USER_ENTERED",
@@ -3569,11 +3658,14 @@ export class GoogleSheetsService implements IDataService {
     }
 
     return unstable_cache(
-      async () => ({
-        playersRows: await this.readPlayerDirectoryRows(playersSpreadsheetId),
-        feesRows: await this.readOptionalValues(this.config.feesRange),
-        formResponseRows: await this.readFormResponseRows(clubSpreadsheetId),
-      }),
+      async () => {
+        const [playersRows, feesRows, formResponseRows] = await Promise.all([
+          this.readPlayerDirectoryRows(playersSpreadsheetId),
+          this.readOptionalValues(this.config.feesRange),
+          this.readFormResponseRows(clubSpreadsheetId),
+        ]);
+        return { playersRows, feesRows, formResponseRows };
+      },
       [
         "google-sheets-dashboard",
         spreadsheetId,
@@ -3613,7 +3705,7 @@ export class GoogleSheetsService implements IDataService {
         this.readOptionalValuesFromSpreadsheet(spreadsheetId, this.config.teamsRange),
       ["google-sheets-teams", spreadsheetId, this.config.teamsRange],
       {
-        revalidate: this.config.cacheTtlSeconds,
+        revalidate: false,
         tags: ["google-sheets", "google-sheets:teams"],
       },
     )();
@@ -3653,7 +3745,7 @@ export class GoogleSheetsService implements IDataService {
       async () => this.readValues(this.config.settingsRange),
       ["google-sheets-settings", spreadsheetId, this.config.settingsRange],
       {
-        revalidate: this.config.cacheTtlSeconds,
+        revalidate: false,
         tags: ["google-sheets", "google-sheets:settings"],
       },
     )();
@@ -3719,7 +3811,7 @@ export class GoogleSheetsService implements IDataService {
     const range = this.config.accountProfilesRange;
     const sheetPrefix = getSheetPrefix(range);
     const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
 
     await this.ensureSheetForRange(range, spreadsheetId);
 
@@ -3786,7 +3878,7 @@ export class GoogleSheetsService implements IDataService {
     const range = this.config.playerAttendanceSnapshotsRange;
     const sheetPrefix = getSheetPrefix(range);
     const rows = await this.readOptionalValuesFromSpreadsheet(spreadsheetId, range);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
 
     await this.ensureSheetForRange(range, spreadsheetId);
 
@@ -3805,7 +3897,6 @@ export class GoogleSheetsService implements IDataService {
           ],
         },
       });
-      invalidateAccountCache();
       return;
     }
 
@@ -3850,8 +3941,6 @@ export class GoogleSheetsService implements IDataService {
         },
       });
     }
-
-    invalidateAccountCache();
   }
 
   private async readCachedPremiumRows() {
@@ -3865,13 +3954,17 @@ export class GoogleSheetsService implements IDataService {
     }
 
     return unstable_cache(
-      async () => ({
-        auditRows: await this.readOptionalValues(this.config.auditRange),
-        logRows: await this.readOptionalValues(this.config.logsRange),
-        notificationRows: await this.readOptionalValues(this.config.notificationsRange),
-        reminderRows: await this.readOptionalValues(this.config.remindersRange),
-        paymentRows: await this.readOptionalValues(this.config.paymentsRange),
-      }),
+      async () => {
+        const [auditRows, logRows, notificationRows, reminderRows, paymentRows] =
+          await Promise.all([
+            this.readOptionalValues(this.config.auditRange),
+            this.readOptionalValues(this.config.logsRange),
+            this.readOptionalValues(this.config.notificationsRange),
+            this.readOptionalValues(this.config.remindersRange),
+            this.readOptionalValues(this.config.paymentsRange),
+          ]);
+        return { auditRows, logRows, notificationRows, reminderRows, paymentRows };
+      },
       [
         "google-sheets-premium",
         spreadsheetId,
@@ -3890,11 +3983,19 @@ export class GoogleSheetsService implements IDataService {
 
   private async readPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
     const spreadsheetId = this.getAppSpreadsheetId();
-    const rows = await this.readOptionalValuesFromSpreadsheet(
-      spreadsheetId,
-      this.config.pushSubscriptionsRange,
-    );
-
+    const rows = await unstable_cache(
+      () =>
+        this.readOptionalValuesFromSpreadsheet(
+          spreadsheetId,
+          this.config.pushSubscriptionsRange,
+        ),
+      [
+        "google-sheets-push-subscriptions-v1",
+        spreadsheetId,
+        this.config.pushSubscriptionsRange,
+      ],
+      { revalidate: 30, tags: ["google-sheets:push-subscriptions"] },
+    )();
     return mapRowsToPushSubscriptions(rows);
   }
 
@@ -3979,7 +4080,9 @@ export class GoogleSheetsService implements IDataService {
       return headers;
     }
 
-    await this.createSheetsClient().spreadsheets.values.update({
+    await (
+      await this.createSheetsClient()
+    ).spreadsheets.values.update({
       spreadsheetId,
       range: `${sheetPrefix}!A1:${toColumnName(mergedHeaders.length - 1)}1`,
       valueInputOption: "USER_ENTERED",
@@ -4005,34 +4108,51 @@ export class GoogleSheetsService implements IDataService {
     }
 
     return unstable_cache(
-      async () => ({
-        costsRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.feeCalculatorCostsRange,
-        ),
-        actualsRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.feeCalculatorActualsRange,
-        ),
-        playerStatusRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.feeCalculatorPlayerStatusesRange,
-        ),
-        refundPolicyRows: await this.readOptionalValuesFromSpreadsheet(
-          feeCalculatorSpreadsheetId,
-          this.config.refundPolicyRange,
-        ),
-        matchRows: matchesSpreadsheetId
-          ? await this.readOptionalValuesFromSpreadsheet(
-              matchesSpreadsheetId,
-              this.config.matchesRange,
-            )
-          : [],
-        expenseRows: await this.readOptionalValuesFromSpreadsheet(
-          clubSpreadsheetId,
-          this.config.expensesRange,
-        ),
-      }),
+      async () => {
+        const [
+          costsRows,
+          actualsRows,
+          playerStatusRows,
+          refundPolicyRows,
+          matchRows,
+          expenseRows,
+        ] = await Promise.all([
+          this.readOptionalValuesFromSpreadsheet(
+            feeCalculatorSpreadsheetId,
+            this.config.feeCalculatorCostsRange,
+          ),
+          this.readOptionalValuesFromSpreadsheet(
+            feeCalculatorSpreadsheetId,
+            this.config.feeCalculatorActualsRange,
+          ),
+          this.readOptionalValuesFromSpreadsheet(
+            feeCalculatorSpreadsheetId,
+            this.config.feeCalculatorPlayerStatusesRange,
+          ),
+          this.readOptionalValuesFromSpreadsheet(
+            feeCalculatorSpreadsheetId,
+            this.config.refundPolicyRange,
+          ),
+          matchesSpreadsheetId
+            ? this.readOptionalValuesFromSpreadsheet(
+                matchesSpreadsheetId,
+                this.config.matchesRange,
+              )
+            : [],
+          this.readOptionalValuesFromSpreadsheet(
+            clubSpreadsheetId,
+            this.config.expensesRange,
+          ),
+        ]);
+        return {
+          costsRows,
+          actualsRows,
+          playerStatusRows,
+          refundPolicyRows,
+          matchRows,
+          expenseRows,
+        };
+      },
       [
         "google-sheets-fee-calculator-rows",
         spreadsheetId,
@@ -4068,7 +4188,7 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range,
@@ -4082,16 +4202,18 @@ export class GoogleSheetsService implements IDataService {
   private async readOptionalValues(range: string) {
     try {
       return await this.readValues(range);
-    } catch {
-      return [];
+    } catch (error) {
+      if (isMissingSheetRangeError(error)) return [];
+      throw error;
     }
   }
 
   private async readOptionalValuesFromSpreadsheet(spreadsheetId: string, range: string) {
     try {
       return await this.readValuesFromSpreadsheet(spreadsheetId, range);
-    } catch {
-      return [];
+    } catch (error) {
+      if (isMissingSheetRangeError(error)) return [];
+      throw error;
     }
   }
 
@@ -4156,7 +4278,7 @@ export class GoogleSheetsService implements IDataService {
     spreadsheetId = this.getAppSpreadsheetId(),
   ) {
     const title = unquoteSheetTitle(getSheetPrefix(range));
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const metadata = await sheets.spreadsheets.get({
       spreadsheetId,
       fields: "sheets.properties.title",
@@ -4185,14 +4307,19 @@ export class GoogleSheetsService implements IDataService {
     });
   }
 
-  private createSheetsClient(): sheets_v4.Sheets {
-    const auth = new google.auth.JWT({
-      email: this.config.clientEmail,
-      key: this.config.privateKey?.replace(/\\n/g, "\n"),
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  private createSheetsClient(): Promise<sheets_v4.Sheets> {
+    // A cache hit should not load the full Google API client at cold start.
+    // Keep both the import and authentication lazy, and share the same promise
+    // across parallel reads in this request.
+    this.sheetsClient ??= import("googleapis").then(({ google }) => {
+      const auth = new google.auth.JWT({
+        email: this.config.clientEmail,
+        key: this.config.privateKey?.replace(/\\n/g, "\n"),
+        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+      });
+      return google.sheets({ version: "v4", auth });
     });
-
-    return google.sheets({ version: "v4", auth });
+    return this.sheetsClient;
   }
 
   private async appendRowsWithHeaders(
@@ -4204,7 +4331,7 @@ export class GoogleSheetsService implements IDataService {
     const values = await this.readValuesFromSpreadsheet(spreadsheetId, range).catch(
       () => [],
     );
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -4234,7 +4361,7 @@ export class GoogleSheetsService implements IDataService {
       "fecha_pago",
     ];
     const row = buildWritableFeeRow(headers, input, targetStatus, paidAt, monthlyFee);
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: this.config.spreadsheetId,
@@ -4261,7 +4388,7 @@ export class GoogleSheetsService implements IDataService {
     targetStatus: string;
     paidAt: string;
   }) {
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const data = [
       {
         range: `${sheetPrefix}!${toColumnName(statusIndex)}${spreadsheetRow}`,
@@ -4292,7 +4419,7 @@ export class GoogleSheetsService implements IDataService {
     paidAt: string,
     monthlyFee: number,
   ) {
-    const sheets = this.createSheetsClient();
+    const sheets = await this.createSheetsClient();
     const row = buildWritableFeeRow(headers, input, targetStatus, paidAt, monthlyFee);
 
     await sheets.spreadsheets.values.append({
@@ -12272,28 +12399,24 @@ function createId(prefix: string) {
 }
 
 function invalidateDashboardCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:dashboard");
   revalidateGoogleSheetsTag("google-sheets:player-profile");
 }
 
 function invalidateSettingsCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:settings");
 }
 
 function invalidateAccountCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:accounts");
 }
 
 function invalidatePremiumCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:premium");
+  revalidateGoogleSheetsTag("google-sheets:notifications");
 }
 
 function invalidatePlayersCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:players");
   revalidateGoogleSheetsTag("google-sheets:dashboard");
   revalidateGoogleSheetsTag("google-sheets:fee-calculator");
@@ -12302,34 +12425,34 @@ function invalidatePlayersCache() {
 }
 
 function invalidateTeamsCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:teams");
   revalidateGoogleSheetsTag("google-sheets:fixture");
 }
 
 function invalidateFeeCalculatorCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:fee-calculator");
   revalidateGoogleSheetsTag("google-sheets:player-profile");
   revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
 
 function invalidateCashFlowCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:cash-flow");
 }
 
 function invalidatePushSubscriptionCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:push-subscriptions");
 }
 
 function invalidatePlayerOfMatchCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:player-of-match");
+  revalidateGoogleSheetsTag("google-sheets:account-statistics");
 }
 
 function invalidateFixtureCache() {
-  revalidateGoogleSheetsTag("google-sheets");
   revalidateGoogleSheetsTag("google-sheets:fixture");
+}
+
+function isMissingSheetRangeError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return /unable to parse range|range.*not found/i.test(message);
 }

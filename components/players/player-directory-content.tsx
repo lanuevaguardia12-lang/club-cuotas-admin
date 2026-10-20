@@ -114,7 +114,6 @@ export function PlayerDirectoryContent({
           player.category,
           player.dni,
           player.jerseyNumber,
-          getPlayerPhotoUrl(player, playerProfilePhotos),
           player.birthDate,
           player.position,
           player.secondPosition,
@@ -125,7 +124,7 @@ export function PlayerDirectoryContent({
 
       return matchesQuery;
     });
-  }, [data.players, playerProfilePhotos, query]);
+  }, [data.players, query]);
 
   const withContact = data.players.filter(
     (player) => player.phone || player.email,

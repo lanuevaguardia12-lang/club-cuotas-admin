@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  expirePlayerOfMatchCache();
+  expirePlayerOfMatchCache(true);
 
   const result = await sendOpenPlayerOfMatchNotifications({
     actor: apiAuditActor,

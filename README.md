@@ -1218,9 +1218,11 @@ function onPaymentFormSubmit(e) {
 }
 ```
 
-El webhook expira el cache de `Dashboard`, `Mi cuota` y fichas de jugador. Si el
-script no se ejecuta por algun problema de permisos de Google, el fallback sigue
-siendo `GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS=60`.
+El webhook expira el cache de `Dashboard`, `Mi cuota` y fichas de jugador. Las
+cuotas personales conservan su resultado hasta recibir este evento o una
+actualizacion desde la app. Si falla el trigger de Google o se edita la planilla
+manualmente, usar el boton para actualizar desde el formulario o el gesto de
+arrastrar hacia abajo en `Mi cuota`.
 
 ### Pagos
 
@@ -1267,18 +1269,53 @@ Los endpoints mutables validan permisos RBAC y registran auditoria.
 
 ### Cache
 
-`GOOGLE_SHEETS_CACHE_TTL_SECONDS` define el tiempo de revalidacion. Por defecto:
-`300` segundos.
+La tabla, los resultados y las estadisticas de la liga comparten una copia
+persistente con tres ventanas de actualizacion, en horario de Argentina:
 
-`GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS` define el tiempo de
-revalidacion de pagos cargados desde `Respuestas de formulario`. Por defecto:
-`60` segundos.
+- Lunes a las 11:00 y a las 17:00 (`14:00` y `20:00` UTC).
+- Miercoles a las 11:00 (`14:00` UTC).
 
-La app no consulta Google Sheets en segundo plano de forma permanente. Vuelve a
-leer la hoja cuando se abre o refresca una pantalla, o cuando una API necesita
-datos, respetando esos TTL. Si se agrega un pago nuevo desde el formulario,
-puede tardar hasta 60 segundos en verse reflejado. Para otros datos externos,
-como partidos jugados, aplica `GOOGLE_SHEETS_CACHE_TTL_SECONDS`.
+`GET /api/cron/league-fixture` precarga la copia de cada ventana y requiere
+`Authorization: Bearer <CRON_SECRET>`. Si el cron se retrasa o todavia esta
+trabajando, las visitas siguen usando la ultima copia disponible. Solo la carga
+inicial de un entorno sin ninguna copia guardada (o despues de perder la cache)
+puede llenarla desde una visita. Las visitas posteriores no consultan al sitio
+de la liga. Si una actualizacion falla, se registra ese
+fallo para no reintentar al navegar y se busca una copia exitosa en las seis
+ventanas anteriores. Los requests externos tienen un timeout de 12 segundos y
+un maximo de seis solicitudes simultaneas.
+
+Las competencias se actualizan de forma independiente: un fallo en otra division
+no descarta Clausura B ni los partidos de Copa. Si una competencia falla o devuelve
+una respuesta vacia, se conserva su copia anterior cuando existe. La app avisa
+cuando falta informacion en vez de presentar estadisticas parciales como completas.
+El inicio muestra la tabla de la liga mas reciente en la que participa el club;
+el ultimo resultado y el proximo partido se ordenan por fecha entre todas las
+competencias del año. El filtro `Todas` suma Apertura, Clausura y Copa.
+
+Los perfiles personales se guardan por usuario y se renuevan al cambiar datos de
+cuenta o jugadores, registrarse cambios deportivos, actualizarse la copia de la
+liga o comenzar un nuevo mes. La cuota y el historial comparten un unico calculo
+por temporada para todo el plantel. Las fichas terminadas se reutilizan entre
+visitas y usuarios, sin guardar las fotos en el snapshot financiero. Las
+ediciones de jugadores, costos y pagos invalidan solamente sus dependencias.
+Los webhooks de pagos y de registro de partidos tambien invalidan las cuotas
+afectadas. Se conserva la actualizacion manual de `Mi cuota`; las ediciones
+externas directas en Sheets necesitan este refresco o el webhook correspondiente.
+
+La configuracion, los equipos y los ajustes del fixture se conservan hasta una
+edicion desde la app. Las notificaciones y suscripciones push usan una cache de
+30 segundos y se invalidan al escribirse. Registrar auditoria o leer avisos ya no
+invalida cuotas ni perfiles.
+
+`GOOGLE_SHEETS_CACHE_TTL_SECONDS=300` y
+`GOOGLE_SHEETS_FORM_RESPONSES_CACHE_TTL_SECONDS=60` siguen controlando las
+lecturas generales de Sheets y del dashboard. No hacen expirar los snapshots
+personales guardados hasta un cambio. Las lecturas independientes se ejecutan
+en paralelo y reutilizan un cliente autenticado dentro de la peticion.
+
+Las pruebas de cache y consistencia se ejecutan con `npm test`. Usan datos y
+servicios simulados; no leen ni escriben planillas reales.
 
 ### Migracion a PostgreSQL
 

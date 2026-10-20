@@ -408,9 +408,16 @@ export async function sendOpenPlayerOfMatchNotifications({
   };
 }
 
-export function expirePlayerOfMatchCache() {
+export function expirePlayerOfMatchCache(registrationChanged = false) {
   try {
-    unstable_expireTag("google-sheets", "google-sheets:player-of-match");
+    unstable_expireTag("google-sheets:player-of-match");
+    if (registrationChanged) {
+      unstable_expireTag(
+        "google-sheets:account-statistics",
+        "google-sheets:fee-calculator",
+        "google-sheets:player-profile",
+      );
+    }
   } catch {
     // Cache expiration is best-effort. Notification delivery should still run
     // in tests, scripts, or server contexts without a cache store.

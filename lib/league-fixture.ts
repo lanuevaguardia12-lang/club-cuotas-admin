@@ -1,5 +1,8 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import { unstable_cache, unstable_expireTag } from "next/cache";
+
 import type {
   FixtureMatchScheduleOverride,
   LeagueCategoryOption,
@@ -14,18 +17,227 @@ import type {
   LeagueTournamentOption,
 } from "@/types/fixture";
 import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
+import { getLeagueRefreshSlot } from "@/lib/league-refresh-schedule";
 
 const LEAGUE_BASE_URL = "https://ligacountrysur.com.ar";
 const LEAGUE_FOOTBALL_URL = `${LEAGUE_BASE_URL}/futbol`;
-const DEFAULT_TOURNAMENT_ID = "327";
-const DEFAULT_CATEGORY_ID = "4201";
+const DEFAULT_TOURNAMENT_ID = "329";
+const DEFAULT_CATEGORY_ID = "4314";
 const DEFAULT_YEAR = 2026;
 const MIN_TOURNAMENT_YEAR = 2025;
-const MAX_CLUB_COMPETITION_TARGETS = 14;
 const SOURCE_TEAM_NAME = "Barrio Dorrego";
 export const APP_TEAM_NAME = "La Nueva Guardia";
+export const LEAGUE_CACHE_TAG = "league-fixture:snapshot";
+
+interface LeagueSnapshotCompetition extends LeagueCompetitionTarget {
+  standings: LeagueStandingRow[];
+  rounds: LeagueFixtureRound[];
+}
+
+interface LeagueSnapshot {
+  fetchedAt: string;
+  tournaments: LeagueTournamentOption[];
+  availableYears: number[];
+  competitions: LeagueSnapshotCompetition[];
+  unavailableCompetitionKeys?: string[];
+  refreshError?: string;
+}
+
+const leagueSnapshotContext = new AsyncLocalStorage<LeagueSnapshot>();
+const previousLeagueSnapshot = new AsyncLocalStorage<LeagueSnapshot | undefined>();
+const cachedSnapshotOnly = new AsyncLocalStorage<boolean>();
+const leagueRequests = new AsyncLocalStorage<Map<string, Promise<string>>>();
+let snapshotInFlight: Promise<LeagueSnapshot> | undefined;
+let activeLeagueRequests = 0;
+const waitingLeagueRequests: Array<() => void> = [];
+
+// Each scheduled window has one persistent entry. A failed refresh is recorded
+// too, so navigation does not keep retrying the upstream service after a failure.
+const readScheduledLeagueSnapshot = unstable_cache(
+  async (slot: string): Promise<{ snapshot?: LeagueSnapshot; error?: string }> => {
+    if (cachedSnapshotOnly.getStore()) {
+      throw new Error(`No hay una copia previa de la liga para ${slot}.`);
+    }
+    try {
+      return { snapshot: await loadLeagueSnapshot() };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "No se pudo leer la liga.",
+      };
+    }
+  },
+  ["league-fixture-scheduled-snapshot-v3"],
+  { revalidate: false },
+);
+
+async function readLeagueSnapshot(): Promise<LeagueSnapshot> {
+  const contextualSnapshot = leagueSnapshotContext.getStore();
+  if (contextualSnapshot) return contextualSnapshot;
+
+  const slot = getLeagueRefreshSlot();
+  const current = await cachedSnapshotOnly
+    .run(true, () => readScheduledLeagueSnapshot(slot))
+    .catch(() => null);
+  if (current?.snapshot) return current.snapshot;
+
+  // Failed windows never replace a successful snapshot. Look up previous
+  // entries without contacting the league if those entries were never filled.
+  const saved = await findPreviousLeagueSnapshot(slot);
+  if (saved) return { ...saved, refreshError: current?.error ?? saved.refreshError };
+
+  // Bootstrap only when no saved snapshot exists. Once populated, visitors
+  // keep the last copy even while a scheduled refresh is late or still running.
+  const initial = current ?? (await readScheduledLeagueSnapshot(getLeagueRefreshSlot()));
+  if (initial.snapshot) return initial.snapshot;
+  throw new Error(initial.error ?? "No hay una copia disponible de la liga.");
+}
+
+async function findPreviousLeagueSnapshot(slot: string) {
+  for (let previous = 0; previous < 6; previous += 1) {
+    slot = getLeagueRefreshSlot(new Date(new Date(slot).getTime() - 1));
+    const saved = await cachedSnapshotOnly
+      .run(true, () => readScheduledLeagueSnapshot(slot))
+      .catch(() => null);
+    if (saved?.snapshot) return saved.snapshot;
+  }
+  return undefined;
+}
+
+// Next bypasses nested unstable_cache calls. Resolve the league snapshot before
+// entering an account cache, then share it with nested attendance/MVP helpers.
+export async function withLeagueSnapshot<T>(
+  work: (revision: string) => Promise<T>,
+): Promise<T> {
+  const snapshot = await readLeagueSnapshot().catch((error): LeagueSnapshot => ({
+    // League availability must never hide the user's contact/profile data.
+    // Sheet-based attendance and voting still work with an empty league view.
+    fetchedAt: getLeagueRefreshSlot(),
+    tournaments: FALLBACK_TOURNAMENTS,
+    availableYears: getAvailableYears(FALLBACK_TOURNAMENTS),
+    competitions: [],
+    refreshError: error instanceof Error ? error.message : "Liga no disponible.",
+  }));
+  return leagueSnapshotContext.run(snapshot, () => work(snapshot.fetchedAt));
+}
+
+async function loadLeagueSnapshot(): Promise<LeagueSnapshot> {
+  if (snapshotInFlight) {
+    return snapshotInFlight;
+  }
+
+  snapshotInFlight = leagueRequests.run(new Map(), async () => {
+    const metadata = await loadLeagueMetadata();
+    const previous = previousLeagueSnapshot.getStore();
+    const targets = metadata.availableYears.flatMap((year) =>
+      getClubCompetitionTargets(metadata.tournaments, year),
+    );
+    const results = await Promise.allSettled(
+      targets.map(async (target): Promise<LeagueSnapshotCompetition> => {
+        const html = await fetchLeagueHtml(
+          buildFixtureUrl(target.category.id, target.tournament.id),
+          { ajax: true },
+        );
+        const standings = parseStandings(html);
+        const parsedRounds = parseFixtureRounds(html, target);
+        const saved = previous?.competitions.find(
+          (item) =>
+            item.category.id === target.category.id &&
+            item.tournament.id === target.tournament.id,
+        );
+
+        if (
+          !standings.length &&
+          !parsedRounds.length &&
+          saved &&
+          (saved.standings.length || saved.rounds.length)
+        ) {
+          throw new Error("La liga devolvio una competencia vacia.");
+        }
+
+        return {
+          ...target,
+          standings,
+          rounds: await enrichFixtureRoundsWithDetails(parsedRounds),
+        };
+      }),
+    );
+    const competitions = results.flatMap((result, index) => {
+      if (result.status === "fulfilled") return [result.value];
+      const target = targets[index];
+      const saved = previous?.competitions.find(
+        (item) =>
+          item.category.id === target.category.id &&
+          item.tournament.id === target.tournament.id,
+      );
+      return saved ? [saved] : [];
+    });
+    const failures = results.filter((result) => result.status === "rejected");
+
+    if (failures.length === results.length) {
+      const failure = failures[0];
+      throw failure?.reason ?? new Error("No se pudo actualizar la liga.");
+    }
+
+    if (
+      !competitions.some((item) => item.standings.length > 0 || item.rounds.length > 0)
+    ) {
+      throw new Error("La liga no devolvio competencias para actualizar.");
+    }
+
+    return {
+      ...metadata,
+      competitions,
+      fetchedAt: new Date().toISOString(),
+      unavailableCompetitionKeys: results.flatMap((result, index) =>
+        result.status === "rejected"
+          ? [`${targets[index].tournament.id}:${targets[index].category.id}`]
+          : [],
+      ),
+      refreshError: failures.length
+        ? `${failures.length === 1 ? "No se pudo actualizar una competencia" : `No se pudieron actualizar ${failures.length} competencias`}. Se conserva la informacion disponible; algunas estadisticas pueden estar incompletas.`
+        : undefined,
+    };
+  });
+
+  try {
+    return await snapshotInFlight;
+  } finally {
+    snapshotInFlight = undefined;
+  }
+}
+
+export async function refreshLeagueFixtureCache() {
+  const slot = getLeagueRefreshSlot();
+  // Resolve the previous copy outside unstable_cache: nested cache reads bypass
+  // saved entries in Next and would otherwise contact the league again.
+  const previous = await findPreviousLeagueSnapshot(slot);
+  const result = await previousLeagueSnapshot.run(previous, () =>
+    readScheduledLeagueSnapshot(slot),
+  );
+  if (!result.snapshot) throw new Error(result.error ?? "No se pudo actualizar la liga.");
+  const snapshot = result.snapshot;
+
+  // The league entry is already saved under this window's key. Expiring only
+  // derived account statistics cannot expire the newly warmed league snapshot.
+  unstable_expireTag(LEAGUE_CACHE_TAG);
+  return {
+    competitions: snapshot.competitions.length,
+    fetchedAt: snapshot.fetchedAt,
+    years: snapshot.availableYears,
+    warning: snapshot.refreshError,
+  };
+}
 
 const FALLBACK_TOURNAMENTS: LeagueTournamentOption[] = [
+  {
+    id: "329",
+    name: "Clausura 2026",
+    categories: [
+      { id: "4314", name: 'Primera "B"', tournamentId: "329" },
+      { id: "4313", name: 'Primera "A"', tournamentId: "329" },
+      { id: "4315", name: 'Primera "C"', tournamentId: "329" },
+    ],
+  },
   {
     id: "327",
     name: "Apertura 2026",
@@ -90,9 +302,17 @@ interface GetLeagueClubMatchesOptions {
 export async function getLeagueFixtureData(
   input: GetLeagueFixtureDataInput = {},
 ): Promise<LeagueFixtureData> {
-  const fetchedAt = new Date().toISOString();
-  const metadata = await loadLeagueMetadata();
-  const selected = await selectCompetition(metadata.tournaments, input);
+  let snapshot: LeagueSnapshot;
+
+  try {
+    snapshot = await readLeagueSnapshot();
+  } catch (error) {
+    return buildUnavailableLeagueFixture(input, error);
+  }
+
+  const fetchedAt = snapshot.fetchedAt;
+  const metadata = snapshot;
+  const selected = selectCompetition(snapshot, input);
   const selectedYear = getTournamentYear(selected.tournament.name) ?? DEFAULT_YEAR;
   const sourceUrl = buildFixtureUrl(selected.category.id, selected.tournament.id);
   const selectedCompetitionKind = getLeagueCompetitionKind(
@@ -101,11 +321,16 @@ export async function getLeagueFixtureData(
   );
 
   try {
-    const html = await fetchLeagueHtml(sourceUrl, { ajax: true });
-    const standings = parseStandings(html);
-    const rounds = await enrichFixtureRoundsWithDetails(
-      parseFixtureRounds(html, selected),
+    const competition = snapshot.competitions.find(
+      (item) =>
+        item.tournament.id === selected.tournament.id &&
+        item.category.id === selected.category.id,
     );
+    const standings = competition?.standings ?? [];
+    const rounds = (competition?.rounds ?? []).map((round) => ({
+      ...round,
+      matches: round.matches.map(updateMatchDateStatus),
+    }));
     const matches = rounds.flatMap((round) => round.matches);
     const clubMatches = matches.filter((match) => match.isClubMatch);
     const allCompetitionMatches = await getLeagueCompetitionMatchesForYear(
@@ -145,15 +370,20 @@ export async function getLeagueFixtureData(
       scorers,
       source: {
         provider: "liga-country-sur",
-        status: standings.length > 0 || matches.length > 0 ? "ready" : "empty",
+        status: snapshot.refreshError
+          ? "error"
+          : standings.length > 0 || matches.length > 0
+            ? "ready"
+            : "empty",
         fetchedAt,
         sourceUrl,
         cachedAt: fetchedAt,
-        revalidateSeconds: 300,
+        revalidateSeconds: 0,
         message:
-          standings.length > 0 || matches.length > 0
+          snapshot.refreshError ??
+          (standings.length > 0 || matches.length > 0
             ? "Datos leidos desde Liga Country Sur."
-            : "La liga no devolvio datos para este torneo y categoria.",
+            : "La liga no devolvio datos para este torneo y categoria."),
       },
     };
   } catch (error) {
@@ -182,7 +412,7 @@ export async function getLeagueFixtureData(
         fetchedAt,
         sourceUrl,
         cachedAt: fetchedAt,
-        revalidateSeconds: 300,
+        revalidateSeconds: 0,
         message:
           error instanceof Error
             ? error.message
@@ -190,6 +420,50 @@ export async function getLeagueFixtureData(
       },
     };
   }
+}
+
+function buildUnavailableLeagueFixture(
+  input: GetLeagueFixtureDataInput,
+  error: unknown,
+): LeagueFixtureData {
+  const selected = selectCompetition(
+    { tournaments: FALLBACK_TOURNAMENTS, competitions: [] },
+    input,
+  );
+  const fetchedAt = new Date().toISOString();
+
+  return {
+    availableYears: getAvailableYears(FALLBACK_TOURNAMENTS),
+    selectedCompetitionKey: `${selected.tournament.id}:${selected.category.id}`,
+    selectedCompetitionKind: getLeagueCompetitionKind(
+      selected.tournament.name,
+      selected.category.name,
+    ),
+    selectedYear: parseRequestedYear(input.year) ?? DEFAULT_YEAR,
+    selectedTournamentId: selected.tournament.id,
+    selectedCategoryId: selected.category.id,
+    selectedTournamentName: selected.tournament.name,
+    selectedCategoryName: selected.category.name,
+    tournaments: FALLBACK_TOURNAMENTS,
+    standings: [],
+    matches: [],
+    rounds: [],
+    allCompetitionMatches: [],
+    allClubMatches: [],
+    clubMatches: [],
+    nextMatches: [],
+    lastMatches: [],
+    scorers: [],
+    source: {
+      provider: "liga-country-sur",
+      status: "error",
+      fetchedAt,
+      cachedAt: fetchedAt,
+      sourceUrl: LEAGUE_FOOTBALL_URL,
+      revalidateSeconds: 0,
+      message: error instanceof Error ? error.message : "No se pudo leer la liga.",
+    },
+  };
 }
 
 export async function getLeagueClubMatchesForYear(
@@ -207,37 +481,24 @@ async function getLeagueCompetitionMatchesForYear(
   tournaments?: LeagueTournamentOption[],
   options: GetLeagueClubMatchesOptions = {},
 ) {
-  const metadata = tournaments ? { tournaments } : await loadLeagueMetadata();
+  const snapshot = await readLeagueSnapshot();
+  const metadata = tournaments ? { tournaments } : snapshot;
   const targets = getClubCompetitionTargets(metadata.tournaments, year);
   const selectedTargets =
     typeof options.targetLimit === "number"
       ? targets.slice(0, options.targetLimit)
       : targets;
-  const settledResults = await Promise.allSettled(
-    selectedTargets.map(async (target) => {
-      const html = await fetchLeagueHtml(
-        buildFixtureUrl(target.category.id, target.tournament.id),
-        { ajax: true },
-      );
-      const rounds = options.includeDetails
-        ? await enrichFixtureRoundsWithDetails(
-            parseFixtureRounds(html, target),
-            (match) => match.isClubMatch && !match.involvesBye,
-          )
-        : parseFixtureRounds(html, target);
-      const matches = rounds
-        .flatMap((round) => round.matches)
-        .filter((match) => !match.involvesBye);
-
-      return matches;
-    }),
+  const targetKeys = new Set(
+    selectedTargets.map((target) => `${target.tournament.id}:${target.category.id}`),
   );
 
   return sortMatchesBySchedule(
     dedupeLeagueMatches(
-      settledResults.flatMap((result) =>
-        result.status === "fulfilled" ? result.value : [],
-      ),
+      snapshot.competitions
+        .filter((item) => targetKeys.has(`${item.tournament.id}:${item.category.id}`))
+        .flatMap((item) => item.rounds.flatMap((round) => round.matches))
+        .filter((match) => !match.involvesBye)
+        .map(updateMatchDateStatus),
     ),
   );
 }
@@ -353,49 +614,77 @@ function formatManualGoalLabels(goalScorers: string[]) {
 }
 
 async function loadLeagueMetadata() {
-  try {
-    const html = await fetchLeagueHtml(LEAGUE_FOOTBALL_URL);
-    const tournaments = parseTournamentOptions(html);
-    return {
-      tournaments: tournaments.length > 0 ? tournaments : FALLBACK_TOURNAMENTS,
-      availableYears: getAvailableYears(
-        tournaments.length > 0 ? tournaments : FALLBACK_TOURNAMENTS,
-      ),
-    };
-  } catch {
-    return {
-      tournaments: FALLBACK_TOURNAMENTS,
-      availableYears: getAvailableYears(FALLBACK_TOURNAMENTS),
-    };
+  const html = await fetchLeagueHtml(LEAGUE_FOOTBALL_URL);
+  const tournaments = parseTournamentOptions(html);
+
+  if (tournaments.length === 0) {
+    throw new Error("La liga no devolvio el listado de torneos.");
   }
+
+  return { tournaments, availableYears: getAvailableYears(tournaments) };
 }
 
 async function fetchLeagueHtml(url: string, options: { ajax?: boolean } = {}) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "text/html,application/xhtml+xml",
-      ...(options.ajax ? { "X-Requested-With": "XMLHttpRequest" } : {}),
-    },
-    next: {
-      revalidate: 300,
-    },
-  });
+  const requests = leagueRequests.getStore();
+  const key = `${options.ajax ? "ajax:" : ""}${url}`;
+  const existing = requests?.get(key);
 
-  if (!response.ok) {
-    throw new Error(`Liga Country Sur respondio ${response.status}`);
+  if (existing) {
+    return existing;
   }
 
-  return response.text();
+  const pending = requestLeagueHtml(url, options);
+  requests?.set(key, pending);
+  return pending;
+}
+
+async function requestLeagueHtml(url: string, options: { ajax?: boolean }) {
+  await new Promise<void>((resolve) => {
+    const start = () => {
+      activeLeagueRequests += 1;
+      resolve();
+    };
+
+    if (activeLeagueRequests < 6) {
+      start();
+    } else {
+      waitingLeagueRequests.push(start);
+    }
+  });
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        ...(options.ajax ? { "X-Requested-With": "XMLHttpRequest" } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Liga Country Sur respondio ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    activeLeagueRequests -= 1;
+    waitingLeagueRequests.shift()?.();
+  }
 }
 
 function buildFixtureUrl(categoryId: string, tournamentId: string) {
   return `${LEAGUE_BASE_URL}/liga/tabla-resultados-alt/${categoryId}/${tournamentId}`;
 }
 
-async function selectCompetition(
-  tournaments: LeagueTournamentOption[],
+function selectCompetition(
+  snapshot: Pick<
+    LeagueSnapshot,
+    "tournaments" | "competitions" | "unavailableCompetitionKeys"
+  >,
   input: GetLeagueFixtureDataInput,
 ) {
+  const { tournaments } = snapshot;
   const parsedCompetition = parseCompetitionKey(input.competition);
   const requestedYear = parseRequestedYear(input.year);
   const requestedTournamentId = parsedCompetition?.tournamentId ?? input.tournamentId;
@@ -414,10 +703,21 @@ async function selectCompetition(
   }
 
   if (!requestedTournamentId && !requestedCategoryId) {
-    const latestClubCompetition = await findLatestClubCompetition(
+    const currentClubCompetition = findCompetition(
       tournaments,
-      requestedYear,
+      DEFAULT_TOURNAMENT_ID,
+      DEFAULT_CATEGORY_ID,
     );
+    if (
+      currentClubCompetition &&
+      (!requestedYear || requestedYear === DEFAULT_YEAR) &&
+      snapshot.unavailableCompetitionKeys?.includes(
+        `${DEFAULT_TOURNAMENT_ID}:${DEFAULT_CATEGORY_ID}`,
+      )
+    ) {
+      return currentClubCompetition;
+    }
+    const latestClubCompetition = findLatestClubCompetition(snapshot, requestedYear);
 
     if (latestClubCompetition) {
       return latestClubCompetition;
@@ -452,17 +752,40 @@ async function selectCompetition(
   );
 }
 
-async function findLatestClubCompetition(
-  tournaments: LeagueTournamentOption[],
+function findLatestClubCompetition(
+  snapshot: Pick<LeagueSnapshot, "tournaments" | "competitions">,
   requestedYear?: number,
 ) {
-  const years = requestedYear ? [requestedYear] : getAvailableYears(tournaments);
+  const years = requestedYear ? [requestedYear] : getAvailableYears(snapshot.tournaments);
 
   for (const year of years) {
-    const matches = await getLeagueClubMatchesForYear(year, tournaments, {
-      targetLimit: MAX_CLUB_COMPETITION_TARGETS,
-    }).catch(() => []);
-    const target = selectPreferredClubCompetition(matches, tournaments);
+    const target = snapshot.competitions
+      .filter(
+        (item) =>
+          getTournamentYear(item.tournament.name) === year &&
+          (item.standings.some((row) => row.isClub) ||
+            item.rounds.some((round) =>
+              round.matches.some((match) => match.isClubMatch && !match.involvesBye),
+            )),
+      )
+      .sort((left, right) => {
+        const kindDiff =
+          getDefaultCompetitionKindPriority(
+            getLeagueCompetitionKind(right.tournament.name, right.category.name),
+          ) -
+          getDefaultCompetitionKindPriority(
+            getLeagueCompetitionKind(left.tournament.name, left.category.name),
+          );
+        // A postponed Apertura fixture or an undated match must not replace
+        // Clausura's league table. Cup results still enter next/last matches.
+        return (
+          kindDiff ||
+          getCompetitionPriority(right) - getCompetitionPriority(left) ||
+          latestKnownClubMatchDate(right) - latestKnownClubMatchDate(left) ||
+          getTournamentIdNumber(right.tournament.id) -
+            getTournamentIdNumber(left.tournament.id)
+        );
+      })[0];
 
     if (target) {
       return target;
@@ -472,57 +795,15 @@ async function findLatestClubCompetition(
   return undefined;
 }
 
-function selectPreferredClubCompetition(
-  matches: LeagueFixtureMatch[],
-  tournaments: LeagueTournamentOption[],
-) {
-  const grouped = new Map<
-    string,
-    {
-      categoryId: string;
-      competitionKind: LeagueCompetitionKind;
-      latestSortValue: number;
-      tournamentId: string;
-    }
-  >();
-
-  for (const match of matches) {
-    const [tournamentId, categoryId] = match.id.split(":");
-
-    if (!tournamentId || !categoryId) {
-      continue;
-    }
-
-    const key = `${tournamentId}:${categoryId}`;
-    const existing = grouped.get(key);
-    const latestSortValue = Math.max(
-      existing?.latestSortValue ?? 0,
-      getMatchSortValue(match),
-    );
-
-    grouped.set(key, {
-      categoryId,
-      competitionKind: match.competitionKind,
-      latestSortValue,
-      tournamentId,
-    });
-  }
-
-  const selected = [...grouped.values()].sort((left, right) => {
-    const kindDiff =
-      getDefaultCompetitionKindPriority(right.competitionKind) -
-      getDefaultCompetitionKindPriority(left.competitionKind);
-
-    if (kindDiff !== 0) {
-      return kindDiff;
-    }
-
-    return right.latestSortValue - left.latestSortValue;
-  })[0];
-
-  return selected
-    ? findCompetition(tournaments, selected.tournamentId, selected.categoryId)
-    : undefined;
+function latestKnownClubMatchDate(competition: LeagueSnapshotCompetition) {
+  return Math.max(
+    0,
+    ...competition.rounds
+      .flatMap((round) => round.matches)
+      .filter((match) => match.isClubMatch && match.dateIso)
+      .map(getMatchSortValue)
+      .filter((value) => value !== Number.MAX_SAFE_INTEGER),
+  );
 }
 
 function getDefaultCompetitionKindPriority(kind: LeagueCompetitionKind) {
@@ -973,11 +1254,19 @@ function buildNextMatches(matches: LeagueFixtureMatch[]) {
 }
 
 function buildLastMatches(matches: LeagueFixtureMatch[]) {
-  return sortMatchesBySchedule(
-    matches.filter((match) => match.status === "played" && !match.involvesBye),
-  )
-    .reverse()
+  const knownDate = (match: LeagueFixtureMatch) => {
+    const value = getMatchSortValue(match);
+    return value === Number.MAX_SAFE_INTEGER ? 0 : value;
+  };
+  return matches
+    .filter((match) => match.status === "played" && !match.involvesBye)
+    .sort((left, right) => knownDate(right) - knownDate(left))
     .slice(0, 3);
+}
+
+function updateMatchDateStatus(match: LeagueFixtureMatch): LeagueFixtureMatch {
+  const status = getScheduleAdjustedStatus(match, match.dateIso);
+  return status === match.status ? match : { ...match, status };
 }
 
 function buildScorerRows(matches: LeagueFixtureMatch[]): LeagueScorerRow[] {

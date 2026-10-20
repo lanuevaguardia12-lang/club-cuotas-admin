@@ -101,6 +101,14 @@ export function HomeSummary({
 
   return (
     <section className="grid min-w-0 gap-4">
+      {fixture.source.status === "error" ? (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
+        >
+          {fixture.source.message}
+        </p>
+      ) : null}
       <div
         className={cn(
           "grid min-w-0 gap-4",
@@ -253,9 +261,8 @@ export function HomeSummary({
               Ultima tabla
             </CardTitle>
             <p className="text-muted-foreground mt-2 text-sm">
-              {fixture.clubStanding
-                ? `${fixture.clubStanding.points} puntos para ${APP_TEAM_NAME}`
-                : fixture.selectedCategoryName}
+              {fixture.selectedTournamentName} · {fixture.selectedCategoryName}
+              {fixture.clubStanding ? ` · ${fixture.clubStanding.points} puntos` : ""}
             </p>
           </CardHeader>
           <CardContent>
