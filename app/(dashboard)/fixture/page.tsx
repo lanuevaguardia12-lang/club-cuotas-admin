@@ -24,6 +24,7 @@ interface FixturePageProps {
     torneo?: string;
     campeonato?: string;
     round?: string | string[];
+    team?: string | string[];
     tab?: string;
     year?: string;
   }>;
@@ -116,6 +117,7 @@ export default async function FixturePage({ searchParams }: FixturePageProps) {
         playerOptions={playerOptions}
         registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
         selectedRoundKeys={toArray(params.round)}
+        selectedTeamNames={toArray(params.team)}
         teamProfiles={teamsData.teams}
       />
     </main>

@@ -14,6 +14,7 @@ import {
   getCompetitionCardClass,
 } from "@/components/fixture/competition-badge";
 import { FixtureMatchScheduleEditor } from "@/components/fixture/fixture-match-schedule-editor";
+import { FixtureMatchFilters } from "@/components/fixture/fixture-match-filters";
 import { MatchConvocationButton } from "@/components/fixture/match-convocation-button";
 import { MatchMediaUploadButton } from "@/components/fixture/match-media-upload-button";
 import { MatchResultShareButton } from "@/components/fixture/match-result-share-button";
@@ -35,6 +36,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NavigationLink } from "@/components/ui/navigation-link";
 import { formatRepeatedGoalLabels } from "@/lib/fixture-goals";
+import {
+  filterFixtureRounds,
+  getFixtureRoundKey,
+  getFixtureTeamNames,
+  resolveFixtureSelection,
+} from "@/lib/fixture-match-filters";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
   buildMatchRegistrationFormUrl,
@@ -68,6 +75,7 @@ interface FixtureContentProps {
   playerOptions?: FixturePlayerOption[];
   registrationPlayerNamesByPeriod?: Record<string, string[]>;
   selectedRoundKeys?: string[];
+  selectedTeamNames?: string[];
   teamProfiles?: TeamProfile[];
 }
 
@@ -92,6 +100,7 @@ export function FixtureContent({
   playerOptions = [],
   registrationPlayerNamesByPeriod = {},
   selectedRoundKeys = [],
+  selectedTeamNames = [],
   teamProfiles = [],
 }: FixtureContentProps) {
   const tab = normalizeFixtureTab(activeTab);
@@ -99,7 +108,12 @@ export function FixtureContent({
 
   return (
     <div className={cn("grid min-w-0", tab === "posiciones" ? "gap-3" : "gap-6")}>
-      <FixtureTabNav data={data} activeTab={tab} />
+      <FixtureTabNav
+        data={data}
+        activeTab={tab}
+        selectedRoundKeys={selectedRoundKeys}
+        selectedTeamNames={selectedTeamNames}
+      />
 
       {data.source.status === "error" ? (
         <section className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
@@ -150,6 +164,7 @@ export function FixtureContent({
           registrationPlayerNamesByPeriod={registrationPlayerNamesByPeriod}
           rounds={data.rounds}
           selectedRoundKeys={selectedRoundKeys}
+          selectedTeamNames={selectedTeamNames}
           teamProfiles={teamProfiles}
         />
       ) : null}
@@ -160,9 +175,13 @@ export function FixtureContent({
 function FixtureTabNav({
   activeTab,
   data,
+  selectedRoundKeys,
+  selectedTeamNames,
 }: {
   activeTab: FixtureTab;
   data: LeagueFixtureData;
+  selectedRoundKeys: string[];
+  selectedTeamNames: string[];
 }) {
   const tabs: Array<{ label: string; value: FixtureTab }> = [
     { label: "Resumen", value: "resumen" },
@@ -177,7 +196,7 @@ function FixtureTabNav({
       {tabs.map((tab) => (
         <NavigationLink
           key={tab.value}
-          href={buildFixtureHref(data, tab.value)}
+          href={buildFixtureHref(data, tab.value, selectedRoundKeys, selectedTeamNames)}
           loadingMessage={`Cargando ${tab.label}...`}
           className={cn(
             "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
@@ -873,6 +892,7 @@ function FixtureRounds({
   registrationPlayerNamesByPeriod,
   rounds,
   selectedRoundKeys,
+  selectedTeamNames,
   teamProfiles,
 }: {
   canManage: boolean;
@@ -885,13 +905,23 @@ function FixtureRounds({
   registrationPlayerNamesByPeriod: Record<string, string[]>;
   rounds: LeagueFixtureRound[];
   selectedRoundKeys: string[];
+  selectedTeamNames: string[];
   teamProfiles: TeamProfile[];
 }) {
-  const visibleRoundKeys = new Set(selectedRoundKeys);
-  const filteredRounds =
-    visibleRoundKeys.size > 0
-      ? rounds.filter((round) => visibleRoundKeys.has(getRoundKey(round)))
-      : rounds;
+  const teamNames = getFixtureTeamNames(rounds, data.standings);
+  const teamOptionOrder = teamNames.includes(APP_TEAM_NAME)
+    ? [APP_TEAM_NAME, ...teamNames.filter((name) => name !== APP_TEAM_NAME)]
+    : teamNames;
+  const visibleRoundKeys = resolveFixtureSelection(
+    selectedRoundKeys,
+    rounds.map(getFixtureRoundKey),
+  );
+  const visibleTeams = resolveFixtureSelection(
+    selectedTeamNames,
+    teamNames,
+    teamNames.includes(APP_TEAM_NAME) ? [APP_TEAM_NAME] : teamNames,
+  );
+  const filteredRounds = filterFixtureRounds(rounds, visibleRoundKeys, visibleTeams);
 
   return (
     <section className="grid min-w-0 gap-4">
@@ -902,46 +932,27 @@ function FixtureRounds({
 
       {rounds.length > 0 ? (
         <div className="grid min-w-0 gap-3">
-          <form
-            className="border-border bg-card min-w-0 rounded-md border p-2"
-            method="GET"
-          >
-            <input name="competition" type="hidden" value={data.selectedCompetitionKey} />
-            <input name="year" type="hidden" value={data.selectedYear} />
-            <input name="tab" type="hidden" value="fixture" />
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold">Jornadas</p>
-              <Button className="h-8" size="sm">
-                <Table2 />
-                Aplicar
-              </Button>
-            </div>
-            <div className="-mx-2 mt-2 flex max-w-full min-w-0 [scrollbar-width:none] gap-2 overflow-x-auto overscroll-x-contain px-2 pb-1 [&::-webkit-scrollbar]:hidden">
-              {rounds.map((round) => {
-                const roundKey = getRoundKey(round);
-                const checked =
-                  visibleRoundKeys.size === 0 || visibleRoundKeys.has(roundKey);
-
-                return (
-                  <label
-                    key={roundKey}
-                    className={cn(
-                      "border-border bg-background flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs",
-                      checked && "border-primary/40 bg-primary/5 text-primary",
-                    )}
-                  >
-                    <input
-                      defaultChecked={checked}
-                      name="round"
-                      type="checkbox"
-                      value={roundKey}
-                    />
-                    {round.name}
-                  </label>
-                );
-              })}
-            </div>
-          </form>
+          <FixtureMatchFilters
+            key={JSON.stringify([
+              data.selectedCompetitionKey,
+              data.source.fetchedAt,
+              selectedRoundKeys,
+              selectedTeamNames,
+            ])}
+            competitionKey={data.selectedCompetitionKey}
+            year={data.selectedYear}
+            roundOptions={rounds.map((round) => ({
+              value: getFixtureRoundKey(round),
+              label: round.name,
+              description: round.date,
+            }))}
+            teamOptions={teamOptionOrder.map((name) => ({
+              value: name,
+              label: getTeamDisplayName(teamProfiles, name),
+            }))}
+            selectedRoundKeys={visibleRoundKeys}
+            selectedTeamNames={visibleTeams}
+          />
 
           {filteredRounds.map((round, index) => (
             <details
@@ -959,7 +970,8 @@ function FixtureRounds({
                   ) : null}
                 </span>
                 <Badge className="shrink-0" variant="outline">
-                  {round.matches.length} partidos
+                  {round.matches.length}{" "}
+                  {round.matches.length === 1 ? "partido" : "partidos"}
                 </Badge>
               </summary>
               <div className="border-border grid min-w-0 gap-0 border-t">
@@ -990,8 +1002,8 @@ function FixtureRounds({
             <Card className="border-dashed">
               <CardContent className="p-6">
                 <EmptyInline
-                  title="Sin jornadas seleccionadas"
-                  detail="Marcá al menos una fecha para ver partidos."
+                  title="Sin partidos para estos filtros"
+                  detail="Elegí otras fechas o seleccioná Todos en Equipo para ver más partidos."
                 />
               </CardContent>
             </Card>
@@ -1394,18 +1406,21 @@ function getLeastBeatenShareRows(rows: LeastBeatenRow[]): RankingShareRow[] {
   }));
 }
 
-function buildFixtureHref(data: LeagueFixtureData, tab: FixtureTab) {
+function buildFixtureHref(
+  data: LeagueFixtureData,
+  tab: FixtureTab,
+  roundKeys: string[],
+  teams: string[],
+) {
   const params = new URLSearchParams({
     competition: data.selectedCompetitionKey,
     tab,
     year: String(data.selectedYear),
   });
+  roundKeys.forEach((round) => params.append("round", round));
+  teams.forEach((team) => params.append("team", team));
 
   return `/fixture?${params.toString()}`;
-}
-
-function getRoundKey(round: LeagueFixtureRound) {
-  return `${round.name}-${round.date}`;
 }
 
 function getTeamPositionLabel(rows: LeagueStandingRow[], teamName: string) {
