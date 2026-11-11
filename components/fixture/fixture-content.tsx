@@ -345,7 +345,11 @@ function NextMatchCard({
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CompetitionBadge kind={match.competitionKind} />
+          <CompetitionBadge
+            kind={match.competitionKind}
+            competitionName={match.competitionName}
+            categoryName={match.categoryName}
+          />
           <StatusBadge status={match.status} />
         </div>
       </div>
@@ -515,7 +519,11 @@ function PlayedMatchCard({
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CompetitionBadge kind={match.competitionKind} />
+          <CompetitionBadge
+            kind={match.competitionKind}
+            competitionName={match.competitionName}
+            categoryName={match.categoryName}
+          />
           <StatusBadge status={match.status} />
         </div>
       </div>
@@ -552,6 +560,7 @@ function StandingsTable({
   const classifications = getStandingsClassifications(
     data.selectedCategoryName,
     data.standings,
+    data.selectedTournamentName,
   );
   return (
     <Card>
@@ -1075,7 +1084,11 @@ function FullMatchRow({
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-        <CompetitionBadge kind={match.competitionKind} />
+        <CompetitionBadge
+          kind={match.competitionKind}
+          competitionName={match.competitionName}
+          categoryName={match.categoryName}
+        />
         <StatusBadge status={match.status} />
         {match.scheduleOverrideUpdatedAt ? (
           <Badge variant="outline">Editado</Badge>

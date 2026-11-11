@@ -185,7 +185,11 @@ async function drawStandingsPlate(
   const tableY = compact ? 338 : 474;
   const tableX = compact ? 58 : 64;
   const tableWidth = width - tableX * 2;
-  const classifications = getStandingsClassifications(categoryName, rows);
+  const classifications = getStandingsClassifications(
+    categoryName,
+    rows,
+    competitionName,
+  );
   const legendRows = getStandingsLegendRows(
     context,
     classifications,

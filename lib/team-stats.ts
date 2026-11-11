@@ -1,4 +1,5 @@
 import type { LeagueFixtureMatch } from "@/types/fixture";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 
 type OutcomeKind = "draw" | "loss" | "none" | "win";
 
@@ -163,6 +164,15 @@ function getTeamMatchOutcomeKind(
 
 function getShortCompetitionLabel(match: LeagueFixtureMatch) {
   const normalized = removeAccents(match.competitionName).toLowerCase();
+  const stage = getCompetitionStageLabel(match.competitionName, match.categoryName);
+  if (stage) {
+    const season = normalized.includes("clausura")
+      ? "Clausura "
+      : normalized.includes("apertura")
+        ? "Apertura "
+        : "";
+    return `${stage} · ${season}${getMatchYear(match)}`;
+  }
 
   if (normalized.includes("apertura")) {
     return `Apertura ${getMatchYear(match)}`;

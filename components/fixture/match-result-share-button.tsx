@@ -13,6 +13,7 @@ import {
   getTeamDisplayName,
 } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import type { LeagueCompetitionKind, LeagueFixtureMatch } from "@/types/fixture";
 import type { TeamCrestFit, TeamProfile } from "@/types/teams";
 
@@ -463,7 +464,7 @@ async function drawMatchResultPlate(
 
   drawPlateMetaText(
     context,
-    `${formatResultDate(match.dateIso)} / ${formatCompetition(match.competitionKind)}`,
+    `${formatResultDate(match.dateIso)} / ${formatCompetition(match)}`,
     width / 2,
     compact ? 382 : 494,
     {
@@ -551,7 +552,7 @@ async function drawPhotoOverlayMatchResultPlate(
 
   drawPlateMetaText(
     context,
-    `${formatResultDate(match.dateIso)} / ${formatCompetition(match.competitionKind)}`,
+    `${formatResultDate(match.dateIso)} / ${formatCompetition(match)}`,
     width / 2,
     compact ? 268 : 466,
     {
@@ -1461,14 +1462,16 @@ function formatPlateDate(date: Date) {
   return `${day} ${month} ${year}`;
 }
 
-function formatCompetition(kind: LeagueCompetitionKind) {
+function formatCompetition(match: LeagueFixtureMatch) {
+  const stage = getCompetitionStageLabel(match.competitionName, match.categoryName);
+  if (stage) return stage.toLocaleUpperCase("es-AR");
   const labels: Record<LeagueCompetitionKind, string> = {
     cup: "COPA",
     friendly: "AMISTOSO",
     league: "LIGA",
   };
 
-  return labels[kind] ?? "PARTIDO";
+  return labels[match.competitionKind] ?? "PARTIDO";
 }
 
 function getCompetitionSharePlatePalette(kind: LeagueCompetitionKind): SharePlatePalette {

@@ -1267,6 +1267,27 @@ Endpoints:
 
 Los endpoints mutables validan permisos RBAC y registran auditoria.
 
+### Ascensos, descensos y fases de definicion
+
+Reglas confirmadas para Primera (A, B y C):
+
+- Primera B y C: 1.º y 2.º tienen ascenso directo; 3.º y 4.º juegan promocion.
+- Primera A y B: los ultimos dos tienen descenso directo; los dos anteriores
+  (3.º y 4.º contando desde abajo) juegan promocion contra la categoria inferior.
+- Las plazas de playoffs de Primera A quedan pendientes de definicion. No marcar
+  campeon, ascensos o plazas de playoffs en esa zona sin confirmar el reglamento.
+- Las mismas zonas y leyendas se usan en la tabla de la app y en las placas.
+
+Apertura y Clausura pueden generar fases nuevas dentro del mismo torneo. Hay que
+leer tambien sus categorias de promocion y playoffs de Primera, sin limitarse
+a las tablas regulares A/B/C. Por ejemplo, Clausura 2026 (`329`) publica
+`Primera Promocion A - B` (`4360`) y `Primera Promocion B - C` (`4361`).
+Los cruces, horarios y resultados se leen de la liga; no se generan enfrentamientos
+suponiendo emparejamientos a partir de las posiciones. La tabla principal sigue
+siendo la liga regular del club y las definiciones se incorporan al proximo/ultimo
+partido, las estadisticas y el fixture de su fase. Las tablas de una promocion
+no repiten marcas de ascenso o descenso de la fase regular.
+
 ### Cache
 
 La tabla, los resultados y las estadisticas de la liga comparten una copia

@@ -396,7 +396,11 @@ function HomeMatchCard({
         </span>
         <span className="shrink-0">{match.time || "-"}</span>
       </div>
-      <CompetitionBadge kind={match.competitionKind} />
+      <CompetitionBadge
+        kind={match.competitionKind}
+        competitionName={match.competitionName}
+        categoryName={match.categoryName}
+      />
       <div className="grid gap-2 text-sm">
         <TeamLine
           local
@@ -506,7 +510,11 @@ function HomePlayedMatchCard({
         </span>
         <span className="shrink-0">{match.time || "-"}</span>
       </div>
-      <CompetitionBadge kind={match.competitionKind} />
+      <CompetitionBadge
+        kind={match.competitionKind}
+        competitionName={match.competitionName}
+        categoryName={match.categoryName}
+      />
       <div className="grid gap-2 text-sm">
         <TeamLine
           local

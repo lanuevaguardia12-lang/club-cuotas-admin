@@ -66,7 +66,7 @@ const readScheduledLeagueSnapshot = unstable_cache(
       };
     }
   },
-  ["league-fixture-scheduled-snapshot-v3"],
+  ["league-fixture-scheduled-snapshot-v4"],
   { revalidate: false },
 );
 
@@ -236,6 +236,8 @@ const FALLBACK_TOURNAMENTS: LeagueTournamentOption[] = [
       { id: "4314", name: 'Primera "B"', tournamentId: "329" },
       { id: "4313", name: 'Primera "A"', tournamentId: "329" },
       { id: "4315", name: 'Primera "C"', tournamentId: "329" },
+      { id: "4360", name: "Primera Promocion A - B", tournamentId: "329" },
+      { id: "4361", name: "Primera Promocion B - C", tournamentId: "329" },
     ],
   },
   {
@@ -993,7 +995,9 @@ function isRelevantCategory(category: LeagueRawCategory) {
 
   return (
     /futbol mayores/i.test(sport) &&
-    /^primera\b/i.test(normalizedCategory) &&
+    /^(?:primera\b|(?:play\s*off|semifinal|final)\s+primera\b|promocion\s+[abc]\s*[-–—/]\s*[abc]\b)/i.test(
+      normalizedCategory,
+    ) &&
     !/femenino|junior|master|senior|super master/i.test(normalizedCategory) &&
     !/menores/i.test(normalizedTournament)
   );

@@ -60,34 +60,56 @@ const TOP_CLASSIFICATIONS: StandingClassificationStyle[] = [
 export function getStandingsClassifications(
   categoryName: string | undefined,
   rows: Pick<LeagueStandingRow, "position">[],
+  competitionName = "",
 ): StandingClassificationStyle[] {
   const category = (categoryName ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f"'“”‘’]/g, "")
     .trim()
     .toLowerCase();
+  const competition = `${competitionName} ${category}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (/\bcopa\b|play\s*off|semifinal|\bfinal\b|promocion/.test(competition)) {
+    return [];
+  }
   const positions = [...new Set(rows.map((row) => row.position))]
     .filter((position) => Number.isInteger(position) && position > 0)
     .sort((left, right) => left - right);
 
-  if (!/^primera\s+[ab]\b/.test(category) || positions.length < 4) {
+  const division = /^primera\s+([abc])\b/.exec(category)?.[1];
+  if (!division) {
     return TOP_CLASSIFICATIONS;
   }
 
-  const relegation = positions.slice(-2);
-  const playoff = positions.slice(-4, -2);
+  const hasRelegation = division !== "c" && positions.length >= 4;
+  const relegation = hasRelegation ? positions.slice(-2) : [];
+  const playoff = hasRelegation ? positions.slice(-4, -2) : [];
   const relegationPositions = new Set([...relegation, ...playoff]);
-  const top = TOP_CLASSIFICATIONS.map((item) => {
-    const positions = item.positions.filter(
-      (position) => !relegationPositions.has(position),
-    );
-    return {
-      ...item,
-      positions,
-      label: `${positions.map((position) => `${position}°`).join("/")} ${item.label.slice(item.label.indexOf(" ") + 1)}`,
-    };
-  }).filter((item) => item.positions.length > 0);
+  const availablePositions = new Set(positions);
+  const ascentClassifications =
+    division === "a"
+      ? []
+      : [
+          { ...TOP_CLASSIFICATIONS[1], positions: [1, 2], label: "Ascenso directo" },
+          { ...TOP_CLASSIFICATIONS[2], label: "Promoción" },
+        ];
+  const top = ascentClassifications
+    .map((item) => {
+      const selectedPositions = item.positions.filter(
+        (position) =>
+          availablePositions.has(position) && !relegationPositions.has(position),
+      );
+      return {
+        ...item,
+        positions: selectedPositions,
+        label: `${selectedPositions.map((position) => `${position}°`).join("/")} ${item.label}`,
+      };
+    })
+    .filter((item) => item.positions.length > 0);
 
+  if (!hasRelegation) return top;
   return [
     ...top,
     {

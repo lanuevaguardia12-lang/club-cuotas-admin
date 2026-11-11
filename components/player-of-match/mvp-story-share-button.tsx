@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import type { PlayerOfMatchMatch, PlayerOfMatchResult } from "@/types/player-of-match";
 import type { TeamCrestFit, TeamProfile } from "@/types/teams";
@@ -262,7 +263,7 @@ async function drawMvpStory(
   });
   drawCenteredText(
     context,
-    `${formatStoryDate(match.date)} / ${formatCompetition(match.sourceType)}`,
+    `${formatStoryDate(match.date)} / ${formatCompetition(match)}`,
     STORY_WIDTH / 2,
     448,
     {
@@ -862,14 +863,16 @@ function parseStoryDate(value: string) {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
-function formatCompetition(sourceType: PlayerOfMatchMatch["sourceType"]) {
+function formatCompetition(match: PlayerOfMatchMatch) {
+  const stage = getCompetitionStageLabel(match.sourceLabel ?? "");
+  if (stage) return stage.toUpperCase();
   const labels: Record<PlayerOfMatchMatch["sourceType"], string> = {
     cup: "COPA",
     friendly: "AMISTOSO",
     league: "LIGA",
   };
 
-  return labels[sourceType] ?? "PARTIDO";
+  return labels[match.sourceType] ?? "PARTIDO";
 }
 
 function getMvpStoryPalette(

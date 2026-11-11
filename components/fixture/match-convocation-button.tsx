@@ -15,6 +15,7 @@ import { updateFixtureMatchConvocation } from "@/app/(dashboard)/fixture/actions
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
 import type { FixturePlayerOption, LeagueFixtureMatch } from "@/types/fixture";
@@ -1280,19 +1281,21 @@ function isShareAbort(error: unknown) {
 }
 
 function formatConvocationMatchMeta(match: LeagueFixtureMatch) {
-  return [formatCompetition(match.competitionKind), formatMatchDate(match), match.time]
+  return [formatCompetition(match), formatMatchDate(match), match.time]
     .filter(Boolean)
     .join(" / ");
 }
 
-function formatCompetition(kind: LeagueFixtureMatch["competitionKind"]) {
+function formatCompetition(match: LeagueFixtureMatch) {
+  const stage = getCompetitionStageLabel(match.competitionName, match.categoryName);
+  if (stage) return stage.toUpperCase();
   const labels: Record<LeagueFixtureMatch["competitionKind"], string> = {
     cup: "COPA",
     friendly: "AMISTOSO",
     league: "LIGA",
   };
 
-  return labels[kind];
+  return labels[match.competitionKind];
 }
 
 function getCompetitionSharePlatePalette(

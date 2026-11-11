@@ -11,6 +11,7 @@ import {
   parseBooleanValue,
 } from "@/lib/app-settings";
 import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import {
   APP_TEAM_NAME,
   getLeagueClubMatchesForYear,
@@ -6020,7 +6021,11 @@ function mergePlayerOfMatchMatches(
         period: getPeriodFromDate(date) ?? getCurrentPeriod(),
         rival,
         sourceType: fixtureMatch.competitionKind,
-        sourceLabel: getPlayerOfMatchSourceLabel(fixtureMatch.competitionKind),
+        sourceLabel:
+          getCompetitionStageLabel(
+            fixtureMatch.competitionName,
+            fixtureMatch.categoryName,
+          ) ?? getPlayerOfMatchSourceLabel(fixtureMatch.competitionKind),
         resultLabel: getFixtureResultLabel(fixtureMatch),
         canEdit: false,
         localTeam: fixtureMatch.localTeam,

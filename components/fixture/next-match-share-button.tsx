@@ -12,6 +12,7 @@ import {
   getTeamDisplayName,
 } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import type {
   LeagueCompetitionKind,
   LeagueFixtureMatch,
@@ -332,7 +333,7 @@ async function drawNextMatchPlate(
 
   drawPlateMetaText(
     context,
-    `${formatCompetition(match.competitionKind)} / ${formatMatchDate(match)}`,
+    `${formatCompetition(match)} / ${formatMatchDate(match)}`,
     width / 2,
     compact ? 374 : 492,
     {
@@ -1274,14 +1275,16 @@ function formatPlateDate(date: Date) {
   return `${day} ${month} ${year}`;
 }
 
-function formatCompetition(kind: LeagueCompetitionKind) {
+function formatCompetition(match: LeagueFixtureMatch) {
+  const stage = getCompetitionStageLabel(match.competitionName, match.categoryName);
+  if (stage) return stage.toLocaleUpperCase("es-AR");
   const labels: Record<LeagueCompetitionKind, string> = {
     cup: "COPA",
     friendly: "AMISTOSO",
     league: "LIGA",
   };
 
-  return labels[kind] ?? "PARTIDO";
+  return labels[match.competitionKind] ?? "PARTIDO";
 }
 
 function getCompetitionSharePlatePalette(kind: LeagueCompetitionKind): SharePlatePalette {

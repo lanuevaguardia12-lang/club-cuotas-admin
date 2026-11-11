@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import type { LeagueCompetitionKind } from "@/types/fixture";
 
 const competitionMeta: Record<
@@ -36,12 +37,20 @@ const competitionMeta: Record<
 interface CompetitionBadgeProps {
   className?: string;
   kind: LeagueCompetitionKind;
+  competitionName?: string;
+  categoryName?: string;
 }
 
-export function CompetitionBadge({ className, kind }: CompetitionBadgeProps) {
+export function CompetitionBadge({
+  className,
+  kind,
+  competitionName,
+  categoryName,
+}: CompetitionBadgeProps) {
+  const stage = getCompetitionStageLabel(competitionName ?? "", categoryName);
   return (
     <Badge className={cn("w-fit", competitionMeta[kind].badgeClassName, className)}>
-      {competitionMeta[kind].label}
+      {stage ?? competitionMeta[kind].label}
     </Badge>
   );
 }

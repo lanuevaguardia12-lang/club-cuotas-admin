@@ -648,7 +648,10 @@ function MatchVoteCard({
               {formatDate(match.date)}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <CompetitionBadge kind={match.sourceType} />
+              <CompetitionBadge
+                kind={match.sourceType}
+                competitionName={match.sourceLabel}
+              />
               {match.sourceType !== "friendly" ? (
                 <Badge variant="outline">{match.resultLabel}</Badge>
               ) : null}
