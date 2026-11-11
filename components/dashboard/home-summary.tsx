@@ -22,6 +22,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PaymentAliasCopyButton } from "@/components/players/payment-alias-copy-button";
 import { PaymentFormButton } from "@/components/players/payment-form-button";
+import { PaymentFormHelpVideo } from "@/components/players/payment-form-help-video";
+import {
+  FormsRefreshButton,
+  MyFeePullToRefresh,
+  MyFeeRefreshProvider,
+} from "@/components/players/my-fee-refresh";
 import { formatRepeatedGoalLabels } from "@/lib/fixture-goals";
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import {
@@ -99,8 +105,9 @@ export function HomeSummary({
       ? fixture.allCompetitionMatches
       : fixture.matches;
 
-  return (
+  const content = (
     <section className="grid min-w-0 gap-4">
+      {playerProfile ? <MyFeePullToRefresh /> : null}
       {fixture.source.status === "error" ? (
         <p
           role="status"
@@ -109,6 +116,7 @@ export function HomeSummary({
           {fixture.source.message}
         </p>
       ) : null}
+      {playerProfile ? <PaymentFormHelpVideo /> : null}
       <div
         className={cn(
           "grid min-w-0 gap-4",
@@ -122,7 +130,7 @@ export function HomeSummary({
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <BadgeDollarSign className="text-primary size-5" />
-                    Mi ultima cuota
+                    Mi última cuota
                   </CardTitle>
                   <p className="text-muted-foreground mt-2 text-sm">
                     {latestQuota
@@ -130,7 +138,10 @@ export function HomeSummary({
                       : "Sin cuotas cargadas"}
                   </p>
                 </div>
-                {latestQuota ? <QuotaStatusBadge month={latestQuota} /> : null}
+                <div className="flex shrink-0 items-center gap-2">
+                  {latestQuota ? <QuotaStatusBadge month={latestQuota} /> : null}
+                  <FormsRefreshButton />
+                </div>
               </div>
             </CardHeader>
             <CardContent className="grid gap-4">
@@ -148,6 +159,10 @@ export function HomeSummary({
                         : "Sin vencimiento cargado"}
                 </p>
               </div>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Si ya pagaste y tu cuota sigue pendiente, deslizá hacia abajo desde el
+                inicio de la pantalla o tocá el botón de actualizar.
+              </p>
               <div
                 className={cn(
                   "grid gap-2",
@@ -330,6 +345,7 @@ export function HomeSummary({
       />
     </section>
   );
+  return playerProfile ? <MyFeeRefreshProvider>{content}</MyFeeRefreshProvider> : content;
 }
 
 function HomeMatchCard({

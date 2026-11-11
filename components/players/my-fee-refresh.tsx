@@ -2,7 +2,16 @@
 
 import { RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 
 import { refreshMyFeeFromFormsAction } from "@/app/(dashboard)/mi-cuota/actions";
 import { Button } from "@/components/ui/button";
@@ -10,108 +19,109 @@ import { cn } from "@/lib/utils";
 
 const PULL_THRESHOLD = 82;
 const MAX_PULL_DISTANCE = 128;
+const FormsRefreshContext = createContext<ReturnType<typeof useFormsRefreshState> | null>(
+  null,
+);
+
+export function MyFeeRefreshProvider({ children }: { children: ReactNode }) {
+  const refresh = useFormsRefreshState();
+  return (
+    <FormsRefreshContext.Provider value={refresh}>
+      {children}
+    </FormsRefreshContext.Provider>
+  );
+}
 
 export function MyFeePullToRefresh() {
   const { isRefreshing, message, refreshFromForms } = useFormsRefresh();
-  const startYRef = useRef<number | null>(null);
   const pullDistanceRef = useRef(0);
   const [pullDistance, setPullDistance] = useState(0);
-  const isPulling = pullDistance > 0;
   const canRelease = pullDistance >= PULL_THRESHOLD;
 
   useEffect(() => {
-    function handleTouchStart(event: TouchEvent) {
-      if (window.scrollY > 0 || isRefreshing) {
-        startYRef.current = null;
-        return;
-      }
-
-      startYRef.current = event.touches[0]?.clientY ?? null;
+    let start: { x: number; y: number } | null = null;
+    function resetPull() {
+      start = null;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
     }
-
+    function handleTouchStart(event: TouchEvent) {
+      const target = event.target;
+      if (
+        window.scrollY > 1 ||
+        isRefreshing ||
+        event.touches.length !== 1 ||
+        (target instanceof Element &&
+          target.closest('video, input, textarea, select, [role="dialog"]'))
+      ) {
+        resetPull();
+        return;
+      }
+      const touch = event.touches[0];
+      start = { x: touch.clientX, y: touch.clientY };
+    }
     function handleTouchMove(event: TouchEvent) {
-      if (startYRef.current === null || isRefreshing) {
+      if (!start || isRefreshing) return;
+      const touch = event.touches[0];
+      if (!touch || event.touches.length !== 1 || window.scrollY > 1) {
+        resetPull();
         return;
       }
-
-      const currentY = event.touches[0]?.clientY;
-
-      if (currentY === undefined) {
+      const distance = touch.clientY - start.y;
+      if (Math.abs(touch.clientX - start.x) > Math.abs(distance)) {
+        resetPull();
         return;
       }
-
-      const distance = Math.max(0, currentY - startYRef.current);
-
-      if (distance <= 0) {
-        setPullDistance(0);
-        pullDistanceRef.current = 0;
-        return;
-      }
-
-      if (window.scrollY <= 0) {
-        event.preventDefault();
-      }
-
-      const easedDistance = Math.min(MAX_PULL_DISTANCE, distance * 0.55);
+      const easedDistance = Math.min(MAX_PULL_DISTANCE, Math.max(0, distance) * 0.55);
+      if (easedDistance > 0 && event.cancelable) event.preventDefault();
       setPullDistance(easedDistance);
       pullDistanceRef.current = easedDistance;
     }
-
     function handleTouchEnd() {
       const shouldRefresh = pullDistanceRef.current >= PULL_THRESHOLD;
-
-      startYRef.current = null;
-      pullDistanceRef.current = 0;
-      setPullDistance(0);
-
-      if (shouldRefresh) {
-        void refreshFromForms();
-      }
+      resetPull();
+      if (shouldRefresh) void refreshFromForms();
     }
-
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
     window.addEventListener("touchmove", handleTouchMove, { passive: false });
     window.addEventListener("touchend", handleTouchEnd);
-    window.addEventListener("touchcancel", handleTouchEnd);
-
+    window.addEventListener("touchcancel", resetPull);
     return () => {
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleTouchEnd);
-      window.removeEventListener("touchcancel", handleTouchEnd);
+      window.removeEventListener("touchcancel", resetPull);
     };
   }, [isRefreshing, refreshFromForms]);
 
-  if (!isPulling && !isRefreshing && !message) {
-    return null;
-  }
-
+  if (!pullDistance && !isRefreshing && !message) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-3 z-[70] flex justify-center px-4">
+    <div
+      className="pointer-events-none fixed inset-x-0 top-3 z-[70] flex justify-center px-4"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
       <div
-        className={cn(
-          "border-border bg-card text-card-foreground flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium shadow-lg transition-transform",
-          isRefreshing || message ? "translate-y-0" : undefined,
-        )}
+        className="border-border bg-card text-card-foreground flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium shadow-lg transition-transform"
         style={{
-          transform:
-            isRefreshing || message
-              ? "translateY(0)"
-              : `translateY(${Math.max(0, pullDistance - 42)}px)`,
+          transform: `translateY(${isRefreshing || message ? 0 : Math.max(0, pullDistance - 42)}px)`,
         }}
       >
         <RefreshCw
           className={cn(
-            "text-primary size-4",
-            isRefreshing ? "animate-spin" : canRelease ? "club-animate-select-pop" : "",
+            "text-primary size-4 shrink-0",
+            isRefreshing && "motion-safe:animate-spin",
           )}
           aria-hidden="true"
         />
         <span>
           {isRefreshing
-            ? "Buscando pago en Forms..."
+            ? "Actualizando tu cuota..."
             : message ||
-              (canRelease ? "Soltá para buscar el pago" : "Tirá para buscar en Forms")}
+              (canRelease
+                ? "Soltá para actualizar"
+                : "Deslizá hacia abajo para actualizar")}
         </span>
       </div>
     </div>
@@ -120,8 +130,7 @@ export function MyFeePullToRefresh() {
 
 export function FormsRefreshButton({ className }: { className?: string }) {
   const { isRefreshing, refreshFromForms } = useFormsRefresh();
-  const label = isRefreshing ? "Buscando pago en Forms..." : "Buscar pago en Forms";
-
+  const label = isRefreshing ? "Actualizando tu cuota..." : "Actualizar mi cuota";
   return (
     <Button
       type="button"
@@ -129,50 +138,59 @@ export function FormsRefreshButton({ className }: { className?: string }) {
       variant="outline"
       className={cn("size-9", className)}
       disabled={isRefreshing}
+      aria-busy={isRefreshing}
       onClick={() => void refreshFromForms()}
       title={label}
       aria-label={label}
     >
-      <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
-      <span className="sr-only">{label}</span>
+      <RefreshCw
+        className={isRefreshing ? "motion-safe:animate-spin" : undefined}
+        aria-hidden="true"
+      />
     </Button>
   );
 }
 
 function useFormsRefresh() {
+  const refresh = useContext(FormsRefreshContext);
+  if (!refresh)
+    throw new Error("La actualización de cuota requiere MyFeeRefreshProvider.");
+  return refresh;
+}
+
+function useFormsRefreshState() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const inFlightRef = useRef(false);
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function refreshFromForms() {
-    if (isRefreshing) {
-      return;
-    }
+  useEffect(
+    () => () => {
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    },
+    [],
+  );
 
+  const refreshFromForms = useCallback(async () => {
+    if (inFlightRef.current || isPending) return;
+    inFlightRef.current = true;
+    if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     setMessage("");
     setIsRefreshing(true);
-
     try {
       const result = await refreshMyFeeFromFormsAction();
-
       setMessage(result.message);
-
-      if (result.ok) {
-        startTransition(() => {
-          router.refresh();
-        });
-      }
-
-      window.setTimeout(() => setMessage(""), 2400);
+      if (result.ok) startTransition(() => router.refresh());
+    } catch {
+      setMessage("No pudimos actualizar tu cuota. Volvé a intentarlo.");
     } finally {
+      inFlightRef.current = false;
       setIsRefreshing(false);
+      messageTimerRef.current = setTimeout(() => setMessage(""), 4500);
     }
-  }
+  }, [isPending, router]);
 
-  return {
-    isRefreshing: isRefreshing || isPending,
-    message,
-    refreshFromForms,
-  };
+  return { isRefreshing: isRefreshing || isPending, message, refreshFromForms };
 }

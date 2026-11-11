@@ -32,11 +32,12 @@ export async function refreshMyFeeFromFormsAction(): Promise<RefreshMyFeeFromFor
       "google-sheets:player-profile",
       "google-sheets:fee-calculator",
     );
+    revalidatePath("/");
     revalidatePath("/mi-cuota");
 
     return {
       ok: true,
-      message: "Buscando tu pago en el formulario...",
+      message: "Consulta actualizada. Revisá el estado de tu cuota.",
     };
   } catch {
     return {
