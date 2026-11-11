@@ -27,7 +27,7 @@ export function DashboardPeriodSelector({ period }: DashboardPeriodSelectorProps
   }
 
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+    <div className="grid w-full min-w-0 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-end gap-2 sm:w-auto sm:shrink-0">
       <Button
         type="button"
         variant="outline"
@@ -37,13 +37,13 @@ export function DashboardPeriodSelector({ period }: DashboardPeriodSelectorProps
       >
         <ChevronLeft />
       </Button>
-      <label className="grid gap-2">
+      <label className="grid min-w-0 gap-2">
         <span className="text-sm font-medium">Mes de cuotas</span>
         <input
           type="month"
           value={period}
           onChange={(event) => goToPeriod(event.target.value)}
-          className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+          className="border-input bg-background focus:ring-ring h-10 w-full min-w-0 appearance-none rounded-md border px-2 text-base outline-none focus:ring-2 sm:w-44 sm:text-sm"
         />
       </label>
       <Button
