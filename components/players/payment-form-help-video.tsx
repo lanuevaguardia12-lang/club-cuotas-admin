@@ -4,6 +4,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { CirclePlay, X } from "lucide-react";
 import { useRef, useState } from "react";
 
+const PAYMENT_FORM_VIDEO_URL = "/videos/formulario-cuota.mp4?v=695bf485af";
+
 export function PaymentFormHelpVideo() {
   const [open, setOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -50,9 +52,9 @@ export function PaymentFormHelpVideo() {
             playsInline
             preload="metadata"
           >
-            <source src="/videos/formulario-cuota.mp4" type="video/mp4" />
+            <source src={PAYMENT_FORM_VIDEO_URL} type="video/mp4" />
             Tu navegador no puede reproducir este video.{" "}
-            <a href="/videos/formulario-cuota.mp4">Abrir el tutorial</a>.
+            <a href={PAYMENT_FORM_VIDEO_URL}>Abrir el tutorial</a>.
           </video>
           <Dialog.Close
             className="focus-visible:ring-ring hover:bg-muted absolute top-3 right-3 grid size-9 place-items-center rounded-md outline-none focus-visible:ring-2"
