@@ -1,3 +1,7 @@
+import type {
+  FundraisingSource,
+  FundraisingBenefitApplication,
+} from "@/types/fundraising";
 import type { DataSourceState } from "@/types/dashboard";
 import type { PlayerDirectoryStatus } from "@/types/players";
 
@@ -79,6 +83,8 @@ export interface FeeCalculatorPlayer {
 }
 
 export interface FeePlayerCalculation {
+  additionalQuota: number;
+  benefitDiscount: number;
   playerId: string;
   playerName: string;
   currentPeriod: string;
@@ -100,6 +106,7 @@ export interface FeePlayerCalculation {
 }
 
 export interface FeeCalculatorSummary {
+  additionalQuota: number;
   period: string;
   previousPeriod: string;
   quotaStatus: "defined" | "undefined";
@@ -116,6 +123,9 @@ export interface FeeCalculatorSummary {
 }
 
 export interface FeeCalculatorData {
+  benefitCostShares?: Record<string, Record<string, number>>;
+  fundraisingSources?: FundraisingSource[];
+  benefitApplications?: FundraisingBenefitApplication[];
   period: string;
   previousPeriod: string;
   costs: FeeCalculatorCost[];

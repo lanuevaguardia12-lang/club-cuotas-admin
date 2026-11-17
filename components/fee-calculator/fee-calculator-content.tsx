@@ -20,6 +20,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import {
+  applyFundraisingBenefit,
   deleteFeeCalculatorCost,
   resetFeeCalculatorCosts,
   saveFeeCalculatorActual,
@@ -32,6 +33,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { useLoadingRouter } from "@/hooks/use-loading-router";
+import {
+  ALL_FUNDRAISING_SOURCES,
+  planFundraisingBenefit,
+  roundMoney,
+} from "@/lib/fundraising";
 import type {
   FeeCalculatorActual,
   FeeCalculatorAdjustment,
@@ -75,7 +81,7 @@ type CostSubmitValues = z.output<typeof costSchema>;
 const typeLabels: Record<FeeCalculatorCostType, string> = {
   coach: "Director técnico",
   court: "Cancha",
-  custom: "Variable",
+  custom: "Adicional variable",
   fixed: "Fijo",
 };
 
@@ -215,25 +221,25 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     }
 
     if (template === "balls") {
-      reset({ ...baseValues, name: "Pelotas", type: "fixed" });
+      reset({ ...baseValues, name: "Pelotas", type: "custom" });
       setEditingCostName("");
       return;
     }
 
     if (template === "water") {
-      reset({ ...baseValues, name: "Aguas", type: "fixed" });
+      reset({ ...baseValues, name: "Aguas", type: "custom" });
       setEditingCostName("");
       return;
     }
 
     if (template === "cashExtra") {
-      reset({ ...baseValues, name: "Adicional Caja", type: "fixed" });
+      reset({ ...baseValues, name: "Adicional Caja", type: "custom" });
       setEditingCostName("");
       return;
     }
 
     if (template === "oldRecovery") {
-      reset({ ...baseValues, name: "Recupero de gastos viejos", type: "fixed" });
+      reset({ ...baseValues, name: "Recupero de gastos viejos", type: "custom" });
       setEditingCostName("");
       return;
     }
@@ -338,7 +344,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
           icon={CircleDollarSign}
           label="Cuota base"
           value={formatCurrency(data.summary.plannedCurrentQuota)}
-          detail={`Suma de costos de ${formatPeriod(data.period)}`}
+          detail={`Costos de base de ${formatPeriod(data.period)}`}
         />
         <MetricCard
           icon={RotateCcw}
@@ -439,8 +445,12 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
                     <option value="fixed">Fijo</option>
                     <option value="court">Cancha</option>
                     <option value="coach">Director técnico</option>
-                    <option value="custom">Variable</option>
+                    <option value="custom">Adicional variable</option>
                   </select>
+                  <p className="text-muted-foreground text-xs">
+                    Los adicionales variables se suman a la cuota final y quedan fuera de
+                    la base de devoluciones.
+                  </p>
                 </Field>
 
                 <Field label="Mes del costo" error={errors.period?.message}>
@@ -569,6 +579,8 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
         <RefundPolicyEditor period={data.period} rules={data.refundPolicy} />
       </div>
 
+      <FundraisingBenefitPanel key={data.period} data={data} />
+
       <CostList
         canMaintain={canMaintain}
         costs={currentPeriodCosts}
@@ -598,6 +610,343 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
 
       <PlayerCalculationsTable rows={sortedCalculations} />
     </section>
+  );
+}
+
+function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [sourceId, setSourceId] = useState(ALL_FUNDRAISING_SOURCES);
+  const [costId, setCostId] = useState("");
+  const [selectionMode, setSelectionMode] = useState("all");
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
+  const [percent, setPercent] = useState("50");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const applications = (data.benefitApplications ?? []).filter(
+    (item) => item.period === data.period,
+  );
+  const sources = (data.fundraisingSources ?? []).filter(
+    (source) => source.period <= data.period,
+  );
+  const targetCosts = data.costs.filter(
+    (cost) => cost.active && cost.type === "custom" && cost.startPeriod === data.period,
+  );
+  const selectedSources = sources.filter(
+    (source) => sourceId === ALL_FUNDRAISING_SOURCES || source.id === sourceId,
+  );
+  const numericPercent = Number(parseLocalizedNumberInput(percent));
+  const validPercent =
+    Number.isFinite(numericPercent) && numericPercent > 0 && numericPercent <= 100;
+  const planInput = {
+    fundraisingId: sourceId,
+    costId: costId || undefined,
+    period: data.period,
+    percent: validPercent ? numericPercent : 0,
+  };
+  const eligiblePreviews = planFundraisingBenefit(data, planInput).previews.filter(
+    (player) => player.discount > 0,
+  );
+  const previews = planFundraisingBenefit(data, {
+    ...planInput,
+    playerIds: selectionMode === "custom" ? selectedPlayerIds : undefined,
+  }).previews;
+  const totalDiscount = roundMoney(
+    previews.reduce((total, preview) => total + preview.discount, 0),
+  );
+
+  async function handleApply(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (selectedSources.length === 0 || !validPercent || totalDiscount <= 0 || saving)
+      return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await applyFundraisingBenefit({
+        fundraisingId: sourceId,
+        period: data.period,
+        percent: numericPercent,
+        costId: costId || undefined,
+        playerIds: selectionMode === "custom" ? selectedPlayerIds : undefined,
+      });
+      setMessage("Beneficio aplicado. El saldo restante queda guardado en cada ficha.");
+      setOpen(false);
+      router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "No se pudo aplicar el beneficio. Volvé a intentar.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <LoadingModal open={saving} description="Aplicando beneficio de recaudación..." />
+      <CardHeader>
+        <CardTitle>Beneficios de recaudación</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          Usá el saldo de quienes participaron para descontarlo de su cuota de{" "}
+          {formatPeriod(data.period)}. La cuota base para devoluciones se mantiene
+          separada.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-fit"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-controls="fundraising-benefit-form"
+        >
+          {open ? <X /> : <Plus />}
+          {open ? "Cerrar beneficio" : "Agregar descuento beneficio"}
+        </Button>
+        {open ? (
+          <form
+            id="fundraising-benefit-form"
+            className="grid gap-4"
+            onSubmit={handleApply}
+          >
+            <Field label="Aplicar descuento a">
+              <select
+                value={costId}
+                onChange={(event) => {
+                  setCostId(event.target.value);
+                  setSelectedPlayerIds([]);
+                  setMessage("");
+                }}
+                className="border-input bg-background h-10 rounded-md border px-3 text-sm"
+              >
+                <option value="">Cuota general</option>
+                {targetCosts.map((cost) => (
+                  <option key={cost.id} value={cost.id}>
+                    {cost.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-muted-foreground text-xs">
+                Para camisetas u otro gasto puntual, cargalo como Adicional variable y
+                elegilo aquí. El descuento queda asociado a ese gasto.
+              </p>
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Recaudación">
+                <select
+                  value={sourceId}
+                  onChange={(event) => {
+                    setSourceId(event.target.value);
+                    setError("");
+                    setMessage("");
+                  }}
+                  required
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                >
+                  <option value={ALL_FUNDRAISING_SOURCES}>
+                    Todas las recaudaciones con saldo
+                  </option>
+                  {sources.map((source) => {
+                    return (
+                      <option
+                        key={source.id}
+                        value={source.id}
+                        disabled={source.balance <= 0}
+                      >
+                        {source.concept} · {formatPreciseCurrency(source.balance)}{" "}
+                        disponible
+                      </option>
+                    );
+                  })}
+                </select>
+              </Field>
+              <Field
+                label="¿Qué % de lo recaudado querés utilizar?"
+                error={
+                  percent && !validPercent
+                    ? "Ingresá un porcentaje mayor a 0 y hasta 100."
+                    : undefined
+                }
+              >
+                <input
+                  type="number"
+                  min={0.01}
+                  max={100}
+                  step={0.01}
+                  value={percent}
+                  onChange={(event) => setPercent(event.target.value)}
+                  required
+                  className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </Field>
+            </div>
+            {sources.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                Primero cargá un ingreso de tipo Recaudación y elegí sus participantes en
+                Cash Flow.
+              </p>
+            ) : null}
+            <Field label="Jugadores que reciben el beneficio">
+              <select
+                value={selectionMode}
+                onChange={(event) => {
+                  setSelectionMode(event.target.value);
+                  setSelectedPlayerIds(eligiblePreviews.map((player) => player.playerId));
+                }}
+                className="border-input bg-background h-10 rounded-md border px-3 text-sm"
+              >
+                <option value="all">Todos los jugadores con saldo disponible</option>
+                <option value="custom">Seleccionar jugadores con saldo</option>
+              </select>
+              <p className="text-muted-foreground text-xs">
+                Solo se incluyen jugadores con saldo a favor y un importe a pagar en{" "}
+                {costId ? "este gasto" : "la cuota"}.
+              </p>
+            </Field>
+            {selectionMode === "custom" ? (
+              <fieldset className="border-border max-h-60 overflow-y-auto rounded-md border p-3">
+                <legend className="px-1 text-sm font-medium">
+                  Seleccioná los jugadores
+                </legend>
+                {eligiblePreviews.map((player) => (
+                  <label
+                    key={player.playerId}
+                    className="flex items-center gap-2 py-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPlayerIds.includes(player.playerId)}
+                      onChange={(event) =>
+                        setSelectedPlayerIds((ids) =>
+                          event.target.checked
+                            ? [...ids, player.playerId]
+                            : ids.filter((id) => id !== player.playerId),
+                        )
+                      }
+                    />
+                    {player.playerName} · Saldo {formatPreciseCurrency(player.balance)}
+                  </label>
+                ))}
+                {eligiblePreviews.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No hay jugadores con saldo aplicable a esta selección.
+                  </p>
+                ) : null}
+              </fieldset>
+            ) : null}
+            {selectedSources.length > 0 ? (
+              <div className="border-border rounded-md border p-4">
+                <p className="font-medium" aria-live="polite">
+                  El descuento total es de {formatPreciseCurrency(totalDiscount)}.
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  El porcentaje se calcula sobre el importe original de cada jugador. El
+                  descuento se limita al saldo disponible
+                  {costId ? ", al importe del gasto elegido" : ""} y a su cuota. El resto
+                  permanece a favor. La base para devoluciones no cambia.
+                </p>
+                <ul className="mt-3 grid gap-2 text-sm">
+                  {previews.map((preview) => (
+                    <li
+                      key={preview.playerId}
+                      className="border-border grid gap-1 border-t pt-2 sm:grid-cols-[1fr_auto]"
+                    >
+                      <span className="font-medium">{preview.playerName}</span>
+                      <span>
+                        El descuento es de{" "}
+                        <strong>{formatPreciseCurrency(preview.discount)}</strong>
+                      </span>
+                      <span className="text-muted-foreground text-xs sm:col-span-2">
+                        {costId ? (
+                          <>Gasto: {formatPreciseCurrency(preview.costAmount)} · </>
+                        ) : null}
+                        Recaudado: {formatPreciseCurrency(preview.amount)} · Disponible:{" "}
+                        {formatPreciseCurrency(preview.balance)} · Quedará a favor:{" "}
+                        {formatPreciseCurrency(preview.remaining)}
+                        {preview.quota <= 0 ? " · Sin cuota a descontar en este mes" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <p className="text-muted-foreground text-xs">
+              Se registra el gasto, el descuento y el saldo restante en cada cuenta
+              corriente. Un jugador no puede recibir dos veces el mismo beneficio de una
+              recaudación para el mismo gasto y mes. Los gastos con beneficios aplicados
+              quedan protegidos contra edición o eliminación.
+            </p>
+            {data.summary.quotaStatus !== "defined" ? (
+              <p className="text-muted-foreground text-sm">
+                Definí la cuota del mes antes de aplicar el beneficio.
+              </p>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={
+                saving ||
+                selectedSources.length === 0 ||
+                !validPercent ||
+                data.summary.quotaStatus !== "defined" ||
+                totalDiscount <= 0
+              }
+              className="w-fit"
+            >
+              <Save />
+              {costId ? "Aplicar beneficio al gasto" : "Aplicar beneficio a la cuota"}
+            </Button>
+          </form>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-destructive text-sm">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p role="status" className="text-primary text-sm">
+            {message}
+          </p>
+        ) : null}
+        {applications.length > 0 ? (
+          <div className="grid gap-3">
+            <h3 className="text-sm font-semibold">
+              Beneficios aplicados en {formatPeriod(data.period)}
+            </h3>
+            {applications.map((application) => (
+              <details
+                key={application.id}
+                className="border-border rounded-md border p-3 text-sm"
+              >
+                <summary className="cursor-pointer font-medium">
+                  {application.costName
+                    ? `${application.costName} · `
+                    : "Cuota general · "}
+                  {application.concept} · {formatNumber(application.percent)}% ·{" "}
+                  {formatPreciseCurrency(
+                    application.allocations.reduce(
+                      (total, allocation) => total + allocation.amount,
+                      0,
+                    ),
+                  )}
+                </summary>
+                <ul className="text-muted-foreground mt-2 grid gap-1">
+                  {application.allocations.map((allocation) => (
+                    <li key={allocation.playerId}>
+                      {allocation.playerName}: −{formatPreciseCurrency(allocation.amount)}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -717,8 +1066,8 @@ function RefundPolicyEditor({
       <CardHeader>
         <CardTitle>Política de devoluciones</CardTitle>
         <p className="text-muted-foreground text-sm">
-          Se aplica sobre la cuota con ajustes y devoluciones del mes anterior según
-          asistencia.
+          Se aplica sobre la cuota base del mes anterior según asistencia. Los adicionales
+          variables y los beneficios no modifican esa base.
         </p>
       </CardHeader>
       <CardContent className="grid gap-3">
@@ -1433,8 +1782,8 @@ function AttendanceBreakdown({
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
           {data.summary.totalMatchesPreviousPeriod} partidos jugados en el mes. Este
-          porcentaje define la devolución sobre la cuota con ajustes y devoluciones del
-          jugador para {formatPeriod(data.previousPeriod)}.
+          porcentaje define la devolución sobre la cuota base del jugador para{" "}
+          {formatPeriod(data.previousPeriod)}.
         </p>
       </div>
 
@@ -1475,7 +1824,7 @@ function AttendanceBreakdown({
                     <td className="px-4 py-3">
                       <div>{formatPercent(row.refundPercent / 100)}</div>
                       <p className="text-muted-foreground text-xs">
-                        sobre {formatCurrency(row.previousQuotaWithAdjustmentsAndRefunds)}
+                        sobre {formatCurrency(row.previousBaseQuota)}
                       </p>
                     </td>
                   </tr>
@@ -1511,7 +1860,7 @@ function AttendanceBreakdown({
                   />
                   <Info
                     label="Base devolución"
-                    value={formatCurrency(row.previousQuotaWithAdjustmentsAndRefunds)}
+                    value={formatCurrency(row.previousBaseQuota)}
                   />
                 </div>
                 <MatchDetails row={row} compact />
@@ -1530,8 +1879,8 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
       <div>
         <h2 className="text-lg font-semibold">Cuota por jugador</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Cuota base con ajustes reales, menos devolución por asistencia y gastos del
-          jugador.
+          Cuota base con ajustes reales, más adicionales variables, menos devolución,
+          gastos a favor y beneficios de recaudación.
         </p>
       </div>
 
@@ -1550,8 +1899,10 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                   <TableHead>Base con ajustes</TableHead>
                   <TableHead>Partidos</TableHead>
                   <TableHead>Devolución</TableHead>
-                  <TableHead>Cuota con ajustes y devoluciones</TableHead>
+                  <TableHead>Subtotal con adicionales</TableHead>
+                  <TableHead>Adicionales variables</TableHead>
                   <TableHead>Gastos</TableHead>
+                  <TableHead>Beneficio recaudación</TableHead>
                   <TableHead>Cuota final</TableHead>
                 </tr>
               </thead>
@@ -1587,6 +1938,12 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                       />
                     </td>
                     <td className="px-4 py-3">
+                      <AmountWithHelp
+                        value={formatSignedCurrency(row.additionalQuota ?? 0)}
+                        help="Adicionales variables y sus ajustes. No integran la base de devoluciones."
+                      />
+                    </td>
+                    <td className="px-4 py-3">
                       {row.expenseCredit > 0 ? (
                         <Badge variant="success">
                           <AmountWithHelp
@@ -1600,6 +1957,15 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                           help={getExpenseCreditHelp(row)}
                           className="text-muted-foreground"
                         />
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(row.benefitDiscount ?? 0) > 0 ? (
+                        <Badge variant="success">
+                          −{formatPreciseCurrency(row.benefitDiscount ?? 0)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-base font-semibold">
@@ -1655,6 +2021,11 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                     help={getQuotaWithAdjustmentsAndRefundsHelp(row)}
                   />
                   <Info
+                    label="Adicionales variables"
+                    value={formatSignedCurrency(row.additionalQuota ?? 0)}
+                    help="No integran la base de devoluciones."
+                  />
+                  <Info
                     label="Gastos"
                     value={
                       row.expenseCredit > 0
@@ -1662,6 +2033,15 @@ function PlayerCalculationsTable({ rows }: { rows: FeePlayerCalculation[] }) {
                         : "-"
                     }
                     help={getExpenseCreditHelp(row)}
+                  />
+                  <Info
+                    label="Beneficio recaudación"
+                    value={
+                      (row.benefitDiscount ?? 0) > 0
+                        ? `−${formatPreciseCurrency(row.benefitDiscount ?? 0)}`
+                        : "-"
+                    }
+                    help="Descuento aplicado desde el saldo de recaudaciones. No modifica la cuota base."
                   />
                   <Info label="Asistencia" value={formatPercent(row.attendanceRate)} />
                 </div>
@@ -1867,7 +2247,7 @@ function getDefaultCostValues(data: FeeCalculatorData): CostFormValues {
 function getBaseQuotaHelp(row: FeePlayerCalculation) {
   return [
     "Base con ajustes.",
-    `Toma los costos asignados a ${row.playerName}, dividiendo cada costo por el campo Dividir por personas.`,
+    `Toma los costos de base asignados a ${row.playerName}, dividiendo cada costo por el campo Dividir por personas. Excluye adicionales variables y beneficios.`,
     `${formatCurrency(row.plannedCurrentQuota)} de cuota base del mes ${formatSignedCurrency(
       row.previousCostVariance,
     )} de ajustes reales del mes anterior = ${formatCurrency(row.baseQuota)}.`,
@@ -1878,8 +2258,8 @@ function getRefundHelp(row: FeePlayerCalculation) {
   return [
     "Devolución por asistencia.",
     `Toma ${formatPercent(row.refundPercent / 100)} sobre ${formatCurrency(
-      row.previousQuotaWithAdjustmentsAndRefunds,
-    )}, que es la cuota con ajustes y devoluciones del mes anterior de ${row.playerName}.`,
+      row.previousBaseQuota,
+    )}, que es la cuota base del mes anterior de ${row.playerName}, sin adicionales ni beneficios.`,
     `Resultado: ${formatCurrency(row.refundAmount)}.`,
   ].join(" ");
 }
@@ -1887,7 +2267,7 @@ function getRefundHelp(row: FeePlayerCalculation) {
 function getQuotaWithAdjustmentsAndRefundsHelp(row: FeePlayerCalculation) {
   return `Base con ajustes ${formatCurrency(row.baseQuota)} menos devolución ${formatCurrency(
     row.refundAmount,
-  )} = ${formatCurrency(row.quotaWithAdjustmentsAndRefunds)}. Esta es la base que usa el mes siguiente para calcular devolución.`;
+  )} más adicionales variables ${formatCurrency(row.additionalQuota ?? 0)} = ${formatCurrency(row.quotaWithAdjustmentsAndRefunds)}. La devolución del mes siguiente usa la cuota base, antes de estos descuentos.`;
 }
 
 function getExpenseCreditHelp(row: FeePlayerCalculation) {
@@ -1905,7 +2285,7 @@ function getExpenseCreditHelp(row: FeePlayerCalculation) {
 function getFinalQuotaHelp(row: FeePlayerCalculation) {
   return `Cuota final = cuota con ajustes y devoluciones ${formatCurrency(
     row.quotaWithAdjustmentsAndRefunds,
-  )} menos gastos a favor ${formatCurrency(row.expenseCredit)} = ${formatCurrency(
+  )} (incluye los adicionales variables) menos gastos a favor ${formatCurrency(row.expenseCredit)} menos beneficio de recaudación ${formatPreciseCurrency(row.benefitDiscount ?? 0)} = ${formatCurrency(
     row.finalQuota,
   )}.`;
 }

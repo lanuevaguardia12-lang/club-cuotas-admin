@@ -17,6 +17,7 @@ import {
 } from "@/components/players/my-fee-refresh";
 import { PaymentAliasCopyButton } from "@/components/players/payment-alias-copy-button";
 import { PaymentFormButton } from "@/components/players/payment-form-button";
+import { PlayerFundraisingAccount } from "@/components/players/player-fundraising-account";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -205,6 +206,8 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
           </CardContent>
         </Card>
       </section>
+
+      <PlayerFundraisingAccount account={profile.fundraisingAccount} />
 
       <section className="grid gap-4 lg:grid-cols-2">
         <MonthPreviewCard

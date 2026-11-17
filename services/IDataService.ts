@@ -1,3 +1,4 @@
+import type { ApplyFundraisingBenefitInput } from "@/types/fundraising";
 import type {
   AccountAuthOverride,
   AccountUser,
@@ -68,6 +69,7 @@ export interface IDataService {
   ): Promise<AccountAuthOverride | null>;
   getAccountAuthByUsername(username: string): Promise<AccountAuthOverride | null>;
   getDashboardData(period?: string): Promise<DashboardData>;
+  applyFundraisingBenefit(input: ApplyFundraisingBenefitInput): Promise<void>;
   getCashFlowData(period?: string): Promise<CashFlowData>;
   getCoachRecordsData(period?: string): Promise<CoachRecordsData>;
   upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;

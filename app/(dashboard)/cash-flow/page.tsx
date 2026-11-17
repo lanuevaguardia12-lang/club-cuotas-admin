@@ -1,7 +1,7 @@
 import { Database, WalletCards } from "lucide-react";
 
 import { CashFlowContent } from "@/components/cash-flow/cash-flow-content";
-import { hasPermission } from "@/lib/auth/roles";
+import { assertPermission, hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 import type { CashFlowScenario } from "@/types/dashboard";
@@ -17,10 +17,15 @@ export default async function CashFlowPage({
   }>;
 }) {
   const user = await getCurrentUser();
+  assertPermission(user, "cash-flow:read");
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params?.period ?? "") ? params?.period : undefined;
   const scenario: CashFlowScenario = params?.scenario === "draft" ? "draft" : "real";
-  const cashFlow = await getDataService().getCashFlowData(period);
+  const dataService = getDataService();
+  const [cashFlow, roster] = await Promise.all([
+    dataService.getCashFlowData(period),
+    dataService.getPlayersData(),
+  ]);
 
   return (
     <main className="grid gap-6">
@@ -57,6 +62,10 @@ export default async function CashFlowPage({
         canWrite={hasPermission(user, "cash-flow:write")}
         data={cashFlow}
         initialScenario={scenario}
+        players={roster.players.map(({ id, name, status }) => ({ id, name, status }))}
+        playersError={
+          roster.source.status === "error" ? roster.source.message : undefined
+        }
       />
 
       {cashFlow.source.status === "error" ? (

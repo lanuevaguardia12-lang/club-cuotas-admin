@@ -23,10 +23,32 @@ const transactionSchema = z
     endPeriod: periodSchema,
     notes: z.string().trim().max(500).optional(),
     scenario: z.enum(["real", "draft"]).default("real"),
+    incomeKind: z.enum(["general", "fundraising"]).default("general"),
+    participantPlayerIds: z.array(z.string().trim().min(1)).default([]),
   })
   .refine((value) => value.endPeriod >= value.startPeriod, {
     message: "El mes final no puede ser anterior al inicial.",
     path: ["endPeriod"],
+  })
+  .superRefine((value, context) => {
+    if (value.incomeKind !== "fundraising") return;
+    if (value.type !== "income" || value.scenario !== "real" || value.repeatsMonthly) {
+      context.addIssue({
+        code: "custom",
+        message: "La recaudación debe ser un ingreso real sin repetición mensual.",
+        path: ["incomeKind"],
+      });
+    }
+    if (
+      value.participantPlayerIds.length === 0 ||
+      new Set(value.participantPlayerIds).size !== value.participantPlayerIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Seleccioná al menos un jugador, sin repetir participantes.",
+        path: ["participantPlayerIds"],
+      });
+    }
   });
 
 export async function saveCashFlowTransaction(input: unknown) {
@@ -55,12 +77,17 @@ export async function saveCashFlowTransaction(input: unknown) {
           period: parsed.period,
           scenario: parsed.scenario,
           repeatsMonthly: parsed.repeatsMonthly,
+          incomeKind: parsed.incomeKind,
+          participantPlayerIds: parsed.participantPlayerIds.join(","),
         },
       })
       .catch(() => undefined);
   }
 
   revalidatePath("/cash-flow");
+  revalidatePath("/fee-calculator");
+  revalidatePath("/players/[playerId]", "page");
+  revalidatePath("/mi-cuota");
 
   return { ok: true };
 }
@@ -89,6 +116,9 @@ export async function deleteCashFlowTransaction(transactionId: string) {
   }
 
   revalidatePath("/cash-flow");
+  revalidatePath("/fee-calculator");
+  revalidatePath("/players/[playerId]", "page");
+  revalidatePath("/mi-cuota");
 
   return { ok: true };
 }

@@ -72,6 +72,7 @@ export function createRuntime({
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
         target: ts.ScriptTarget.ES2022,
+        jsx: ts.JsxEmit.ReactJSX,
         esModuleInterop: true,
       },
     }).outputText;

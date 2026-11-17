@@ -1,5 +1,19 @@
 import "server-only";
 
+import {
+  buildFundraisingLedger,
+  planFundraisingBenefit,
+  ALL_FUNDRAISING_SOURCES,
+  buildFundraisingAccount,
+  splitFundraisingAmount,
+  parseFundraisingAllocations,
+  roundMoney,
+} from "@/lib/fundraising";
+import type {
+  ApplyFundraisingBenefitInput,
+  FundraisingBenefitApplication,
+} from "@/types/fundraising";
+
 import { unstable_cache, unstable_expireTag } from "next/cache";
 import type { sheets_v4 } from "googleapis";
 
@@ -290,6 +304,19 @@ interface DashboardRecords {
 const DEFAULT_PLAYERS_RANGE = "Jugadores!A:Z";
 const DEFAULT_FEES_RANGE = "Cuotas!A:Z";
 const DEFAULT_CASH_FLOW_RANGE = "CashFlow!A:Z";
+const FUNDRAISING_BENEFITS_RANGE = "RecaudacionBeneficios!A:J";
+const fundraisingBenefitHeaders = [
+  "id",
+  "recaudacion_id",
+  "concepto",
+  "periodo",
+  "porcentaje",
+  "creado_en",
+  "reparto",
+  "costo_id",
+  "costo_nombre",
+  "limites_gasto",
+];
 const DEFAULT_SETTINGS_RANGE = "Configuracion!A:B";
 const DEFAULT_AUDIT_RANGE = "Auditoria!A:Z";
 const DEFAULT_LOGS_RANGE = "Logs!A:Z";
@@ -452,6 +479,9 @@ const cashFlowHeaders = [
   "activo",
   "creado_en",
   "actualizado_en",
+  "tipo_ingreso",
+  "participantes",
+  "reparto_recaudacion",
 ];
 
 const playerDirectoryHeaders = [
@@ -899,6 +929,7 @@ export class GoogleSheetsService implements IDataService {
       this.config.matchesRange,
       this.config.expensesRange,
       this.config.refundPolicyRange,
+      this.config.cashFlowRange,
       this.config.playerOfMatchVotesRange,
       this.config.playerOfMatchOverridesRange,
       this.config.fixtureOverridesRange,
@@ -1200,6 +1231,140 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
+  private async readFundraisingBenefits(
+    cached = true,
+  ): Promise<FundraisingBenefitApplication[]> {
+    const read = () =>
+      this.readOptionalValuesFromSpreadsheet(
+        this.getAppSpreadsheetId(),
+        FUNDRAISING_BENEFITS_RANGE,
+      );
+    const rows = cached
+      ? await unstable_cache(
+          read,
+          ["fundraising-benefits-v2", this.getAppSpreadsheetId()],
+          {
+            revalidate: false,
+            tags: ["google-sheets", "google-sheets:fee-calculator"],
+          },
+        )()
+      : await read();
+    return rowsToRecords(rows).map((record) => ({
+      id: pick(record, ["id"]),
+      fundraisingId: pick(record, ["recaudacion_id"]),
+      concept: pick(record, ["concepto"]),
+      period: pick(record, ["periodo"]),
+      percent: Number(pick(record, ["porcentaje"])),
+      createdAt: pick(record, ["creado_en"]),
+      allocations: parseFundraisingAllocations(pick(record, ["reparto"])),
+      costId: pick(record, ["costo_id"]) || undefined,
+      costName: pick(record, ["costo_nombre"]) || undefined,
+      costAmounts: JSON.parse(pick(record, ["limites_gasto"]) || "{}") as Record<
+        string,
+        number
+      >,
+    }));
+  }
+
+  private async readFundraisingLedger(cached = true) {
+    const [transactions, applications] = await Promise.all([
+      cached
+        ? this.readCashFlowTransactions()
+        : this.readOptionalValuesFromSpreadsheet(
+            this.getAppSpreadsheetId(),
+            this.config.cashFlowRange,
+          ).then(mapRowsToCashFlowTransactions),
+      this.readFundraisingBenefits(cached),
+    ]);
+    return buildFundraisingLedger(transactions, applications);
+  }
+
+  async applyFundraisingBenefit(input: ApplyFundraisingBenefitInput): Promise<void> {
+    this.assertConfigured();
+    assertValidPeriod(input.period);
+    if (!Number.isFinite(input.percent) || input.percent <= 0 || input.percent > 100) {
+      throw new Error("El porcentaje debe ser mayor a 0 y hasta 100.");
+    }
+    const ledger = await this.readFundraisingLedger(false);
+    if (
+      input.playerIds &&
+      (!input.playerIds.length ||
+        new Set(input.playerIds).size !== input.playerIds.length)
+    ) {
+      throw new Error("Seleccioná al menos un jugador, sin repetirlo.");
+    }
+    if (
+      input.fundraisingId !== ALL_FUNDRAISING_SOURCES &&
+      !ledger.sources.some(
+        (item) => item.id === input.fundraisingId && item.period <= input.period,
+      )
+    ) {
+      throw new Error("Elegí una recaudación disponible para este mes.");
+    }
+    const [calculator] = await this.buildFeeCalculatorDataForPeriods(
+      [input.period],
+      undefined,
+      ledger,
+    );
+    if (calculator.summary.quotaStatus !== "defined")
+      throw new Error("Definí la cuota del mes antes de aplicar el beneficio.");
+    if (
+      input.costId &&
+      !calculator.costs.some(
+        (cost) =>
+          cost.id === input.costId &&
+          cost.type === "custom" &&
+          isCostActiveForPeriod(cost, input.period),
+      )
+    ) {
+      throw new Error("Elegí un gasto adicional variable de este mes.");
+    }
+    const { applications } = planFundraisingBenefit(calculator, input);
+    if (!applications.length)
+      throw new Error(
+        "La selección ya tiene el beneficio aplicado o no tiene saldo ni importe del gasto a descontar.",
+      );
+    const spreadsheetId = this.getAppSpreadsheetId();
+    await this.ensureSheetForRange(FUNDRAISING_BENEFITS_RANGE, spreadsheetId);
+    const rows = await this.readOptionalValuesFromSpreadsheet(
+      spreadsheetId,
+      FUNDRAISING_BENEFITS_RANGE,
+    );
+    const headers = await this.ensureWritableHeaders(
+      spreadsheetId,
+      getSheetPrefix(FUNDRAISING_BENEFITS_RANGE),
+      rows.length ? normalizeWritableHeaders(rows[0], fundraisingBenefitHeaders) : [],
+      fundraisingBenefitHeaders,
+    );
+    const values = applications.map((application) => {
+      const row: Record<string, string | number> = {
+        id: createId("benefit"),
+        recaudacion_id: application.fundraisingId,
+        concepto: application.concept,
+        periodo: application.period,
+        porcentaje: application.percent,
+        creado_en: new Date().toISOString(),
+        reparto: JSON.stringify(application.allocations),
+        costo_id: application.costId ?? "",
+        costo_nombre: application.costName ?? "",
+        limites_gasto: JSON.stringify(application.costAmounts ?? {}),
+      };
+      return headers.map((header) => row[header] ?? "");
+    });
+    await (
+      await this.createSheetsClient()
+    ).spreadsheets.values.append({
+      spreadsheetId,
+      range: FUNDRAISING_BENEFITS_RANGE,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values },
+    });
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
+    invalidateCashFlowCache();
+  }
+
   async upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void> {
     this.assertConfigured();
 
@@ -1217,6 +1382,40 @@ export class GoogleSheetsService implements IDataService {
       spreadsheetId,
       this.config.cashFlowRange,
     );
+    const existingTransaction = mapRowsToCashFlowTransactions(rows).find(
+      (item) => item.id === transaction.id,
+    );
+    if (existingTransaction?.incomeKind === "fundraising") {
+      const applications = await this.readFundraisingBenefits(false);
+      if (applications.some((item) => item.fundraisingId === existingTransaction.id)) {
+        throw new Error(
+          "Esta recaudación ya tiene beneficios aplicados y no se puede modificar.",
+        );
+      }
+    }
+    if (transaction.incomeKind === "fundraising") {
+      if (
+        transaction.type !== "income" ||
+        transaction.scenario !== "real" ||
+        transaction.repeatsMonthly
+      ) {
+        throw new Error("La recaudación debe ser un ingreso real de una sola vez.");
+      }
+      const players = mapRowsToPlayers(await this.readPlayerDirectoryRows(spreadsheetId));
+      const playerMap = new Map(players.map((player) => [player.id, player]));
+      transaction.fundraisingAllocations = splitFundraisingAmount(
+        transaction.amount,
+        transaction.participantPlayerIds ?? [],
+      ).map((allocation) => {
+        const player = playerMap.get(allocation.playerId);
+        if (!player)
+          throw new Error(
+            "Uno de los jugadores seleccionados ya no existe en el plantel.",
+          );
+        return { ...allocation, playerName: player.name };
+      });
+      transaction.amount = roundMoney(transaction.amount);
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
     const now = new Date().toISOString();
@@ -1228,7 +1427,7 @@ export class GoogleSheetsService implements IDataService {
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${sheetPrefix}!A:M`,
+        range: `${sheetPrefix}!A:${toColumnName(cashFlowHeaders.length - 1)}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [
@@ -1245,6 +1444,8 @@ export class GoogleSheetsService implements IDataService {
         },
       });
       invalidateCashFlowCache();
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
       return;
     }
 
@@ -1309,6 +1510,8 @@ export class GoogleSheetsService implements IDataService {
     }
 
     invalidateCashFlowCache();
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
   }
 
   async deleteCashFlowTransaction(transactionId: string): Promise<void> {
@@ -1332,6 +1535,19 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
+    const source = mapRowsToCashFlowTransactions(values).find(
+      (item) => item.id === transactionId,
+    );
+    if (
+      source?.incomeKind === "fundraising" &&
+      (await this.readFundraisingBenefits(false)).some(
+        (item) => item.fundraisingId === transactionId,
+      )
+    ) {
+      throw new Error(
+        "Esta recaudación ya tiene beneficios aplicados y no se puede eliminar.",
+      );
+    }
     const [headerRow = [], ...dataRows] = values;
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
@@ -1381,6 +1597,8 @@ export class GoogleSheetsService implements IDataService {
       },
     });
     invalidateCashFlowCache();
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
   }
 
   async getPlayersData(): Promise<PlayerDirectoryData> {
@@ -1817,6 +2035,7 @@ export class GoogleSheetsService implements IDataService {
   private async buildFeeCalculatorDataForPeriods(
     periods: string[],
     cachedAt = new Date().toISOString(),
+    providedLedger?: Awaited<ReturnType<GoogleSheetsService["readFundraisingLedger"]>>,
   ) {
     const [
       {
@@ -1828,9 +2047,11 @@ export class GoogleSheetsService implements IDataService {
         expenseRows,
       },
       cachedPlayersRows,
+      ledger,
     ] = await Promise.all([
       this.readFeeCalculatorRows(),
       this.readCachedPlayerDirectoryRows(),
+      providedLedger ? Promise.resolve(providedLedger) : this.readFundraisingLedger(),
     ]);
     const playersRows =
       cachedPlayersRows.length > 0
@@ -1851,8 +2072,25 @@ export class GoogleSheetsService implements IDataService {
         ? "Google Sheets conectado, sin costos del calculador cargados."
         : "Calculador de cuota obtenido desde Google Sheets.";
 
-    return periods.map((period) =>
-      buildFeeCalculatorData({
+    return periods.map((period) => ({
+      ...buildFeeCalculatorData({
+        benefitDiscounts: Object.fromEntries(
+          players.map((player) => [
+            player.id,
+            roundMoney(
+              ledger.applications
+                .filter((application) => application.period === period)
+                .reduce(
+                  (total, application) =>
+                    total +
+                    (application.allocations.find(
+                      (allocation) => allocation.playerId === player.id,
+                    )?.amount ?? 0),
+                  0,
+                ),
+            ),
+          ]),
+        ),
         period,
         players,
         costs,
@@ -1866,11 +2104,46 @@ export class GoogleSheetsService implements IDataService {
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       }),
-    );
+      benefitCostShares: Object.fromEntries(
+        costs
+          .filter((cost) => cost.type === "custom" && isCostActiveForPeriod(cost, period))
+          .map((cost) => [
+            cost.id,
+            Object.fromEntries(
+              players.map((player) => [
+                player.id,
+                calculatePlayerCostShare(
+                  cost,
+                  costs,
+                  actuals,
+                  period,
+                  "forecast",
+                  player,
+                ),
+              ]),
+            ),
+          ]),
+      ),
+      fundraisingSources: ledger.sources,
+      benefitApplications: ledger.applications,
+    }));
+  }
+
+  private async assertCostBenefitsUnchanged(costId?: string) {
+    if (
+      (await this.readFundraisingBenefits(false)).some(
+        (item) => item.costId && (!costId || item.costId === costId),
+      )
+    ) {
+      throw new Error(
+        "El gasto tiene beneficios aplicados. No se puede modificar ni eliminar para conservar los descuentos registrados.",
+      );
+    }
   }
 
   async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
     this.assertConfigured();
+    if (input.id) await this.assertCostBenefitsUnchanged(input.id);
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const cost = normalizeFeeCalculatorCostInput(input);
@@ -1986,6 +2259,7 @@ export class GoogleSheetsService implements IDataService {
 
   async deleteFeeCalculatorCost(costId: string): Promise<void> {
     this.assertConfigured();
+    await this.assertCostBenefitsUnchanged(costId);
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const values = await this.readOptionalValuesFromSpreadsheet(
@@ -2044,6 +2318,7 @@ export class GoogleSheetsService implements IDataService {
 
   async resetFeeCalculatorCosts(): Promise<void> {
     this.assertConfigured();
+    await this.assertCostBenefitsUnchanged();
 
     const spreadsheetId = this.getAppSpreadsheetId();
     const sheets = await this.createSheetsClient();
@@ -2400,7 +2675,7 @@ export class GoogleSheetsService implements IDataService {
           }));
         },
         [
-          "google-sheets-player-season-v3",
+          "google-sheets-player-season-v5",
           ...this.getProfileCacheIdentity(),
           String(year),
           getCurrentPeriod(),
@@ -2478,7 +2753,7 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
-    return buildPlayerProfile(
+    const profile = buildPlayerProfile(
       player,
       fees,
       year,
@@ -2486,6 +2761,11 @@ export class GoogleSheetsService implements IDataService {
       matchSummaries,
       quotaDefinitions,
     );
+    profile.fundraisingAccount = buildFundraisingAccount(player.id, {
+      sources: feeCalculatorData[0]?.fundraisingSources ?? [],
+      applications: feeCalculatorData[0]?.benefitApplications ?? [],
+    });
+    return profile;
   }
 
   async updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput) {
@@ -5561,6 +5841,14 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
         active,
         source: "manual",
         scenario,
+        incomeKind:
+          pick(record, ["tipo_ingreso"]) === "fundraising" ? "fundraising" : "general",
+        participantPlayerIds: parseFundraisingAllocations(
+          pick(record, ["reparto_recaudacion"]),
+        ).map((item) => item.playerId),
+        fundraisingAllocations: parseFundraisingAllocations(
+          pick(record, ["reparto_recaudacion"]),
+        ),
         createdAt:
           parseDateTime(pick(record, ["creado_en", "created_at", "created"])) ??
           new Date().toISOString(),
@@ -7393,6 +7681,7 @@ function buildFeeCalculatorData({
   refundPolicy,
   matches,
   expenseCredits,
+  benefitDiscounts = {},
   status,
   message,
   cachedAt,
@@ -7406,6 +7695,7 @@ function buildFeeCalculatorData({
   refundPolicy: FeeRefundPolicyRule[];
   matches: MatchRecord[];
   expenseCredits: Array<PlayerExpenseCredit & { period: string }>;
+  benefitDiscounts?: Record<string, number>;
   status: FeeCalculatorData["source"]["status"];
   message: string;
   cachedAt: string;
@@ -7487,11 +7777,22 @@ function buildFeeCalculatorData({
     effectiveActuals,
     previousPeriod,
   );
-  const previousCostVariance = adjustments.reduce(
-    (total, adjustment) => total + adjustment.variance,
-    0,
-  );
+  const previousCostVariance = adjustments
+    .filter((adjustment) => adjustment.type !== "custom")
+    .reduce((total, adjustment) => total + adjustment.variance, 0);
   const baseQuota = Math.max(plannedCurrentQuota + previousCostVariance, 0);
+  const additionalQuota =
+    currentPeriodCosts
+      .filter((cost) => cost.type === "custom")
+      .reduce(
+        (total, cost) =>
+          total +
+          calculateCostShare(cost, activeCosts, effectiveActuals, period, "forecast"),
+        0,
+      ) +
+    adjustments
+      .filter((adjustment) => adjustment.type === "custom")
+      .reduce((total, adjustment) => total + adjustment.variance, 0);
   const calculations = activePlayers.map((player) => {
     const wasInactivePreviousPeriod = wasPlayerInactiveForPeriod(
       player,
@@ -7526,6 +7827,14 @@ function buildFeeCalculatorData({
       period,
       previousPeriod,
       baseQuota,
+      additionalQuota: calculatePlayerAdditionalQuotaForPeriod(
+        activeCosts,
+        effectiveActuals,
+        period,
+        player,
+        wasInactivePreviousPeriod,
+      ),
+      benefitDiscount: benefitDiscounts[player.id] ?? 0,
       plannedCurrentQuota,
       previousBaseQuota,
       previousQuotaWithAdjustmentsAndRefunds:
@@ -7561,6 +7870,7 @@ function buildFeeCalculatorData({
       previousBaseQuota: previousPeriodBaseQuota,
       previousCostVariance,
       baseQuota,
+      additionalQuota,
       activeCosts: currentPeriodCosts.length,
       players: activePlayers.length,
       totalMatchesPreviousPeriod,
@@ -7790,6 +8100,8 @@ function buildPlayerFeeCalculation({
   period,
   previousPeriod,
   baseQuota,
+  additionalQuota,
+  benefitDiscount,
   plannedCurrentQuota,
   previousBaseQuota,
   previousQuotaWithAdjustmentsAndRefunds,
@@ -7804,6 +8116,8 @@ function buildPlayerFeeCalculation({
   period: string;
   previousPeriod: string;
   baseQuota: number;
+  additionalQuota: number;
+  benefitDiscount: number;
   plannedCurrentQuota: number;
   previousBaseQuota: number;
   previousQuotaWithAdjustmentsAndRefunds: number;
@@ -7823,11 +8137,10 @@ function buildPlayerFeeCalculation({
   const effectivePreviousQuota = skipPreviousPeriodEffects
     ? 0
     : previousQuotaWithAdjustmentsAndRefunds;
+  const refundBase = skipPreviousPeriodEffects ? 0 : previousBaseQuota;
   const refundPercent =
-    effectivePreviousQuota > 0
-      ? findRefundPercent(refundPolicy, attendanceRate * 100)
-      : 0;
-  const refundAmount = effectivePreviousQuota * (refundPercent / 100);
+    refundBase > 0 ? findRefundPercent(refundPolicy, attendanceRate * 100) : 0;
+  const refundAmount = refundBase * (refundPercent / 100);
   const expenseCredit = skipPreviousPeriodEffects
     ? 0
     : expenseCredits
@@ -7837,8 +8150,14 @@ function buildPlayerFeeCalculation({
             normalizeClubPlayerName(credit.playerName) === normalizedPlayerName,
         )
         .reduce((total, credit) => total + credit.amount, 0);
-  const quotaWithAdjustmentsAndRefunds = Math.max(effectiveBaseQuota - refundAmount, 0);
-  const finalQuota = Math.max(quotaWithAdjustmentsAndRefunds - expenseCredit, 0);
+  const quotaWithAdjustmentsAndRefunds = Math.max(
+    effectiveBaseQuota - refundAmount + additionalQuota,
+    0,
+  );
+  const finalQuota = Math.max(
+    quotaWithAdjustmentsAndRefunds - expenseCredit - benefitDiscount,
+    0,
+  );
 
   return {
     playerId: player.id,
@@ -7846,6 +8165,8 @@ function buildPlayerFeeCalculation({
     currentPeriod: period,
     previousPeriod,
     baseQuota: effectiveBaseQuota,
+    additionalQuota,
+    benefitDiscount,
     plannedCurrentQuota,
     previousBaseQuota: skipPreviousPeriodEffects ? 0 : previousBaseQuota,
     previousQuotaWithAdjustmentsAndRefunds: effectivePreviousQuota,
@@ -7879,61 +8200,43 @@ function buildQuotaWithAdjustmentsAndRefundsByPlayerForPeriod({
   refundPolicy: FeeRefundPolicyRule[];
   matches: MatchRecord[];
 }) {
-  const historyStartPeriod = getFeeCalculatorHistoryStartPeriod(costs, actuals, period);
-  const quotasByPeriod = new Map<string, Map<string, number>>();
+  const previousPeriod = getPreviousPeriod(period);
+  const activePlayers = getActivePlayersForPeriod(players, playerStatuses, period);
+  const periodMatches = matches.filter((match) => match.period === previousPeriod);
+  const quotasByPlayer = new Map<string, number>();
 
-  for (const calculationPeriod of buildPeriodRange(historyStartPeriod, period)) {
-    const previousPeriod = getPreviousPeriod(calculationPeriod);
-    const activePlayers = getActivePlayersForPeriod(
-      players,
+  for (const player of activePlayers) {
+    const wasInactivePreviousPeriod = wasPlayerInactiveForPeriod(
+      player,
       playerStatuses,
-      calculationPeriod,
+      previousPeriod,
     );
-    const previousQuotaByPlayer = quotasByPeriod.get(previousPeriod);
-    const periodMatches = matches.filter((match) => match.period === previousPeriod);
-    const totalMatches = periodMatches.length;
-    const quotasByPlayer = new Map<string, number>();
-
-    for (const player of activePlayers) {
-      const wasInactivePreviousPeriod = wasPlayerInactiveForPeriod(
-        player,
-        playerStatuses,
-        previousPeriod,
-      );
-      const baseQuota = wasInactivePreviousPeriod
-        ? calculatePlayerBaseQuotaForPeriod(
-            costs,
-            actuals,
-            calculationPeriod,
-            "forecast",
-            player,
-          )
-        : calculatePlayerAppBaseQuotaForPeriod(costs, actuals, calculationPeriod, player);
-      const fallbackPreviousBaseQuota = calculatePlayerAppBaseQuotaForPeriod(
-        costs,
-        actuals,
-        previousPeriod,
-        player,
-      );
-      const previousQuotaWithAdjustmentsAndRefunds = wasInactivePreviousPeriod
-        ? 0
-        : (getPlayerQuotaValue(previousQuotaByPlayer, player) ??
-          fallbackPreviousBaseQuota);
-      const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
-      const attendanceRate = totalMatches > 0 ? playerMatches.length / totalMatches : 0;
-      const refundPercent =
-        previousQuotaWithAdjustmentsAndRefunds > 0
-          ? findRefundPercent(refundPolicy, attendanceRate * 100)
-          : 0;
-      const refundAmount = previousQuotaWithAdjustmentsAndRefunds * (refundPercent / 100);
-
-      setPlayerQuotaValue(quotasByPlayer, player, Math.max(baseQuota - refundAmount, 0));
-    }
-
-    quotasByPeriod.set(calculationPeriod, quotasByPlayer);
+    const baseQuota = wasInactivePreviousPeriod
+      ? calculatePlayerBaseQuotaForPeriod(costs, actuals, period, "forecast", player)
+      : calculatePlayerAppBaseQuotaForPeriod(costs, actuals, period, player);
+    const refundBase = wasInactivePreviousPeriod
+      ? 0
+      : calculatePlayerAppBaseQuotaForPeriod(costs, actuals, previousPeriod, player);
+    const playerMatches = getPlayerMatchesForPeriod(player, matches, previousPeriod);
+    const attendanceRate =
+      periodMatches.length > 0 ? playerMatches.length / periodMatches.length : 0;
+    const refundPercent =
+      refundBase > 0 ? findRefundPercent(refundPolicy, attendanceRate * 100) : 0;
+    const additionalQuota = calculatePlayerAdditionalQuotaForPeriod(
+      costs,
+      actuals,
+      period,
+      player,
+      wasInactivePreviousPeriod,
+    );
+    setPlayerQuotaValue(
+      quotasByPlayer,
+      player,
+      Math.max(baseQuota - refundBase * (refundPercent / 100) + additionalQuota, 0),
+    );
   }
 
-  return quotasByPeriod.get(period) ?? new Map<string, number>();
+  return quotasByPlayer;
 }
 
 function getPlayerMatchesForPeriod(
@@ -8992,7 +9295,7 @@ function calculateExpectedFeeIncomeForCashFlow(
     0,
   );
   const calculatedPlayers = data.playerCalculations.length;
-  const adjustedQuota = data.summary.baseQuota;
+  const adjustedQuota = data.summary.baseQuota + (data.summary.additionalQuota ?? 0);
   const activePlayersFromCalculator =
     data.players.filter((player) => player.status === "active").length ||
     data.summary.players;
@@ -10504,6 +10807,12 @@ function normalizeCashFlowTransactionInput(
     endPeriod: normalizedEndPeriod,
     notes: input.notes?.trim() ?? "",
     scenario: input.scenario ?? "real",
+    incomeKind: input.incomeKind ?? "general",
+    participantPlayerIds:
+      input.incomeKind === "fundraising"
+        ? normalizeAssignedPlayerIds(input.participantPlayerIds)
+        : [],
+    fundraisingAllocations: [],
   };
 }
 
@@ -10556,6 +10865,9 @@ function buildCashFlowWritableRow(
 ) {
   const now = new Date().toISOString();
   const values: Record<string, string | number> = {
+    tipo_ingreso: transaction.incomeKind ?? "general",
+    participantes: JSON.stringify(transaction.participantPlayerIds ?? []),
+    reparto_recaudacion: JSON.stringify(transaction.fundraisingAllocations ?? []),
     id: transaction.id,
     movimiento_id: transaction.id,
     transaction_id: transaction.id,
@@ -11044,7 +11356,7 @@ function calculateBaseQuotaForPeriod(
   mode: "forecast" | "actual",
 ) {
   return costs
-    .filter((cost) => isCostActiveForPeriod(cost, period))
+    .filter((cost) => cost.type !== "custom" && isCostActiveForPeriod(cost, period))
     .reduce(
       (total, cost) => total + calculateCostShare(cost, costs, actuals, period, mode),
       0,
@@ -11076,9 +11388,14 @@ function calculatePlayerCostVarianceForPeriod(
   actuals: FeeCalculatorActual[],
   period: string,
   player: PlayerRecord,
+  kind: "base" | "additional" = "base",
 ) {
   return costs
-    .filter((cost) => isCostActiveForPeriod(cost, period))
+    .filter(
+      (cost) =>
+        (kind === "additional" ? cost.type === "custom" : cost.type !== "custom") &&
+        isCostActiveForPeriod(cost, period),
+    )
     .reduce((total, cost) => {
       const actualUnits = findActualUnitsForCost(cost, costs, actuals, period);
 
@@ -11107,6 +11424,33 @@ function calculatePlayerCostVarianceForPeriod(
     }, 0);
 }
 
+function calculatePlayerAdditionalQuotaForPeriod(
+  costs: FeeCalculatorCost[],
+  actuals: FeeCalculatorActual[],
+  period: string,
+  player: PlayerRecord,
+  skipPreviousPeriodEffects = false,
+) {
+  const planned = costs
+    .filter((cost) => cost.type === "custom" && isCostActiveForPeriod(cost, period))
+    .reduce(
+      (total, cost) =>
+        total +
+        calculatePlayerCostShare(cost, costs, actuals, period, "forecast", player),
+      0,
+    );
+  const variance = skipPreviousPeriodEffects
+    ? 0
+    : calculatePlayerCostVarianceForPeriod(
+        costs,
+        actuals,
+        getPreviousPeriod(period),
+        player,
+        "additional",
+      );
+  return planned + variance;
+}
+
 function calculatePlayerBaseQuotaForPeriod(
   costs: FeeCalculatorCost[],
   actuals: FeeCalculatorActual[],
@@ -11115,7 +11459,7 @@ function calculatePlayerBaseQuotaForPeriod(
   player: PlayerRecord,
 ) {
   return costs
-    .filter((cost) => isCostActiveForPeriod(cost, period))
+    .filter((cost) => cost.type !== "custom" && isCostActiveForPeriod(cost, period))
     .reduce(
       (total, cost) =>
         total + calculatePlayerCostShare(cost, costs, actuals, period, mode, player),

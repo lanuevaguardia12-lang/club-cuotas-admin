@@ -11,6 +11,14 @@ import { getDataService } from "@/services/data-service";
 const periodSchema = z.string().regex(/^\d{4}-\d{2}$/);
 const numericSchema = z.preprocess(parseLocalizedNumberInput, z.number());
 
+const benefitSchema = z.object({
+  costId: z.string().trim().min(1).optional(),
+  playerIds: z.array(z.string().trim().min(1)).min(1).optional(),
+  fundraisingId: z.string().trim().min(1),
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  percent: numericSchema.pipe(z.number().positive().max(100)),
+});
+
 const costSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(2).max(120),
@@ -134,6 +142,41 @@ export async function saveFeeCalculatorCost(input: unknown) {
   revalidatePath("/notifications");
   revalidatePath("/");
 
+  return { ok: true };
+}
+
+export async function applyFundraisingBenefit(input: unknown) {
+  const user = await getCurrentUser();
+  assertPermission(user, "fee-calculator:manage");
+  const parsed = benefitSchema.parse(input);
+  const dataService = getDataService();
+  await dataService.applyFundraisingBenefit(parsed);
+
+  if (user) {
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "api.request",
+        entityType: "fee",
+        entityId: `${parsed.fundraisingId}:${parsed.period}`,
+        summary: "Beneficio de recaudación aplicado a la cuota.",
+        metadata: {
+          fundraisingId: parsed.fundraisingId,
+          period: parsed.period,
+          percent: parsed.percent,
+          costId: parsed.costId ?? null,
+          playerIds: parsed.playerIds ? JSON.stringify(parsed.playerIds) : "all",
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  revalidatePath("/fee-calculator");
+  revalidatePath("/cash-flow");
+  revalidatePath("/mi-cuota");
+  revalidatePath("/players/[playerId]", "page");
+  revalidatePath("/notifications");
+  revalidatePath("/");
   return { ok: true };
 }
 

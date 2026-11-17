@@ -1,3 +1,5 @@
+import type { FundraisingAccount, FundraisingAllocation } from "@/types/fundraising";
+
 export type DataSourceProvider = "google-sheets" | "postgresql" | "liga-country-sur";
 export type DataSourceStatus = "ready" | "empty" | "error";
 
@@ -63,6 +65,9 @@ export type CashFlowTransactionSource = "manual" | "fee-calculator" | "legacy";
 export type CashFlowScenario = "real" | "draft";
 
 export interface CashFlowTransaction {
+  incomeKind?: "general" | "fundraising";
+  participantPlayerIds?: string[];
+  fundraisingAllocations?: FundraisingAllocation[];
   id: string;
   date?: string;
   period: string;
@@ -149,6 +154,8 @@ export interface CashFlowData extends CashFlowScenarioData {
 }
 
 export interface UpsertCashFlowTransactionInput {
+  incomeKind?: "general" | "fundraising";
+  participantPlayerIds?: string[];
   id?: string;
   date: string;
   period: string;
@@ -220,6 +227,7 @@ export interface PlayerYearMonth {
 }
 
 export interface PlayerProfile {
+  fundraisingAccount?: FundraisingAccount;
   id: string;
   name: string;
   category: string;

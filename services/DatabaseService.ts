@@ -15,6 +15,13 @@ import type { AppSettingsData } from "@/types/settings";
 import type { TeamsData } from "@/types/teams";
 
 export class DatabaseService implements IDataService {
+  async applyFundraisingBenefit(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async getAppSettings(): Promise<AppSettingsData> {
     return {
       settings: DEFAULT_APP_SETTINGS,
@@ -386,6 +393,7 @@ export class DatabaseService implements IDataService {
       playerCalculations: [],
       matchSummaries: [],
       summary: {
+        additionalQuota: 0,
         period,
         previousPeriod,
         quotaStatus: "undefined",

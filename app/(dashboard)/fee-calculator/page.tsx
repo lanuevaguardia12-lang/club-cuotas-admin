@@ -1,7 +1,7 @@
 import { Calculator, Database } from "lucide-react";
 
 import { FeeCalculatorContent } from "@/components/fee-calculator/fee-calculator-content";
-import { hasPermission } from "@/lib/auth/roles";
+import { assertPermission, hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
 
@@ -19,6 +19,7 @@ export default async function FeeCalculatorPage({
   const params = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(params.period ?? "") ? params.period : undefined;
   const user = await getCurrentUser();
+  assertPermission(user, "fee-calculator:manage");
   const data = await getDataService().getFeeCalculatorData(period);
 
   return (

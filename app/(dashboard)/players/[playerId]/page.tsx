@@ -1,3 +1,5 @@
+import { assertPermission } from "@/lib/auth/roles";
+import { getCurrentUser } from "@/lib/auth/session";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
@@ -10,6 +12,7 @@ import {
 
 import { updatePlayerMonthStatus } from "@/app/(dashboard)/players/[playerId]/actions";
 import { MonthStatusSubmitButton } from "@/components/players/month-status-submit-button";
+import { PlayerFundraisingAccount } from "@/components/players/player-fundraising-account";
 import { ReminderButton } from "@/components/reminders/reminder-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +62,7 @@ const historyStatusVariants: Record<
 };
 
 export default async function PlayerPage({ params, searchParams }: PlayerPageProps) {
+  assertPermission(await getCurrentUser(), "players:read");
   const { playerId } = await params;
   const { year } = await searchParams;
   const selectedYear = parseYear(year);
@@ -149,6 +153,8 @@ export default async function PlayerPage({ params, searchParams }: PlayerPagePro
           </CardContent>
         </Card>
       </section>
+
+      <PlayerFundraisingAccount account={profile.fundraisingAccount} />
 
       <section className="grid gap-4">
         <div>

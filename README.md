@@ -1288,6 +1288,36 @@ siendo la liga regular del club y las definiciones se incorporan al proximo/ulti
 partido, las estadisticas y el fixture de su fase. Las tablas de una promocion
 no repiten marcas de ascenso o descenso de la fase regular.
 
+### Recaudaciones y beneficios
+
+En Cash Flow, un ingreso real puede cargarse como **Recaudación** y repartirse
+entre jugadores seleccionados. El reparto conserva los centavos y queda guardado
+junto con el ingreso. La ficha y Mi cuota muestran el saldo y sus movimientos.
+
+En el calculador, **Agregar descuento beneficio** permite elegir una recaudación
+y el porcentaje de la asignación original de cada participante. La vista previa
+muestra el descuento en pesos y el saldo restante; se limita al saldo disponible
+y a la cuota del jugador. Se puede aplicar a la cuota general o a un gasto
+adicional concreto (por ejemplo, camisetas), sin superar el importe de ese gasto
+asignado al jugador. El selector permite usar todas las recaudaciones con saldo
+o una sola, y todos los jugadores con saldo o una selección manual. No se repite
+el mismo beneficio de una recaudación para el mismo jugador, gasto y mes.
+Los movimientos utilizados y los gastos vinculados quedan protegidos contra
+cambios y eliminación.
+
+Administradores y tesoreros pueden ver las cuentas del plantel. Cada jugador
+solo ve la propia en Mi cuota; profesores e hinchas no tienen acceso. Las páginas
+financieras y fichas validan los permisos en el servidor antes de cargar datos.
+
+Los costos **Adicional variable** y los beneficios afectan la cuota final, pero
+quedan fuera de la base utilizada para calcular devoluciones por asistencia.
+Los costos de cancha y DT conservan su tratamiento de base y ajustes reales.
+
+La app agrega las columnas de reparto en `CashFlow` y crea automáticamente
+`RecaudacionBeneficios` al aplicar el primer descuento. No requiere cargar una
+planilla nueva ni modificar variables de entorno. Las aplicaciones se guardan
+como movimientos y su lectura evita duplicados y saldos negativos.
+
 ### Cache
 
 La tabla, los resultados y las estadisticas de la liga comparten una copia

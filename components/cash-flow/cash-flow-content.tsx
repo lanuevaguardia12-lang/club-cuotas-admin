@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { useLoadingRouter } from "@/hooks/use-loading-router";
+import { splitFundraisingAmount } from "@/lib/fundraising";
 import type {
   CashFlowData,
   CashFlowMatrixRow,
@@ -34,11 +35,14 @@ import type {
   CashFlowTransaction,
   CashFlowTransactionType,
 } from "@/types/dashboard";
+import type { PlayerDirectoryItem } from "@/types/players";
 
 interface CashFlowContentProps {
   canWrite: boolean;
   data: CashFlowData;
   initialScenario: CashFlowScenario;
+  players: Pick<PlayerDirectoryItem, "id" | "name" | "status">[];
+  playersError?: string;
 }
 
 const transactionSchema = z
@@ -54,10 +58,29 @@ const transactionSchema = z
     endPeriod: z.string().regex(/^\d{4}-\d{2}$/, "Elegí mes final."),
     notes: z.string().trim().max(500).optional(),
     scenario: z.enum(["real", "draft"]),
+    incomeKind: z.enum(["general", "fundraising"]),
+    participantPlayerIds: z.array(z.string().min(1)),
   })
   .refine((value) => value.endPeriod >= value.startPeriod, {
     message: "El mes final no puede ser anterior al inicial.",
     path: ["endPeriod"],
+  })
+  .superRefine((value, context) => {
+    if (value.incomeKind !== "fundraising") return;
+    if (value.type !== "income" || value.scenario !== "real" || value.repeatsMonthly) {
+      context.addIssue({
+        code: "custom",
+        message: "La recaudación debe ser un ingreso real sin repetición mensual.",
+        path: ["incomeKind"],
+      });
+    }
+    if (value.participantPlayerIds.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Seleccioná los jugadores que participaron.",
+        path: ["participantPlayerIds"],
+      });
+    }
   });
 
 type TransactionFormValues = z.infer<typeof transactionSchema>;
@@ -91,6 +114,8 @@ export function CashFlowContent({
   canWrite,
   data,
   initialScenario,
+  players,
+  playersError,
 }: CashFlowContentProps) {
   const router = useRouter();
   const loadingRouter = useLoadingRouter();
@@ -99,18 +124,39 @@ export function CashFlowContent({
   const [deletingId, setDeletingId] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
   const [message, setMessage] = useState("");
+  const [playerSearch, setPlayerSearch] = useState("");
   const activeData: CashFlowScenarioData = activeScenario === "draft" ? data.draft : data;
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
     register,
     reset,
+    setValue,
     watch,
   } = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
     defaultValues: getDefaultValues(data.period, activeScenario),
   });
   const repeatsMonthly = watch("repeatsMonthly");
+  const transactionType = watch("type");
+  const incomeKind = watch("incomeKind");
+  const participantPlayerIds = watch("participantPlayerIds");
+  const amount = watch("amount");
+  const isFundraising = transactionType === "income" && incomeKind === "fundraising";
+  const allocations = useMemo(
+    () =>
+      Number.isSafeInteger(Math.round(amount * 100)) &&
+      Math.round(amount * 100) > 0 &&
+      participantPlayerIds.length > 0
+        ? splitFundraisingAmount(amount, participantPlayerIds)
+        : [],
+    [amount, participantPlayerIds],
+  );
+  const filteredPlayers = players.filter((player) =>
+    player.name
+      .toLocaleLowerCase("es")
+      .includes(playerSearch.trim().toLocaleLowerCase("es")),
+  );
   const manualTransactions = useMemo(
     () =>
       activeData.transactions
@@ -177,7 +223,11 @@ export function CashFlowContent({
         };
 
     try {
-      await saveCashFlowTransaction(normalizedValues);
+      await saveCashFlowTransaction({
+        ...normalizedValues,
+        incomeKind: isFundraising ? "fundraising" : "general",
+        participantPlayerIds: isFundraising ? values.participantPlayerIds : [],
+      });
       reset(getDefaultValues(data.period, activeScenario));
       setEditingId("");
       setMessage(
@@ -187,6 +237,10 @@ export function CashFlowContent({
       );
       router.refresh();
       window.setTimeout(() => setMessage(""), 2200);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "No se pudo guardar el movimiento.",
+      );
     } finally {
       setLoadingMessage("");
     }
@@ -206,6 +260,8 @@ export function CashFlowContent({
       endPeriod: transaction.endPeriod,
       notes: transaction.notes,
       scenario: transaction.scenario,
+      incomeKind: transaction.incomeKind ?? "general",
+      participantPlayerIds: transaction.participantPlayerIds ?? [],
     });
     document
       .getElementById("cash-flow-form")
@@ -249,6 +305,10 @@ export function CashFlowContent({
       setMessage("Movimiento eliminado");
       router.refresh();
       window.setTimeout(() => setMessage(""), 2200);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "No se pudo eliminar el movimiento.",
+      );
     } finally {
       setDeletingId("");
       setLoadingMessage("");
@@ -354,6 +414,13 @@ export function CashFlowContent({
                 <Field label="Tipo" error={errors.type?.message}>
                   <select
                     {...register("type")}
+                    onChange={(event) => {
+                      setValue("type", event.target.value as CashFlowTransactionType);
+                      if (event.target.value !== "income") {
+                        setValue("incomeKind", "general");
+                        setValue("participantPlayerIds", []);
+                      }
+                    }}
                     disabled={!canWrite}
                     className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
                   >
@@ -366,7 +433,7 @@ export function CashFlowContent({
                   <input
                     type="number"
                     min={0}
-                    step="0.000001"
+                    step={isFundraising ? "0.01" : "0.000001"}
                     {...register("amount", { valueAsNumber: true })}
                     disabled={!canWrite}
                     className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
@@ -392,12 +459,126 @@ export function CashFlowContent({
                 </Field>
               </div>
 
+              {transactionType === "income" && activeScenario === "real" ? (
+                <Field label="Tipo de ingreso" error={errors.incomeKind?.message}>
+                  <select
+                    {...register("incomeKind")}
+                    onChange={(event) => {
+                      const kind = event.target.value as "general" | "fundraising";
+                      setValue("incomeKind", kind);
+                      if (kind === "fundraising") setValue("repeatsMonthly", false);
+                    }}
+                    disabled={!canWrite}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  >
+                    <option value="general">Ingreso general</option>
+                    <option value="fundraising">Recaudación</option>
+                  </select>
+                </Field>
+              ) : null}
+
+              {isFundraising ? (
+                <fieldset className="border-border grid gap-3 rounded-md border p-3">
+                  <legend className="px-1 text-sm font-medium">
+                    Jugadores que participaron
+                  </legend>
+                  <p className="text-muted-foreground text-sm">
+                    La recaudación se reparte entre los jugadores seleccionados y queda
+                    como saldo a favor en cada ficha.
+                  </p>
+                  <input
+                    type="search"
+                    aria-label="Buscar participantes"
+                    placeholder="Buscar jugador"
+                    value={playerSearch}
+                    onChange={(event) => setPlayerSearch(event.target.value)}
+                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+                  />
+                  <div className="grid max-h-60 gap-1 overflow-y-auto">
+                    {filteredPlayers.map((player) => (
+                      <label
+                        key={player.id}
+                        className="flex min-h-10 items-center gap-3 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          value={player.id}
+                          {...register("participantPlayerIds")}
+                          disabled={!canWrite}
+                          className="accent-primary size-4"
+                        />
+                        <span>
+                          {player.name}
+                          {player.status === "inactive" ? " (inactivo)" : ""}
+                        </span>
+                      </label>
+                    ))}
+                    {filteredPlayers.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        No hay jugadores para mostrar.
+                      </p>
+                    ) : null}
+                  </div>
+                  {playersError ? (
+                    <p role="alert" className="text-destructive text-sm">
+                      {playersError}
+                    </p>
+                  ) : null}
+                  {errors.participantPlayerIds?.message ? (
+                    <p role="alert" className="text-destructive text-sm">
+                      {errors.participantPlayerIds.message}
+                    </p>
+                  ) : null}
+                  <div
+                    aria-live="polite"
+                    className="bg-muted grid gap-2 rounded-md p-3 text-sm"
+                  >
+                    <p className="font-medium">
+                      {participantPlayerIds.length} jugadores seleccionados
+                    </p>
+                    {allocations.length > 0 ? (
+                      <>
+                        <p>
+                          {formatPreciseCurrency(amount)} ÷ {allocations.length} jugadores
+                          {allocations.every(
+                            (allocation) => allocation.amount === allocations[0].amount,
+                          )
+                            ? ` = ${formatPreciseCurrency(allocations[0].amount)} a favor de cada uno.`
+                            : ". Los centavos restantes se distribuyen entre los participantes."}
+                        </p>
+                        <ul className="grid max-h-44 gap-1 overflow-y-auto">
+                          {allocations.map((allocation) => (
+                            <li
+                              key={allocation.playerId}
+                              className="flex justify-between gap-2"
+                            >
+                              <span>
+                                {players.find(
+                                  (player) => player.id === allocation.playerId,
+                                )?.name ?? allocation.playerId}
+                              </span>
+                              <span className="shrink-0 font-medium">
+                                {formatPreciseCurrency(allocation.amount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <p>
+                        Ingresá el monto y seleccioná participantes para ver el reparto.
+                      </p>
+                    )}
+                  </div>
+                </fieldset>
+              ) : null}
+
               <label className="border-border bg-background flex min-h-10 items-center justify-between gap-3 rounded-md border px-3">
                 <span className="text-sm font-medium">Movimiento recurrente</span>
                 <input
                   type="checkbox"
                   {...register("repeatsMonthly")}
-                  disabled={!canWrite}
+                  disabled={!canWrite || isFundraising}
                   className="accent-primary size-5"
                 />
               </label>
@@ -433,12 +614,19 @@ export function CashFlowContent({
               </Field>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Button type="submit" disabled={!canWrite || isSubmitting}>
+                <Button
+                  type="submit"
+                  disabled={
+                    !canWrite || isSubmitting || (isFundraising && Boolean(playersError))
+                  }
+                >
                   {editingId ? <Save /> : <Plus />}
                   {editingId ? "Actualizar" : "Guardar"}
                 </Button>
                 {message ? (
-                  <span className="text-primary text-sm font-medium">{message}</span>
+                  <span role="status" className="text-sm font-medium">
+                    {message}
+                  </span>
                 ) : null}
               </div>
             </form>
@@ -520,7 +708,9 @@ function CashFlowTransactionsList({
                       <Badge
                         variant={transaction.type === "income" ? "success" : "danger"}
                       >
-                        {typeLabels[transaction.type]}
+                        {transaction.incomeKind === "fundraising"
+                          ? "Recaudación"
+                          : typeLabels[transaction.type]}
                       </Badge>
                       {transaction.repeatsMonthly ? (
                         <Badge variant="secondary">Recurrente</Badge>
@@ -538,6 +728,13 @@ function CashFlowTransactionsList({
                 </div>
                 {transaction.notes ? (
                   <p className="text-muted-foreground text-sm">{transaction.notes}</p>
+                ) : null}
+                {transaction.incomeKind === "fundraising" ? (
+                  <p className="text-muted-foreground text-sm">
+                    Saldo distribuido entre{" "}
+                    {transaction.participantPlayerIds?.length ?? 0} jugadores. Una vez
+                    aplicado un beneficio, la recaudación queda protegida contra cambios.
+                  </p>
                 ) : null}
                 <div className="flex justify-end gap-2">
                   <Button
@@ -880,7 +1077,18 @@ function getDefaultValues(
     type: "expense",
     notes: "",
     scenario,
+    incomeKind: "general",
+    participantPlayerIds: [],
   };
+}
+
+function formatPreciseCurrency(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    currency: "ARS",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    style: "currency",
+  }).format(value);
 }
 
 function formatCurrency(value: number) {
