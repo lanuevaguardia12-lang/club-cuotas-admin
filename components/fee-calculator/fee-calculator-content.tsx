@@ -15,12 +15,13 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import {
   applyFundraisingBenefit,
+  deleteFundraisingBenefit,
   deleteFeeCalculatorCost,
   resetFeeCalculatorCosts,
   saveFeeCalculatorActual,
@@ -109,13 +110,14 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
   const router = useRouter();
   const loadingRouter = useLoadingRouter();
   const [savingMessage, setSavingMessage] = useState("");
+  const [costError, setCostError] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
   const [editingCostName, setEditingCostName] = useState("");
   const [repeatMonths, setRepeatMonths] = useState<string[]>([]);
   const [repeatMessage, setRepeatMessage] = useState("");
   const [isRepeating, setIsRepeating] = useState(false);
   const {
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
     handleSubmit,
     register,
     reset,
@@ -124,6 +126,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     resolver: zodResolver(costSchema),
     defaultValues: getDefaultCostValues(data),
   });
+  const editingCostId = watch("id");
   const selectedType = watch("type");
   const assignmentMode = watch("assignmentMode");
   const assignedPlayerIds = watch("assignedPlayerIds") ?? [];
@@ -157,6 +160,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
 
   async function handleSaveCost(values: CostSubmitValues) {
     setSavingMessage("");
+    setCostError("");
     const isEditing = Boolean(editingCostName && values.id);
     const selectedAssignedPlayerIds =
       values.assignmentMode === "custom" ? values.assignedPlayerIds : [];
@@ -176,6 +180,10 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
       setSavingMessage(isEditing ? "Costo actualizado" : "Costo guardado");
       router.refresh();
       window.setTimeout(() => setSavingMessage(""), 2200);
+    } catch (cause) {
+      setCostError(
+        cause instanceof Error ? cause.message : "No se pudo guardar el costo.",
+      );
     } finally {
       setLoadingMessage("");
     }
@@ -255,6 +263,7 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
   }
 
   function handleEditCost(cost: FeeCalculatorCost) {
+    setCostError("");
     reset({
       id: cost.id,
       name: cost.name,
@@ -268,14 +277,19 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
       notes: cost.notes,
     });
     setEditingCostName(cost.name);
-    document
-      .getElementById("fee-cost-form")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(
+      () =>
+        document
+          .getElementById("fee-cost-form")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      0,
+    );
   }
 
   function cancelEdit() {
     reset(getDefaultCostValues(data));
     setEditingCostName("");
+    setCostError("");
   }
 
   function toggleRepeatMonth(period: string) {
@@ -335,6 +349,190 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
     );
   }
 
+  const costEditor = (
+    <div className="grid gap-3">
+      <CardHeader>
+        <CardTitle>
+          {editingCostName ? "Editar costo y beneficios" : "Nuevo costo"}
+        </CardTitle>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TemplateButton label="Cancha" onClick={() => applyTemplate("court")} />
+          <TemplateButton label="DT" onClick={() => applyTemplate("coach")} />
+          <TemplateButton label="Carnet" onClick={() => applyTemplate("carnet")} />
+          <TemplateButton label="Pelotas" onClick={() => applyTemplate("balls")} />
+          <TemplateButton label="Aguas" onClick={() => applyTemplate("water")} />
+          <TemplateButton
+            label="Adicional Caja"
+            onClick={() => applyTemplate("cashExtra")}
+          />
+          <TemplateButton label="Recupero" onClick={() => applyTemplate("oldRecovery")} />
+          <TemplateButton label="Redondeo" onClick={() => applyTemplate("rounding")} />
+          <TemplateButton label="Otro" onClick={() => applyTemplate("custom")} />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <form
+          id="fee-cost-form"
+          className="grid gap-4"
+          onSubmit={handleSubmit(handleSaveCost)}
+        >
+          <input type="hidden" {...register("id")} />
+          {editingCostName ? (
+            <div className="border-primary/30 bg-primary/10 text-primary flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+              <span>Editando {editingCostName}</span>
+              <Button type="button" variant="ghost" size="sm" onClick={cancelEdit}>
+                <X />
+                Cancelar
+              </Button>
+            </div>
+          ) : null}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Nombre del costo" error={errors.name?.message}>
+              <input
+                {...register("name")}
+                className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+              />
+            </Field>
+
+            <Field label="Tipo" error={errors.type?.message}>
+              <select
+                {...register("type")}
+                className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+              >
+                <option value="fixed">Fijo</option>
+                <option value="court">Cancha</option>
+                <option value="coach">Director técnico</option>
+                <option value="custom">Adicional variable</option>
+              </select>
+              <p className="text-muted-foreground text-xs">
+                Los adicionales variables se suman a la cuota final y quedan fuera de la
+                base de devoluciones.
+              </p>
+            </Field>
+
+            <Field label="Mes del costo" error={errors.period?.message}>
+              <input
+                type="month"
+                {...register("period")}
+                className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+              />
+            </Field>
+
+            <Field
+              label={
+                selectedType === "court"
+                  ? "Costo por jornada"
+                  : selectedType === "coach"
+                    ? "Costo por hora"
+                    : "Monto unitario"
+              }
+              error={errors.amount?.message}
+            >
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="Ej: 240.000"
+                {...register("amount", { setValueAs: parseLocalizedNumberInput })}
+                className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+              />
+            </Field>
+
+            <Field label="Dividir por personas" error={errors.splitBetween?.message}>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                {...register("splitBetween", { valueAsNumber: true })}
+                className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+              />
+            </Field>
+
+            <Field label="Aplicar costo a" error={errors.assignedPlayerIds?.message}>
+              <div className="grid gap-2">
+                <div className="border-input bg-background grid gap-2 rounded-md border p-3 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="all_active"
+                      {...register("assignmentMode")}
+                    />
+                    <span>Todos los activos</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="radio" value="custom" {...register("assignmentMode")} />
+                    <span>Elegir jugadores</span>
+                  </label>
+                </div>
+                <select
+                  multiple
+                  size={Math.min(Math.max(activePlayers.length, 4), 8)}
+                  disabled={assignmentMode !== "custom"}
+                  {...register("assignedPlayerIds")}
+                  className="border-input bg-background focus:ring-ring min-h-28 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 disabled:opacity-60"
+                >
+                  {activePlayers.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-muted-foreground text-xs">
+                  El costo se divide por el número cargado arriba y esa parte se suma solo
+                  a los jugadores elegidos.
+                  {assignmentMode === "custom"
+                    ? ` Seleccionados: ${assignedPlayerIds.length}.`
+                    : ` Aplica a ${activePlayers.length} activos.`}
+                </p>
+              </div>
+            </Field>
+
+            <Field
+              label={
+                selectedType === "court"
+                  ? "Canchas pronosticadas"
+                  : selectedType === "coach"
+                    ? "Horas previstas"
+                    : "Cantidad estimada"
+              }
+              error={errors.forecastUnits?.message}
+            >
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                {...register("forecastUnits", { valueAsNumber: true })}
+                className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
+              />
+            </Field>
+          </div>
+
+          <Field label="Notas" error={errors.notes?.message}>
+            <textarea
+              rows={3}
+              {...register("notes")}
+              className="border-input bg-background focus:ring-ring rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
+            />
+          </Field>
+
+          {costError ? (
+            <p role="alert" className="text-destructive text-sm">
+              {costError}
+            </p>
+          ) : null}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button type="submit" disabled={isSubmitting}>
+              {editingCostName ? <Save /> : <Plus />}
+              {editingCostName ? "Guardar cambios del costo" : "Guardar costo"}
+            </Button>
+            {savingMessage ? (
+              <span className="text-primary text-sm font-medium">{savingMessage}</span>
+            ) : null}
+          </div>
+        </form>
+      </CardContent>
+    </div>
+  );
+
   return (
     <section className="grid gap-6">
       <LoadingModal open={Boolean(loadingMessage)} description={loadingMessage} />
@@ -388,206 +586,38 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
 
       <FeeCalculatorNotice data={data} rows={sortedCalculations} />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Nuevo costo</CardTitle>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <TemplateButton label="Cancha" onClick={() => applyTemplate("court")} />
-              <TemplateButton label="DT" onClick={() => applyTemplate("coach")} />
-              <TemplateButton label="Carnet" onClick={() => applyTemplate("carnet")} />
-              <TemplateButton label="Pelotas" onClick={() => applyTemplate("balls")} />
-              <TemplateButton label="Aguas" onClick={() => applyTemplate("water")} />
-              <TemplateButton
-                label="Adicional Caja"
-                onClick={() => applyTemplate("cashExtra")}
-              />
-              <TemplateButton
-                label="Recupero"
-                onClick={() => applyTemplate("oldRecovery")}
-              />
-              <TemplateButton
-                label="Redondeo"
-                onClick={() => applyTemplate("rounding")}
-              />
-              <TemplateButton label="Otro" onClick={() => applyTemplate("custom")} />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form
-              id="fee-cost-form"
-              className="grid gap-4"
-              onSubmit={handleSubmit(handleSaveCost)}
-            >
-              <input type="hidden" {...register("id")} />
-              {editingCostName ? (
-                <div className="border-primary/30 bg-primary/10 text-primary flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
-                  <span>Editando {editingCostName}</span>
-                  <Button type="button" variant="ghost" size="sm" onClick={cancelEdit}>
-                    <X />
-                    Cancelar
-                  </Button>
-                </div>
-              ) : null}
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Nombre del costo" error={errors.name?.message}>
-                  <input
-                    {...register("name")}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
-                <Field label="Tipo" error={errors.type?.message}>
-                  <select
-                    {...register("type")}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  >
-                    <option value="fixed">Fijo</option>
-                    <option value="court">Cancha</option>
-                    <option value="coach">Director técnico</option>
-                    <option value="custom">Adicional variable</option>
-                  </select>
-                  <p className="text-muted-foreground text-xs">
-                    Los adicionales variables se suman a la cuota final y quedan fuera de
-                    la base de devoluciones.
-                  </p>
-                </Field>
-
-                <Field label="Mes del costo" error={errors.period?.message}>
-                  <input
-                    type="month"
-                    {...register("period")}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
-                <Field
-                  label={
-                    selectedType === "court"
-                      ? "Costo por jornada"
-                      : selectedType === "coach"
-                        ? "Costo por hora"
-                        : "Monto unitario"
-                  }
-                  error={errors.amount?.message}
-                >
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="Ej: 240.000"
-                    {...register("amount", { setValueAs: parseLocalizedNumberInput })}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
-                <Field label="Dividir por personas" error={errors.splitBetween?.message}>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    {...register("splitBetween", { valueAsNumber: true })}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-
-                <Field label="Aplicar costo a" error={errors.assignedPlayerIds?.message}>
-                  <div className="grid gap-2">
-                    <div className="border-input bg-background grid gap-2 rounded-md border p-3 text-sm">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          value="all_active"
-                          {...register("assignmentMode")}
-                        />
-                        <span>Todos los activos</span>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          value="custom"
-                          {...register("assignmentMode")}
-                        />
-                        <span>Elegir jugadores</span>
-                      </label>
-                    </div>
-                    <select
-                      multiple
-                      size={Math.min(Math.max(activePlayers.length, 4), 8)}
-                      disabled={assignmentMode !== "custom"}
-                      {...register("assignedPlayerIds")}
-                      className="border-input bg-background focus:ring-ring min-h-28 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 disabled:opacity-60"
-                    >
-                      {activePlayers.map((player) => (
-                        <option key={player.id} value={player.id}>
-                          {player.name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-muted-foreground text-xs">
-                      El costo se divide por el número cargado arriba y esa parte se suma
-                      solo a los jugadores elegidos.
-                      {assignmentMode === "custom"
-                        ? ` Seleccionados: ${assignedPlayerIds.length}.`
-                        : ` Aplica a ${activePlayers.length} activos.`}
-                    </p>
-                  </div>
-                </Field>
-
-                <Field
-                  label={
-                    selectedType === "court"
-                      ? "Canchas pronosticadas"
-                      : selectedType === "coach"
-                        ? "Horas previstas"
-                        : "Cantidad estimada"
-                  }
-                  error={errors.forecastUnits?.message}
-                >
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    {...register("forecastUnits", { valueAsNumber: true })}
-                    className="border-input bg-background focus:ring-ring h-10 rounded-md border px-3 text-sm outline-none focus:ring-2"
-                  />
-                </Field>
-              </div>
-
-              <Field label="Notas" error={errors.notes?.message}>
-                <textarea
-                  rows={3}
-                  {...register("notes")}
-                  className="border-input bg-background focus:ring-ring rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-                />
-              </Field>
-
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Button type="submit" disabled={isSubmitting}>
-                  {editingCostName ? <Save /> : <Plus />}
-                  {editingCostName ? "Actualizar costo" : "Guardar costo"}
-                </Button>
-                {savingMessage ? (
-                  <span className="text-primary text-sm font-medium">
-                    {savingMessage}
-                  </span>
-                ) : null}
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        <RefundPolicyEditor period={data.period} rules={data.refundPolicy} />
-      </div>
-
-      <FundraisingBenefitPanel key={data.period} data={data} />
-
-      <CostList
-        canMaintain={canMaintain}
-        costs={currentPeriodCosts}
-        onEditCost={handleEditCost}
-        period={data.period}
-        players={data.players}
-      />
+      <Card id="costs-and-benefits">
+        <CardHeader>
+          <CardTitle>Costos y beneficios</CardTitle>
+          <p className="text-muted-foreground text-sm">
+            Cargá el costo y administrá sus descuentos en la misma tarjeta. Al editarlo,
+            se conservan los beneficios hasta el nuevo importe; cualquier diferencia
+            vuelve al saldo del jugador.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          {!editingCostName ? costEditor : null}
+          <CostList
+            canMaintain={canMaintain}
+            costs={currentPeriodCosts}
+            onEditCost={handleEditCost}
+            onCostRemoved={cancelEdit}
+            period={data.period}
+            players={data.players}
+            data={data}
+            editingCostId={editingCostName ? editingCostId : undefined}
+            editor={costEditor}
+            hasUnsavedChanges={isDirty || isSubmitting}
+          />
+          <details className="border-border rounded-md border p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              Beneficios sobre la cuota general
+            </summary>
+            <FundraisingBenefitPanel key={data.period} data={data} embedded />
+          </details>
+        </CardContent>
+      </Card>
+      <RefundPolicyEditor period={data.period} rules={data.refundPolicy} />
 
       <AdjustmentList data={data} />
 
@@ -613,11 +643,22 @@ export function FeeCalculatorContent({ canMaintain, data }: FeeCalculatorContent
   );
 }
 
-function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
+function FundraisingBenefitPanel({
+  data,
+  cost,
+  embedded = false,
+  blocked = false,
+}: {
+  data: FeeCalculatorData;
+  cost?: FeeCalculatorCost;
+  embedded?: boolean;
+  blocked?: boolean;
+}) {
+  const Container = embedded ? "div" : Card;
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [sourceId, setSourceId] = useState(ALL_FUNDRAISING_SOURCES);
-  const [costId, setCostId] = useState("");
+  const costId = cost?.id ?? "";
   const [selectionMode, setSelectionMode] = useState("all");
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
   const [percent, setPercent] = useState("50");
@@ -625,13 +666,10 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const applications = (data.benefitApplications ?? []).filter(
-    (item) => item.period === data.period,
+    (item) => item.period === data.period && (item.costId ?? "") === costId,
   );
   const sources = (data.fundraisingSources ?? []).filter(
     (source) => source.period <= data.period,
-  );
-  const targetCosts = data.costs.filter(
-    (cost) => cost.active && cost.type === "custom" && cost.startPeriod === data.period,
   );
   const selectedSources = sources.filter(
     (source) => sourceId === ALL_FUNDRAISING_SOURCES || source.id === sourceId,
@@ -656,9 +694,33 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
     previews.reduce((total, preview) => total + preview.discount, 0),
   );
 
+  async function handleDeleteBenefit(id: string) {
+    if (saving || blocked) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await deleteFundraisingBenefit(id);
+      setMessage("Beneficio eliminado. El importe volvió al saldo de los jugadores.");
+      router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "No se pudo eliminar el beneficio.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleApply(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selectedSources.length === 0 || !validPercent || totalDiscount <= 0 || saving)
+    if (
+      blocked ||
+      selectedSources.length === 0 ||
+      !validPercent ||
+      totalDiscount <= 0 ||
+      saving
+    )
       return;
     setSaving(true);
     setError("");
@@ -686,10 +748,12 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
   }
 
   return (
-    <Card>
-      <LoadingModal open={saving} description="Aplicando beneficio de recaudación..." />
+    <Container>
+      <LoadingModal open={saving} description="Actualizando beneficios y saldos..." />
       <CardHeader>
-        <CardTitle>Beneficios de recaudación</CardTitle>
+        <CardTitle className="text-base">
+          {cost ? `Beneficios para ${cost.name}` : "Beneficios de la cuota general"}
+        </CardTitle>
         <p className="text-muted-foreground text-sm">
           Usá el saldo de quienes participaron para descontarlo de su cuota de{" "}
           {formatPeriod(data.period)}. La cuota base para devoluciones se mantiene
@@ -703,39 +767,17 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
           className="w-fit"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          aria-controls="fundraising-benefit-form"
+          aria-controls={`fundraising-benefit-${costId || "general"}`}
         >
           {open ? <X /> : <Plus />}
           {open ? "Cerrar beneficio" : "Agregar descuento beneficio"}
         </Button>
         {open ? (
           <form
-            id="fundraising-benefit-form"
+            id={`fundraising-benefit-${costId || "general"}`}
             className="grid gap-4"
             onSubmit={handleApply}
           >
-            <Field label="Aplicar descuento a">
-              <select
-                value={costId}
-                onChange={(event) => {
-                  setCostId(event.target.value);
-                  setSelectedPlayerIds([]);
-                  setMessage("");
-                }}
-                className="border-input bg-background h-10 rounded-md border px-3 text-sm"
-              >
-                <option value="">Cuota general</option>
-                {targetCosts.map((cost) => (
-                  <option key={cost.id} value={cost.id}>
-                    {cost.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-muted-foreground text-xs">
-                Para camisetas u otro gasto puntual, cargalo como Adicional variable y
-                elegilo aquí. El descuento queda asociado a ese gasto.
-              </p>
-            </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Recaudación">
                 <select
@@ -878,9 +920,14 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
             <p className="text-muted-foreground text-xs">
               Se registra el gasto, el descuento y el saldo restante en cada cuenta
               corriente. Un jugador no puede recibir dos veces el mismo beneficio de una
-              recaudación para el mismo gasto y mes. Los gastos con beneficios aplicados
-              quedan protegidos contra edición o eliminación.
+              recaudación para el mismo gasto y mes. Podés eliminar un beneficio para
+              devolver su importe al saldo y volver a aplicarlo con otro porcentaje.
             </p>
+            {blocked ? (
+              <p role="status" className="text-muted-foreground text-sm">
+                Guardá o cancelá los cambios del costo antes de modificar sus beneficios.
+              </p>
+            ) : null}
             {data.summary.quotaStatus !== "defined" ? (
               <p className="text-muted-foreground text-sm">
                 Definí la cuota del mes antes de aplicar el beneficio.
@@ -890,6 +937,7 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
               type="submit"
               disabled={
                 saving ||
+                blocked ||
                 selectedSources.length === 0 ||
                 !validPercent ||
                 data.summary.quotaStatus !== "defined" ||
@@ -941,12 +989,22 @@ function FundraisingBenefitPanel({ data }: { data: FeeCalculatorData }) {
                     </li>
                   ))}
                 </ul>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  disabled={saving || blocked}
+                  onClick={() => handleDeleteBenefit(application.id)}
+                >
+                  <Trash2 /> Eliminar beneficio y devolver saldo
+                </Button>
               </details>
             ))}
           </div>
         ) : null}
       </CardContent>
-    </Card>
+    </Container>
   );
 }
 
@@ -1150,19 +1208,30 @@ function RefundPolicyEditor({
 }
 
 function CostList({
+  data,
+  editingCostId,
+  editor,
+  hasUnsavedChanges,
   canMaintain,
   costs,
   onEditCost,
+  onCostRemoved,
   period,
   players,
 }: {
+  data: FeeCalculatorData;
+  editingCostId?: string;
+  editor: ReactNode;
+  hasUnsavedChanges: boolean;
   canMaintain: boolean;
   costs: FeeCalculatorCost[];
   onEditCost: (cost: FeeCalculatorCost) => void;
+  onCostRemoved: () => void;
   period: string;
   players: FeeCalculatorData["players"];
 }) {
   const router = useRouter();
+  const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
   const [resettingCosts, setResettingCosts] = useState(false);
@@ -1192,6 +1261,11 @@ function CostList({
             </Button>
           ) : null}
         </div>
+        {error ? (
+          <p role="alert" className="text-destructive text-sm">
+            {error}
+          </p>
+        ) : null}
         <Card>
           <CardContent className="text-muted-foreground p-5 text-sm">
             Todavía no hay costos cargados para {formatPeriod(period)}.
@@ -1202,12 +1276,18 @@ function CostList({
   }
 
   async function handleDelete(costId: string) {
+    setError("");
     setDeletingId(costId);
     setLoadingMessage("Eliminando costo...");
 
     try {
       await deleteFeeCalculatorCost(costId);
+      if (editingCostId === costId) onCostRemoved();
       router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "No se pudo completar la operación.",
+      );
     } finally {
       setDeletingId("");
       setLoadingMessage("");
@@ -1224,11 +1304,17 @@ function CostList({
     }
 
     setResettingCosts(true);
+    setError("");
     setLoadingMessage("Limpiando costos del calculador...");
 
     try {
       await resetFeeCalculatorCosts();
+      onCostRemoved();
       router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "No se pudo completar la operación.",
+      );
     } finally {
       setResettingCosts(false);
       setLoadingMessage("");
@@ -1259,9 +1345,14 @@ function CostList({
           </Button>
         ) : null}
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      {error ? (
+        <p role="alert" className="text-destructive text-sm">
+          {error}
+        </p>
+      ) : null}
+      <div className="grid gap-3">
         {costs.map((cost) => (
-          <Card key={cost.id}>
+          <Card key={cost.id} id={`cost-${cost.id}`}>
             <CardContent className="grid gap-4 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1278,7 +1369,7 @@ function CostList({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`Editar ${cost.name}`}
+                    aria-label={`Editar costo y beneficios de ${cost.name}`}
                     onClick={() => onEditCost(cost)}
                   >
                     <Pencil />
@@ -1315,6 +1406,19 @@ function CostList({
                   )}
                 />
               </div>
+              {editingCostId === cost.id ? editor : null}
+              {cost.type === "custom" ||
+              data.benefitApplications?.some(
+                (application) => application.costId === cost.id,
+              ) ? (
+                <FundraisingBenefitPanel
+                  key={`${cost.id}:${data.period}`}
+                  data={data}
+                  cost={cost}
+                  embedded
+                  blocked={editingCostId === cost.id && hasUnsavedChanges}
+                />
+              ) : null}
               {cost.notes ? (
                 <p className="text-muted-foreground text-sm">{cost.notes}</p>
               ) : null}

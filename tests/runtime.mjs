@@ -106,6 +106,7 @@ export function createSheetsMock(initialRows = {}) {
   const rows = clone(initialRows);
   const calls = { reads: 0, writes: 0, clients: 0, active: 0, maxActive: 0 };
   let readError;
+  let batchWriteError;
   const nameOf = (range) => range.split("!")[0].replace(/^'|'$/g, "");
   function apply(range, values) {
     const name = nameOf(range);
@@ -152,11 +153,43 @@ export function createSheetsMock(initialRows = {}) {
       values,
       async get() {
         return {
-          data: { sheets: Object.keys(rows).map((title) => ({ properties: { title } })) },
+          data: {
+            sheets: Object.keys(rows).map((title, sheetId) => ({
+              properties: { title, sheetId },
+            })),
+          },
         };
       },
-      async batchUpdate() {
+      async batchUpdate({ requestBody }) {
+        if (batchWriteError) throw batchWriteError;
         calls.writes++;
+        for (const request of requestBody.requests ?? []) {
+          if (request.addSheet) {
+            rows[request.addSheet.properties.title] ??= [];
+            continue;
+          }
+          const operation = request.updateCells ?? request.appendCells;
+          if (!operation) continue;
+          const table =
+            rows[Object.keys(rows)[operation.sheetId ?? operation.range?.sheetId]];
+          const decoded = (operation.rows ?? []).map((row) =>
+            row.values.map(
+              (cell) =>
+                cell.userEnteredValue?.numberValue ??
+                cell.userEnteredValue?.stringValue ??
+                "",
+            ),
+          );
+          if (request.appendCells) table.push(...decoded);
+          else
+            decoded.forEach((row, i) =>
+              row.forEach((value, j) => {
+                (table[operation.range.startRowIndex + i] ??= [])[
+                  operation.range.startColumnIndex + j
+                ] = value;
+              }),
+            );
+        }
         return { data: {} };
       },
     },
@@ -164,6 +197,9 @@ export function createSheetsMock(initialRows = {}) {
   return {
     rows,
     calls,
+    failBatchWrites(error) {
+      batchWriteError = error;
+    },
     failReads(error) {
       readError = error;
     },

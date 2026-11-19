@@ -208,14 +208,48 @@ export function buildFundraisingLedger(
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const seen = new Set<string>();
   const usedByCost = new Map<string, number>();
-  const effectiveApplications: FundraisingBenefitApplication[] = [];
+  const effectiveApplications = new Map<string, FundraisingBenefitApplication>();
+  const events: FundraisingBenefitApplication[] = [];
   for (const application of applications) {
+    if (application.reversalOf) {
+      const original = effectiveApplications.get(application.reversalOf);
+      if (!original) continue;
+      const source = sourceMap.get(original.fundraisingId);
+      if (!source) continue;
+      for (const allocation of original.allocations) {
+        const credit = source.allocations.find(
+          (item) => item.playerId === allocation.playerId,
+        );
+        if (!credit) continue;
+        credit.usedAmount = roundMoney(credit.usedAmount - allocation.amount);
+        credit.balance = roundMoney(credit.balance + allocation.amount);
+        seen.delete(
+          `${original.fundraisingId}:${original.period}:${original.costId ?? ""}:${allocation.playerId}`,
+        );
+        const costKey = `${original.period}:${original.costId}:${allocation.playerId}`;
+        if (original.costId)
+          usedByCost.set(
+            costKey,
+            roundMoney((usedByCost.get(costKey) ?? 0) - allocation.amount),
+          );
+      }
+      source.balance = roundMoney(
+        source.allocations.reduce((total, item) => total + item.balance, 0),
+      );
+      effectiveApplications.delete(original.id);
+      events.push({
+        ...original,
+        id: application.id,
+        createdAt: application.createdAt,
+        reversalOf: original.id,
+      });
+      continue;
+    }
     const source = sourceMap.get(application.fundraisingId);
     if (!source || source.period > application.period) continue;
     const allocations = application.allocations.flatMap((allocation) => {
       const key = `${application.fundraisingId}:${application.period}:${application.costId ?? ""}:${allocation.playerId}`;
       if (seen.has(key)) return [];
-      seen.add(key);
       const credit = source.allocations.find(
         (item) => item.playerId === allocation.playerId,
       );
@@ -228,22 +262,30 @@ export function buildFundraisingLedger(
       const amount = roundMoney(
         Math.min(allocation.amount, credit.balance, costAvailable),
       );
+      if (amount <= 0) return [];
+      seen.add(key);
       if (application.costId) usedByCost.set(costKey, roundMoney(costUsed + amount));
       credit.usedAmount = roundMoney(credit.usedAmount + amount);
       credit.balance = roundMoney(credit.balance - amount);
-      return amount > 0 ? [{ ...allocation, amount }] : [];
+      return [{ ...allocation, amount }];
     });
     source.balance = roundMoney(
       source.allocations.reduce((total, item) => total + item.balance, 0),
     );
-    if (allocations.length) effectiveApplications.push({ ...application, allocations });
+    if (allocations.length) {
+      const effective = { ...application, allocations };
+      effectiveApplications.set(effective.id, effective);
+      events.push(effective);
+    }
   }
-  return { sources, applications: effectiveApplications };
+  return { sources, applications: [...effectiveApplications.values()], events };
 }
 
 export function buildFundraisingAccount(
   playerId: string,
-  ledger: ReturnType<typeof buildFundraisingLedger>,
+  ledger: Pick<ReturnType<typeof buildFundraisingLedger>, "sources" | "applications"> & {
+    events?: FundraisingBenefitApplication[];
+  },
 ): FundraisingAccount {
   const movements: FundraisingAccount["movements"] = [];
   for (const source of ledger.sources) {
@@ -259,7 +301,7 @@ export function buildFundraisingAccount(
         balance: 0,
       });
   }
-  for (const application of ledger.applications) {
+  for (const application of ledger.events ?? ledger.applications) {
     const allocation = application.allocations.find((item) => item.playerId === playerId);
     if (allocation)
       movements.push({
@@ -269,18 +311,16 @@ export function buildFundraisingAccount(
           ? `${application.costName} · ${application.concept}`
           : application.concept,
         period: application.period,
-        kind: "benefit",
+        kind: application.reversalOf ? "reversal" : "benefit",
         amount: allocation.amount,
         balance: 0,
       });
   }
-  movements.sort(
-    (a, b) => a.date.localeCompare(b.date) || (a.kind === "credit" ? -1 : 1),
-  );
+  movements.sort((a, b) => a.date.localeCompare(b.date));
   let balance = 0;
   for (const movement of movements) {
     balance = roundMoney(
-      balance + (movement.kind === "credit" ? movement.amount : -movement.amount),
+      balance + (movement.kind === "benefit" ? -movement.amount : movement.amount),
     );
     movement.balance = balance;
   }
@@ -292,8 +332,11 @@ export function buildFundraisingAccount(
     ),
     totalUsed: roundMoney(
       movements
-        .filter((item) => item.kind === "benefit")
-        .reduce((sum, item) => sum + item.amount, 0),
+        .filter((item) => item.kind !== "credit")
+        .reduce(
+          (sum, item) => sum + (item.kind === "benefit" ? item.amount : -item.amount),
+          0,
+        ),
     ),
     balance,
     movements,

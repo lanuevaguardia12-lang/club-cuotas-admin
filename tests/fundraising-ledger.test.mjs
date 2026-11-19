@@ -191,11 +191,6 @@ test("benefit targets camisetas, combines balances and never discounts more than
   assert.ok(
     data.benefitApplications.every((application) => application.costId === "shirts"),
   );
-  await assert.rejects(service.deleteFeeCalculatorCost("shirts"), /beneficios aplicados/);
-  await assert.rejects(
-    service.upsertFeeCalculatorCost({ ...cost, amount: 7000 }),
-    /beneficios aplicados/,
-  );
   await assert.rejects(service.resetFeeCalculatorCosts(), /beneficios aplicados/);
   await assert.rejects(
     service.applyFundraisingBenefit({
@@ -300,4 +295,234 @@ test("replay caps concurrent allocations from different sources to the same expe
   assert.equal(ledger.applications[0].allocations[0].amount, 5000);
   assert.equal(ledger.applications[1].allocations[0].amount, 1000);
   assert.equal(ledger.sources[1].balance, 9000);
+});
+
+async function setupBenefitCost() {
+  const context = setup();
+  const { service, input, ids } = context;
+  await service.upsertCashFlowTransaction(input);
+  const cost = {
+    id: "shirts",
+    name: "Camisetas",
+    type: "custom",
+    startPeriod: "2026-10",
+    endPeriod: "2026-10",
+    amount: 8000,
+    splitBetween: 1,
+    forecastUnits: 1,
+    repeatsMonthly: false,
+    assignedPlayerIds: [ids[0], ids[1]],
+  };
+  await service.upsertFeeCalculatorCost(cost);
+  await service.applyFundraisingBenefit({
+    fundraisingId: input.id,
+    period: "2026-10",
+    costId: cost.id,
+    percent: 50,
+  });
+  return { ...context, cost };
+}
+
+test("removing a benefit returns its exact balance once, updates the fee and allows reapplying", async () => {
+  const { service, ids, input, cost } = await setupBenefitCost();
+  const before = await service.getFeeCalculatorData("2026-10");
+  const id = before.benefitApplications[0].id;
+  await service.deleteFundraisingBenefit(id);
+  await service.deleteFundraisingBenefit(id);
+  const after = await service.getFeeCalculatorData("2026-10");
+  assert.equal(after.benefitApplications.length, 0);
+  assert.equal(
+    after.playerCalculations.find((player) => player.playerId === ids[0]).finalQuota,
+    28000,
+  );
+  const account = (await service.getPlayerProfile(ids[0], 2026)).fundraisingAccount;
+  assert.equal(account.balance, 10000);
+  assert.equal(account.totalUsed, 0);
+  assert.deepEqual(
+    account.movements.map((item) => item.kind),
+    ["credit", "benefit", "reversal"],
+  );
+  assert.equal(account.movements.at(-1).balance, 10000);
+  await service.applyFundraisingBenefit({
+    fundraisingId: input.id,
+    period: "2026-10",
+    costId: cost.id,
+    percent: 25,
+  });
+  assert.equal(
+    (await service.getPlayerProfile(ids[0], 2026)).fundraisingAccount.balance,
+    7500,
+  );
+});
+
+test("editing a cost reduces benefits to the new charge, preserves other benefits and returns unused credit", async () => {
+  const { service, ids, input, cost } = await setupBenefitCost();
+  await service.upsertFeeCalculatorCost({
+    ...cost,
+    id: "trip",
+    name: "Viaje",
+    amount: 1000,
+  });
+  await service.applyFundraisingBenefit({
+    fundraisingId: input.id,
+    period: "2026-10",
+    costId: "trip",
+    percent: 10,
+  });
+  await service.upsertFeeCalculatorCost({
+    ...cost,
+    name: "Camisetas nuevas",
+    amount: 3000,
+    assignedPlayerIds: [ids[0]],
+  });
+  const data = await service.getFeeCalculatorData("2026-10");
+  const shirtBenefit = data.benefitApplications.find((item) => item.costId === cost.id);
+  assert.equal(shirtBenefit.costName, "Camisetas nuevas");
+  assert.deepEqual(
+    shirtBenefit.allocations.map((item) => [item.playerId, item.amount]),
+    [[ids[0], 3000]],
+  );
+  assert.equal(
+    data.benefitApplications.find((item) => item.costId === "trip").allocations[0].amount,
+    1000,
+  );
+  assert.equal(
+    (await service.getPlayerProfile(ids[0], 2026)).fundraisingAccount.balance,
+    6000,
+  );
+  assert.equal(
+    (await service.getPlayerProfile(ids[1], 2026)).fundraisingAccount.balance,
+    9000,
+  );
+  await service.upsertFeeCalculatorCost({ ...cost, amount: 12000 });
+  const increased = await service.getFeeCalculatorData("2026-10");
+  assert.equal(
+    increased.benefitApplications.find((item) => item.costId === cost.id).allocations[0]
+      .amount,
+    3000,
+  );
+  assert.equal(
+    increased.playerCalculations.find((player) => player.playerId === ids[0]).baseQuota,
+    20000,
+  );
+});
+
+test("cost edits and benefit adjustments fail together and deleting a cost restores its balances", async () => {
+  const { service, sheets, cost, ids } = await setupBenefitCost();
+  const beforeCost = JSON.stringify(sheets.rows.CalculadoraCostos);
+  const beforeJournal = JSON.stringify(sheets.rows.RecaudacionBeneficios);
+  sheets.failBatchWrites(new Error("Atomic write failed"));
+  await assert.rejects(
+    service.upsertFeeCalculatorCost({ ...cost, amount: 2000 }),
+    /Atomic write failed/,
+  );
+  assert.equal(JSON.stringify(sheets.rows.CalculadoraCostos), beforeCost);
+  assert.equal(JSON.stringify(sheets.rows.RecaudacionBeneficios), beforeJournal);
+  sheets.failBatchWrites(undefined);
+  await service.deleteFeeCalculatorCost(cost.id);
+  const data = await service.getFeeCalculatorData("2026-10");
+  assert.ok(!data.costs.some((item) => item.id === cost.id));
+  assert.equal(data.benefitApplications.length, 0);
+  assert.equal(
+    (await service.getPlayerProfile(ids[0], 2026)).fundraisingAccount.balance,
+    10000,
+  );
+});
+
+test("a reversal does not retroactively enlarge a later discount or refund twice", () => {
+  const { buildFundraisingLedger } = createRuntime().load("lib/fundraising.ts");
+  const source = {
+    id: "one",
+    active: true,
+    type: "income",
+    scenario: "real",
+    incomeKind: "fundraising",
+    period: "2026-10",
+    amount: 100,
+    fundraisingAllocations: [{ playerId: "a", playerName: "Ana", amount: 100 }],
+  };
+  const first = {
+    id: "first",
+    fundraisingId: "one",
+    period: "2026-10",
+    allocations: [{ playerId: "a", playerName: "Ana", amount: 80 }],
+  };
+  const second = { ...first, id: "second", period: "2026-11" };
+  const reverse = { ...first, id: "reversal", reversalOf: "first" };
+  const ledger = buildFundraisingLedger(
+    [source],
+    [first, second, reverse, { ...reverse, id: "retry" }],
+  );
+  assert.equal(ledger.sources[0].balance, 80);
+  assert.equal(ledger.applications.length, 1);
+  assert.equal(ledger.applications[0].allocations[0].amount, 20);
+});
+
+test("moving a cost to another month or making it fixed restores its associated balances", async () => {
+  const { service, cost, input, ids } = await setupBenefitCost();
+  await service.upsertFeeCalculatorCost({
+    ...cost,
+    startPeriod: "2026-12",
+    endPeriod: "2026-12",
+  });
+  assert.equal(
+    (await service.getFeeCalculatorData("2026-10")).benefitApplications.length,
+    0,
+  );
+  assert.equal(
+    (await service.getPlayerProfile(ids[0], 2026)).fundraisingAccount.balance,
+    10000,
+  );
+  await service.applyFundraisingBenefit({
+    fundraisingId: input.id,
+    period: "2026-12",
+    costId: cost.id,
+    percent: 50,
+  });
+  await service.upsertFeeCalculatorCost({
+    ...cost,
+    type: "fixed",
+    startPeriod: "2026-12",
+    endPeriod: "2026-12",
+  });
+  const data = await service.getFeeCalculatorData("2026-12");
+  assert.equal(data.benefitApplications.length, 0);
+  assert.equal(
+    data.playerCalculations.find((player) => player.playerId === ids[0]).baseQuota,
+    28000,
+  );
+  assert.equal(
+    (await service.getPlayerProfile(ids[0], 2026)).fundraisingAccount.balance,
+    10000,
+  );
+});
+
+test("an attempt with no available balance does not block a benefit after credit is restored", () => {
+  const { buildFundraisingLedger } = createRuntime().load("lib/fundraising.ts");
+  const source = {
+    id: "one",
+    active: true,
+    type: "income",
+    scenario: "real",
+    incomeKind: "fundraising",
+    period: "2026-10",
+    amount: 100,
+    fundraisingAllocations: [{ playerId: "a", playerName: "Ana", amount: 100 }],
+  };
+  const first = {
+    id: "first",
+    fundraisingId: "one",
+    period: "2026-10",
+    allocations: [{ playerId: "a", playerName: "Ana", amount: 100 }],
+  };
+  const second = { ...first, id: "second", period: "2026-11" };
+  const reverse = { ...first, id: "reversal", reversalOf: "first" };
+  const ledger = buildFundraisingLedger(
+    [source],
+    [first, second, reverse, { ...second, id: "retry" }],
+  );
+  assert.equal(ledger.sources[0].balance, 0);
+  assert.equal(ledger.applications.length, 1);
+  assert.equal(ledger.applications[0].id, "retry");
+  assert.equal(ledger.applications[0].allocations[0].amount, 100);
 });

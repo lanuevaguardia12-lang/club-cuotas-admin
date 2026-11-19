@@ -15,6 +15,13 @@ import type { AppSettingsData } from "@/types/settings";
 import type { TeamsData } from "@/types/teams";
 
 export class DatabaseService implements IDataService {
+  async deleteFundraisingBenefit(): Promise<void> {
+    throw new DataServiceError(
+      "DatabaseService todavia no esta implementado.",
+      "UNSUPPORTED_DATA_SOURCE",
+    );
+  }
+
   async applyFundraisingBenefit(): Promise<void> {
     throw new DataServiceError(
       "DatabaseService todavia no esta implementado.",

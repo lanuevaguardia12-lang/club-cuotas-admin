@@ -1302,8 +1302,16 @@ adicional concreto (por ejemplo, camisetas), sin superar el importe de ese gasto
 asignado al jugador. El selector permite usar todas las recaudaciones con saldo
 o una sola, y todos los jugadores con saldo o una selección manual. No se repite
 el mismo beneficio de una recaudación para el mismo jugador, gasto y mes.
-Los movimientos utilizados y los gastos vinculados quedan protegidos contra
-cambios y eliminación.
+En **Costos y beneficios**, cada gasto muestra sus descuentos y permite editar
+el costo o eliminar un beneficio, devolviendo su importe al saldo del jugador.
+Si el costo baja o cambia de jugadores, los descuentos se limitan al nuevo cargo
+y la diferencia vuelve al saldo. Si el costo sube, el descuento conserva su
+importe; se puede eliminar y volver a aplicar con otro porcentaje. Borrar el
+costo reintegra todos sus beneficios. Cambiarlo de mes o convertirlo en un costo
+de base también reintegra los beneficios asociados. El costo y los reintegros
+se guardan juntos, conservando el historial de la cuenta corriente.
+Los ingresos de recaudación que ya tuvieron movimientos siguen protegidos
+contra cambios y eliminación.
 
 Administradores y tesoreros pueden ver las cuentas del plantel. Cada jugador
 solo ve la propia en Mi cuota; profesores e hinchas no tienen acceso. Las páginas

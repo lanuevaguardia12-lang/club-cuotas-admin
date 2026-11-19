@@ -15,6 +15,7 @@ export interface FundraisingSource {
 }
 
 export interface FundraisingBenefitApplication {
+  reversalOf?: string;
   costId?: string;
   costName?: string;
   costAmounts?: Record<string, number>;
@@ -44,7 +45,7 @@ export interface FundraisingAccount {
     date: string;
     concept: string;
     period: string;
-    kind: "credit" | "benefit";
+    kind: "credit" | "benefit" | "reversal";
     amount: number;
     balance: number;
   }[];

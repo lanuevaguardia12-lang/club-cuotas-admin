@@ -49,18 +49,20 @@ export function PlayerFundraisingAccount({ account }: { account?: FundraisingAcc
                       {formatDate(movement.date)} ·{" "}
                       {movement.kind === "credit"
                         ? "Recaudación a favor"
-                        : `Beneficio en cuota ${formatPeriod(movement.period)}`}
+                        : movement.kind === "reversal"
+                          ? "Beneficio eliminado · saldo reintegrado"
+                          : `Beneficio en cuota ${formatPeriod(movement.period)}`}
                     </p>
                   </div>
                   <div className="sm:text-right">
                     <p
                       className={
-                        movement.kind === "credit"
+                        movement.kind !== "benefit"
                           ? "text-primary font-semibold"
                           : "font-semibold"
                       }
                     >
-                      {movement.kind === "credit" ? "+" : "−"}
+                      {movement.kind === "benefit" ? "−" : "+"}
                       {formatCurrency(movement.amount)}
                     </p>
                     <p className="text-muted-foreground mt-1 text-xs">

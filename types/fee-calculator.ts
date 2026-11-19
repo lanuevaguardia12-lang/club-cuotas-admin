@@ -126,6 +126,7 @@ export interface FeeCalculatorData {
   benefitCostShares?: Record<string, Record<string, number>>;
   fundraisingSources?: FundraisingSource[];
   benefitApplications?: FundraisingBenefitApplication[];
+  benefitEvents?: FundraisingBenefitApplication[];
   period: string;
   previousPeriod: string;
   costs: FeeCalculatorCost[];

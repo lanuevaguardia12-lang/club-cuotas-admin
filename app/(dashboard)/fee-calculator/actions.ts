@@ -136,6 +136,7 @@ export async function saveFeeCalculatorCost(input: unknown) {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/cash-flow");
   revalidatePath("/mi-cuota");
@@ -171,10 +172,36 @@ export async function applyFundraisingBenefit(input: unknown) {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/cash-flow");
   revalidatePath("/mi-cuota");
+  revalidatePath("/notifications");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function deleteFundraisingBenefit(applicationId: string) {
+  const user = await getCurrentUser();
+  assertPermission(user, "fee-calculator:manage");
+  const id = z.string().trim().min(1).parse(applicationId);
+  const dataService = getDataService();
+  await dataService.deleteFundraisingBenefit(id);
+  if (user)
+    await dataService
+      .recordAuditEvent({
+        actor: userToAuditActor(user),
+        action: "api.request",
+        entityType: "fee",
+        entityId: id,
+        summary: "Beneficio eliminado y saldo reintegrado a los jugadores.",
+        metadata: { applicationId: id },
+      })
+      .catch(() => undefined);
   revalidatePath("/players/[playerId]", "page");
+  revalidatePath("/fee-calculator");
+  revalidatePath("/cash-flow");
+  revalidatePath("/mi-cuota");
   revalidatePath("/notifications");
   revalidatePath("/");
   return { ok: true };
@@ -202,6 +229,7 @@ export async function deleteFeeCalculatorCost(costId: string) {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/mi-cuota");
   revalidatePath("/notifications");
@@ -231,6 +259,7 @@ export async function resetFeeCalculatorCosts() {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/mi-cuota");
   revalidatePath("/notifications");
@@ -266,6 +295,7 @@ export async function saveFeeCalculatorActual(input: unknown) {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/mi-cuota");
   revalidatePath("/notifications");
@@ -296,6 +326,7 @@ export async function saveFeeRefundPolicy(input: unknown) {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/mi-cuota");
   revalidatePath("/notifications");
@@ -329,6 +360,7 @@ export async function updateFeeCalculatorPlayerStatus(input: unknown) {
       .catch(() => undefined);
   }
 
+  revalidatePath("/players/[playerId]", "page");
   revalidatePath("/fee-calculator");
   revalidatePath("/mi-cuota");
   revalidatePath("/notifications");

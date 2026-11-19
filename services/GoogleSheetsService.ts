@@ -304,7 +304,7 @@ interface DashboardRecords {
 const DEFAULT_PLAYERS_RANGE = "Jugadores!A:Z";
 const DEFAULT_FEES_RANGE = "Cuotas!A:Z";
 const DEFAULT_CASH_FLOW_RANGE = "CashFlow!A:Z";
-const FUNDRAISING_BENEFITS_RANGE = "RecaudacionBeneficios!A:J";
+const FUNDRAISING_BENEFITS_RANGE = "RecaudacionBeneficios!A:Z";
 const fundraisingBenefitHeaders = [
   "id",
   "recaudacion_id",
@@ -316,6 +316,7 @@ const fundraisingBenefitHeaders = [
   "costo_id",
   "costo_nombre",
   "limites_gasto",
+  "anula_beneficio_id",
 ];
 const DEFAULT_SETTINGS_RANGE = "Configuracion!A:B";
 const DEFAULT_AUDIT_RANGE = "Auditoria!A:Z";
@@ -1242,7 +1243,7 @@ export class GoogleSheetsService implements IDataService {
     const rows = cached
       ? await unstable_cache(
           read,
-          ["fundraising-benefits-v2", this.getAppSpreadsheetId()],
+          ["fundraising-benefits-v3", this.getAppSpreadsheetId()],
           {
             revalidate: false,
             tags: ["google-sheets", "google-sheets:fee-calculator"],
@@ -1251,6 +1252,7 @@ export class GoogleSheetsService implements IDataService {
       : await read();
     return rowsToRecords(rows).map((record) => ({
       id: pick(record, ["id"]),
+      reversalOf: pick(record, ["anula_beneficio_id"]) || undefined,
       fundraisingId: pick(record, ["recaudacion_id"]),
       concept: pick(record, ["concepto"]),
       period: pick(record, ["periodo"]),
@@ -1324,45 +1326,183 @@ export class GoogleSheetsService implements IDataService {
       throw new Error(
         "La selección ya tiene el beneficio aplicado o no tiene saldo ni importe del gasto a descontar.",
       );
+    await this.appendFundraisingEvents(
+      applications.map((application) => ({
+        ...application,
+        id: createId("benefit"),
+        createdAt: new Date().toISOString(),
+      })),
+    );
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
+    invalidateCashFlowCache();
+  }
+
+  private async prepareFundraisingHeaders() {
     const spreadsheetId = this.getAppSpreadsheetId();
     await this.ensureSheetForRange(FUNDRAISING_BENEFITS_RANGE, spreadsheetId);
     const rows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
       FUNDRAISING_BENEFITS_RANGE,
     );
-    const headers = await this.ensureWritableHeaders(
+    return this.ensureWritableHeaders(
       spreadsheetId,
       getSheetPrefix(FUNDRAISING_BENEFITS_RANGE),
       rows.length ? normalizeWritableHeaders(rows[0], fundraisingBenefitHeaders) : [],
       fundraisingBenefitHeaders,
     );
-    const values = applications.map((application) => {
-      const row: Record<string, string | number> = {
-        id: createId("benefit"),
-        recaudacion_id: application.fundraisingId,
-        concepto: application.concept,
-        periodo: application.period,
-        porcentaje: application.percent,
-        creado_en: new Date().toISOString(),
-        reparto: JSON.stringify(application.allocations),
-        costo_id: application.costId ?? "",
-        costo_nombre: application.costName ?? "",
-        limites_gasto: JSON.stringify(application.costAmounts ?? {}),
-      };
-      return headers.map((header) => row[header] ?? "");
-    });
+  }
+
+  private async appendFundraisingEvents(events: FundraisingBenefitApplication[]) {
+    const headers = await this.prepareFundraisingHeaders();
     await (
       await this.createSheetsClient()
     ).spreadsheets.values.append({
-      spreadsheetId,
+      spreadsheetId: this.getAppSpreadsheetId(),
       range: FUNDRAISING_BENEFITS_RANGE,
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
-      requestBody: { values },
+      requestBody: {
+        values: events.map((event) => buildFundraisingWritableRow(headers, event)),
+      },
+    });
+  }
+
+  async deleteFundraisingBenefit(applicationId: string): Promise<void> {
+    this.assertConfigured();
+    const ledger = await this.readFundraisingLedger(false);
+    const original = ledger.applications.find(
+      (application) => application.id === applicationId,
+    );
+    if (!original) return;
+    await this.appendFundraisingEvents([
+      {
+        ...original,
+        id: createId("benefit-reversal"),
+        reversalOf: original.id,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
+    invalidateCashFlowCache();
+  }
+
+  /** Write the cost and the compensating ledger movements in one Sheets transaction. */
+  private async updateCostAndBenefits(
+    cost: FeeCalculatorCost,
+    headers: string[],
+    spreadsheetRow: number,
+  ) {
+    const ledger = await this.readFundraisingLedger(false);
+    const linked = ledger.applications.filter(
+      (application) => application.costId === cost.id,
+    );
+    if (!linked.length) return false;
+    const players = mapRowsToPlayers(
+      await this.readPlayerDirectoryRows(this.getAppSpreadsheetId()),
+    );
+    const shares = new Map(
+      players.map((player) => [
+        player.id,
+        cost.active && cost.type === "custom"
+          ? roundMoney(
+              calculatePlayerCostShare(
+                cost,
+                [cost],
+                [],
+                cost.startPeriod,
+                "forecast",
+                player,
+              ),
+            )
+          : 0,
+      ]),
+    );
+    const remaining = new Map(shares);
+    const now = new Date().toISOString();
+    const events: FundraisingBenefitApplication[] = linked.map((application) => ({
+      ...application,
+      id: createId("benefit-reversal"),
+      reversalOf: application.id,
+      createdAt: now,
+    }));
+    for (const original of linked) {
+      if (original.period !== cost.startPeriod) continue;
+      const allocations = original.allocations.flatMap((allocation) => {
+        const amount = roundMoney(
+          Math.min(allocation.amount, remaining.get(allocation.playerId) ?? 0),
+        );
+        remaining.set(
+          allocation.playerId,
+          roundMoney((remaining.get(allocation.playerId) ?? 0) - amount),
+        );
+        return amount > 0 ? [{ ...allocation, amount }] : [];
+      });
+      if (allocations.length)
+        events.push({
+          ...original,
+          id: createId("benefit"),
+          createdAt: now,
+          costName: cost.name,
+          costAmounts: Object.fromEntries(shares),
+          allocations,
+        });
+    }
+    const benefitHeaders = await this.prepareFundraisingHeaders();
+    const sheets = await this.createSheetsClient();
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const metadata = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "sheets.properties(sheetId,title)",
+    });
+    const sheetIdFor = (range: string) => {
+      const title = unquoteSheetTitle(getSheetPrefix(range));
+      const id = metadata.data.sheets?.find((sheet) => sheet.properties?.title === title)
+        ?.properties?.sheetId;
+      if (typeof id !== "number")
+        throw new Error("No se encontró la hoja para guardar el costo y sus beneficios.");
+      return id;
+    };
+    const cells = (values: (string | number)[]) => ({
+      values: values.map((value) => ({
+        userEnteredValue:
+          typeof value === "number" ? { numberValue: value } : { stringValue: value },
+      })),
+    });
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            updateCells: {
+              range: {
+                sheetId: sheetIdFor(this.config.feeCalculatorCostsRange),
+                startRowIndex: spreadsheetRow - 1,
+                endRowIndex: spreadsheetRow,
+                startColumnIndex: 0,
+                endColumnIndex: headers.length,
+              },
+              rows: [cells(buildFeeCalculatorCostWritableRow(headers, cost))],
+              fields: "userEnteredValue",
+            },
+          },
+          {
+            appendCells: {
+              sheetId: sheetIdFor(FUNDRAISING_BENEFITS_RANGE),
+              rows: events.map((event) =>
+                cells(buildFundraisingWritableRow(benefitHeaders, event)),
+              ),
+              fields: "userEnteredValue",
+            },
+          },
+        ],
+      },
     });
     invalidateFeeCalculatorCache();
     invalidateDashboardCache();
     invalidateCashFlowCache();
+    return true;
   }
 
   async upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void> {
@@ -2126,24 +2266,22 @@ export class GoogleSheetsService implements IDataService {
       ),
       fundraisingSources: ledger.sources,
       benefitApplications: ledger.applications,
+      benefitEvents: ledger.events,
     }));
   }
 
-  private async assertCostBenefitsUnchanged(costId?: string) {
+  private async assertNoCostBenefitsBeforeReset() {
     if (
-      (await this.readFundraisingBenefits(false)).some(
-        (item) => item.costId && (!costId || item.costId === costId),
-      )
+      (await this.readFundraisingLedger(false)).applications.some((item) => item.costId)
     ) {
       throw new Error(
-        "El gasto tiene beneficios aplicados. No se puede modificar ni eliminar para conservar los descuentos registrados.",
+        "Hay costos con beneficios aplicados. Eliminá sus beneficios o borrá esos costos individualmente antes de limpiar el calculador.",
       );
     }
   }
 
   async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
     this.assertConfigured();
-    if (input.id) await this.assertCostBenefitsUnchanged(input.id);
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const cost = normalizeFeeCalculatorCostInput(input);
@@ -2217,6 +2355,20 @@ export class GoogleSheetsService implements IDataService {
         dataRows[targetRowIndex],
       ])[0];
       const spreadsheetRow = targetRowIndex + 2;
+      if (
+        await this.updateCostAndBenefits(
+          {
+            ...cost,
+            id: targetId,
+            active: existing?.active ?? true,
+            createdAt: existing?.createdAt || now,
+            updatedAt: now,
+          },
+          headers,
+          spreadsheetRow,
+        )
+      )
+        return;
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: feeCalculatorSpreadsheetId,
@@ -2259,7 +2411,6 @@ export class GoogleSheetsService implements IDataService {
 
   async deleteFeeCalculatorCost(costId: string): Promise<void> {
     this.assertConfigured();
-    await this.assertCostBenefitsUnchanged(costId);
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const values = await this.readOptionalValuesFromSpreadsheet(
@@ -2289,6 +2440,19 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
+    const existing = mapRowsToFeeCalculatorCostRecords([
+      headers,
+      dataRows[targetRowIndex],
+    ])[0];
+    if (
+      existing &&
+      (await this.updateCostAndBenefits(
+        { ...existing, active: false, updatedAt: new Date().toISOString() },
+        headers,
+        targetRowIndex + 2,
+      ))
+    )
+      return;
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
     const spreadsheetRow = targetRowIndex + 2;
@@ -2318,7 +2482,7 @@ export class GoogleSheetsService implements IDataService {
 
   async resetFeeCalculatorCosts(): Promise<void> {
     this.assertConfigured();
-    await this.assertCostBenefitsUnchanged();
+    await this.assertNoCostBenefitsBeforeReset();
 
     const spreadsheetId = this.getAppSpreadsheetId();
     const sheets = await this.createSheetsClient();
@@ -2675,7 +2839,7 @@ export class GoogleSheetsService implements IDataService {
           }));
         },
         [
-          "google-sheets-player-season-v5",
+          "google-sheets-player-season-v6",
           ...this.getProfileCacheIdentity(),
           String(year),
           getCurrentPeriod(),
@@ -2764,6 +2928,7 @@ export class GoogleSheetsService implements IDataService {
     profile.fundraisingAccount = buildFundraisingAccount(player.id, {
       sources: feeCalculatorData[0]?.fundraisingSources ?? [],
       applications: feeCalculatorData[0]?.benefitApplications ?? [],
+      events: feeCalculatorData[0]?.benefitEvents,
     });
     return profile;
   }
@@ -10857,6 +11022,26 @@ function normalizeFeeRefundPolicyInput(
   }
 
   return rules;
+}
+
+function buildFundraisingWritableRow(
+  headers: string[],
+  event: FundraisingBenefitApplication,
+) {
+  const row: Record<string, string | number> = {
+    id: event.id,
+    recaudacion_id: event.fundraisingId,
+    concepto: event.concept,
+    periodo: event.period,
+    porcentaje: event.percent,
+    creado_en: event.createdAt,
+    reparto: JSON.stringify(event.allocations),
+    costo_id: event.costId ?? "",
+    costo_nombre: event.costName ?? "",
+    limites_gasto: JSON.stringify(event.costAmounts ?? {}),
+    anula_beneficio_id: event.reversalOf ?? "",
+  };
+  return headers.map((header) => row[header] ?? "");
 }
 
 function buildCashFlowWritableRow(

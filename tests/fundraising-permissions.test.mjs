@@ -42,6 +42,7 @@ for (const file of pages) {
 test("only administrator and treasurer can apply targeted benefits and selection survives server validation", async () => {
   for (const role of ["admin", "treasurer", "player", "coach", "fan"]) {
     const saved = [];
+    const removed = [];
     const runtime = createRuntime({
       mocks: {
         "@/lib/auth/session": {
@@ -50,12 +51,13 @@ test("only administrator and treasurer can apply targeted benefits and selection
         "@/services/data-service": {
           getDataService: () => ({
             applyFundraisingBenefit: async (input) => saved.push(input),
+            deleteFundraisingBenefit: async (id) => removed.push(id),
             recordAuditEvent: async () => {},
           }),
         },
       },
     });
-    const { applyFundraisingBenefit } = runtime.load(
+    const { applyFundraisingBenefit, deleteFundraisingBenefit } = runtime.load(
       "app/(dashboard)/fee-calculator/actions.ts",
     );
     const input = {
@@ -68,10 +70,14 @@ test("only administrator and treasurer can apply targeted benefits and selection
     if (["admin", "treasurer"].includes(role)) {
       await applyFundraisingBenefit(input);
       assert.deepEqual(saved[0], input);
+      await deleteFundraisingBenefit("benefit-one");
+      assert.deepEqual(removed, ["benefit-one"]);
       await assert.rejects(applyFundraisingBenefit({ ...input, playerIds: [] }));
     } else {
       await assert.rejects(applyFundraisingBenefit(input), /FORBIDDEN/);
       assert.equal(saved.length, 0);
+      await assert.rejects(deleteFundraisingBenefit("benefit-one"), /FORBIDDEN/);
+      assert.equal(removed.length, 0);
     }
   }
 });

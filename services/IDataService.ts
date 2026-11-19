@@ -69,6 +69,7 @@ export interface IDataService {
   ): Promise<AccountAuthOverride | null>;
   getAccountAuthByUsername(username: string): Promise<AccountAuthOverride | null>;
   getDashboardData(period?: string): Promise<DashboardData>;
+  deleteFundraisingBenefit(applicationId: string): Promise<void>;
   applyFundraisingBenefit(input: ApplyFundraisingBenefitInput): Promise<void>;
   getCashFlowData(period?: string): Promise<CashFlowData>;
   getCoachRecordsData(period?: string): Promise<CoachRecordsData>;
