@@ -1,9 +1,11 @@
+import Link from "next/link";
 import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
   Clock3,
   ExternalLink,
+  ListChecks,
   ShieldCheck,
   Table2,
   Trophy,
@@ -1106,17 +1108,24 @@ function FullMatchRow({
         ) : null}
         {canRegisterPlayers && match.isClubMatch ? (
           <Button asChild size="sm" variant="secondary">
-            <a
+            <Link
               href={buildMatchRegistrationFormUrl({
                 match,
                 playerNames: registrationPlayerNames,
               })}
               rel="noreferrer"
-              target="_blank"
+              target={
+                buildMatchRegistrationFormUrl({
+                  match,
+                  playerNames: registrationPlayerNames,
+                }).startsWith("/")
+                  ? undefined
+                  : "_blank"
+              }
             >
-              <ExternalLink />
-              Registrar jugadores
-            </a>
+              <ListChecks />
+              Cargar jugadores
+            </Link>
           </Button>
         ) : null}
       </div>

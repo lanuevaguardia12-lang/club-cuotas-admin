@@ -44,7 +44,6 @@ export const roleDescriptions: Record<AuthRole, string> = {
 
 const rolePermissions: Record<AuthRole, Permission[]> = {
   admin: [
-    "matches:manage",
     "dashboard:read",
     "account:manage",
     "players:read",

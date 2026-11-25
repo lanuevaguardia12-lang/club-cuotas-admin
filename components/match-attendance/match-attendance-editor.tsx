@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { saveMatchAttendance } from "@/app/(dashboard)/match-attendance/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type {
-  AttendanceMatch,
-  UpsertMatchAttendanceInput,
-} from "@/types/match-attendance";
+import type { AttendanceMatch } from "@/types/match-attendance";
+import {
+  attendanceVenue,
+  type MatchAttendanceDraft,
+  type MatchAttendanceInitial,
+} from "@/lib/match-attendance";
 import type { PlayerDirectoryItem } from "@/types/players";
 
 type Player = Pick<PlayerDirectoryItem, "id" | "name" | "status">;
@@ -19,25 +21,24 @@ export function MatchAttendanceEditor({
 }: {
   matches: AttendanceMatch[];
   players: Player[];
-  initial: Pick<UpsertMatchAttendanceInput, "date" | "rival" | "sourceType" | "venue">;
+  initial: MatchAttendanceInitial;
 }) {
   const router = useRouter();
-  const empty: UpsertMatchAttendanceInput = {
-    ...initial,
-    coachAttended: true,
-    playerIds: [],
-  };
+  const { convokedPlayerIds, unresolvedConvokedNames, ...initialDraft } = initial;
+  const empty: MatchAttendanceDraft = initialDraft;
   const [draft, setDraft] = useState(empty);
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
+  const calledPlayerIds = draft.fixtureId === initial.fixtureId ? convokedPlayerIds : [];
   function edit(match: AttendanceMatch) {
     setDraft({
+      fixtureId: match.fixtureId,
       id: match.id,
       date: match.date,
       rival: match.rival,
-      sourceType: match.sourceType ?? "league",
-      venue: match.venue,
+      sourceType: match.sourceType ?? "",
+      venue: attendanceVenue(match.venue),
       coachAttended: match.coachAttended,
       playerIds:
         match.participantPlayerIds ??
@@ -50,15 +51,49 @@ export function MatchAttendanceEditor({
     event.preventDefault();
     setMessage("");
     startTransition(async () => {
-      const result = await saveMatchAttendance(draft);
-      if (result.error) {
-        setMessage(result.error);
-        return;
+      try {
+        const result = await saveMatchAttendance(draft);
+        if (result.error) {
+          setMessage(result.error);
+          return;
+        }
+        setMessage(result.warning ?? "Partido y asistencias guardados.");
+        if (result.id) setDraft((previous) => ({ ...previous, id: result.id }));
+        router.refresh();
+      } catch {
+        setMessage(
+          "No pudimos confirmar el guardado. Revisá los partidos registrados antes de volver a intentarlo.",
+        );
       }
-      setMessage("Partido y asistencias guardados.");
-      setDraft(empty);
-      router.refresh();
     });
+  }
+  const matchesSearch = (player: Player) =>
+    player.name.toLocaleLowerCase("es").includes(search.toLocaleLowerCase("es"));
+  function playerCheckbox(player: Player) {
+    return (
+      <label
+        key={player.id}
+        className="flex min-h-11 items-center gap-3 rounded border p-2 text-sm"
+      >
+        <input
+          type="checkbox"
+          className="size-5 shrink-0"
+          checked={draft.playerIds.includes(player.id)}
+          onChange={(event) =>
+            setDraft((previous) => ({
+              ...previous,
+              playerIds: event.target.checked
+                ? [...previous.playerIds, player.id]
+                : previous.playerIds.filter((id) => id !== player.id),
+            }))
+          }
+        />
+        <span>
+          {player.name}
+          {player.status === "inactive" ? " (inactivo)" : ""}
+        </span>
+      </label>
+    );
   }
   return (
     <div className="grid gap-6">
@@ -93,16 +128,18 @@ export function MatchAttendanceEditor({
                 <label className="grid gap-1 text-sm">
                   Competencia
                   <select
+                    required
+                    aria-label="Competencia"
                     value={draft.sourceType}
                     onChange={(e) =>
                       setDraft({
                         ...draft,
-                        sourceType: e.target
-                          .value as UpsertMatchAttendanceInput["sourceType"],
+                        sourceType: e.target.value as MatchAttendanceDraft["sourceType"],
                       })
                     }
                     className={field}
                   >
+                    <option value="">Elegí la competencia</option>
                     <option value="league">Liga</option>
                     <option value="cup">Copa</option>
                     <option value="friendly">Amistoso</option>
@@ -111,14 +148,18 @@ export function MatchAttendanceEditor({
                 <label className="grid gap-1 text-sm">
                   Condición
                   <select
+                    required
+                    aria-label="Condición"
                     value={draft.venue}
-                    onChange={(e) => setDraft({ ...draft, venue: e.target.value })}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        venue: e.target.value as MatchAttendanceDraft["venue"],
+                      })
+                    }
                     className={field}
                   >
-                    <option value="">Sin especificar</option>
-                    {draft.venue && !["Local", "Visitante"].includes(draft.venue) ? (
-                      <option value={draft.venue}>{draft.venue}</option>
-                    ) : null}
+                    <option value="">Elegí local o visitante</option>
                     <option value="Local">Local</option>
                     <option value="Visitante">Visitante</option>
                   </select>
@@ -136,7 +177,7 @@ export function MatchAttendanceEditor({
               </label>
               <div>
                 <p className="mb-2 font-medium">
-                  Jugadores que participaron ({draft.playerIds.length})
+                  Jugadores que ingresaron ({draft.playerIds.length})
                 </p>
                 <input
                   aria-label="Buscar jugador"
@@ -145,35 +186,49 @@ export function MatchAttendanceEditor({
                   onChange={(e) => setSearch(e.target.value)}
                   className={field}
                 />
-                <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
-                  {players
-                    .filter((p) =>
-                      p.name
-                        .toLocaleLowerCase("es")
-                        .includes(search.toLocaleLowerCase("es")),
-                    )
-                    .map((p) => (
-                      <label
-                        key={p.id}
-                        className="flex items-center gap-2 rounded border p-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={draft.playerIds.includes(p.id)}
-                          onChange={(e) =>
-                            setDraft({
-                              ...draft,
-                              playerIds: e.target.checked
-                                ? [...draft.playerIds, p.id]
-                                : draft.playerIds.filter((id) => id !== p.id),
-                            })
-                          }
-                        />
-                        {p.name}
-                        {p.status === "inactive" ? " (inactivo)" : ""}
-                      </label>
-                    ))}
-                </div>
+                {calledPlayerIds.length > 0 ? (
+                  <>
+                    <p className="text-muted-foreground mt-2 text-sm">
+                      Los convocados vienen marcados. Destildá a quienes no ingresaron y
+                      tildá a quienes sí jugaron.
+                    </p>
+                    <div className="mt-3 grid max-h-80 gap-2 overflow-y-auto sm:grid-cols-2">
+                      {players
+                        .filter((p) => calledPlayerIds.includes(p.id))
+                        .filter(matchesSearch)
+                        .map(playerCheckbox)}
+                    </div>
+                    <details className="mt-3 rounded-md border p-3 text-sm">
+                      <summary className="cursor-pointer font-medium">
+                        Otros jugadores del plantel
+                      </summary>
+                      <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
+                        {players
+                          .filter((p) => !calledPlayerIds.includes(p.id))
+                          .filter(matchesSearch)
+                          .map(playerCheckbox)}
+                      </div>
+                    </details>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-muted-foreground mt-2 text-sm">
+                      No hay una convocatoria cargada para este partido. Marcá los
+                      jugadores que ingresaron.
+                    </p>
+                    <div className="mt-3 grid max-h-80 gap-2 overflow-y-auto sm:grid-cols-2">
+                      {players.filter(matchesSearch).map(playerCheckbox)}
+                    </div>
+                  </>
+                )}
+                {draft.fixtureId === initial.fixtureId &&
+                unresolvedConvokedNames.length ? (
+                  <p role="status" className="text-muted-foreground mt-2 text-sm">
+                    Hay convocados sin una ficha identificable en el plantel:{" "}
+                    {unresolvedConvokedNames.join(", ")}. Revisá sus fichas antes de
+                    registrarlos.
+                  </p>
+                ) : null}
                 {draft.id ? (
                   <p className="text-muted-foreground mt-2 text-sm">
                     Los nombres históricos que ya no están en el plantel se conservan al
@@ -183,7 +238,11 @@ export function MatchAttendanceEditor({
               </div>
               <div className="flex gap-2">
                 <Button type="submit">
-                  {pending ? "Guardando…" : "Guardar asistencia"}
+                  {pending
+                    ? "Guardando…"
+                    : draft.id
+                      ? "Actualizar asistencia"
+                      : "Guardar asistencia"}
                 </Button>
                 {draft.id ? (
                   <Button

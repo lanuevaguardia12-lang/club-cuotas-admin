@@ -1,3 +1,4 @@
+import { initialMatchAttendance } from "@/lib/match-attendance";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -14,7 +15,9 @@ export default async function MatchAttendancePage({
     date?: string;
     rival?: string;
     sourceType?: string;
-    venue?: string;
+    player?: string | string[];
+    convoked?: string;
+    fixtureId?: string;
   }>;
 }) {
   const user = await getCurrentUser();
@@ -25,6 +28,7 @@ export default async function MatchAttendancePage({
     return <p>El registro interno de asistencias todavía no está activado.</p>;
   const params = await searchParams;
   const data = await getDataService().getMatchAttendanceData();
+  const initial = initialMatchAttendance(params, data);
   return (
     <main className="grid gap-6">
       <header>
@@ -33,22 +37,14 @@ export default async function MatchAttendancePage({
         </Link>
         <h1 className="mt-3 text-2xl font-semibold">Partidos y asistencias</h1>
         <p className="text-muted-foreground mt-2">
-          Registrá quiénes jugaron y si asistió el DT. Las modificaciones pueden cambiar
-          las devoluciones y el desglose de horas.
+          Confirmá local o visitante y marcá cuáles de los convocados ingresaron a jugar.
         </p>
       </header>
       <MatchAttendanceEditor
+        key={`${initial.date}:${initial.rival}:${initial.sourceType}`}
         matches={data.matches}
         players={data.players.map(({ id, name, status }) => ({ id, name, status }))}
-        initial={{
-          date: params.date ?? "",
-          rival: params.rival ?? "",
-          sourceType:
-            params.sourceType === "cup" || params.sourceType === "friendly"
-              ? params.sourceType
-              : "league",
-          venue: params.venue ?? "",
-        }}
+        initial={initial}
       />
     </main>
   );

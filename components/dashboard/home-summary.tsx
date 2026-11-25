@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ExternalLink,
+  ListChecks,
   Trophy,
   XCircle,
 } from "lucide-react";
@@ -601,17 +602,24 @@ function MatchRegistrationAction({
 
   return (
     <Button asChild size="sm" variant="secondary">
-      <a
+      <Link
         href={buildMatchRegistrationFormUrl({
           match,
           playerNames: registrationPlayerNames,
         })}
         rel="noreferrer"
-        target="_blank"
+        target={
+          buildMatchRegistrationFormUrl({
+            match,
+            playerNames: registrationPlayerNames,
+          }).startsWith("/")
+            ? undefined
+            : "_blank"
+        }
       >
-        <ExternalLink />
-        Registrar jugadores
-      </a>
+        <ListChecks />
+        Cargar jugadores
+      </Link>
     </Button>
   );
 }

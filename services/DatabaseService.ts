@@ -291,7 +291,7 @@ export class DatabaseService implements IDataService {
   > {
     throw new Error("DatabaseService todavía no está implementado.");
   }
-  async upsertMatchAttendance(): Promise<void> {
+  async upsertMatchAttendance(): Promise<string> {
     throw new Error("DatabaseService todavía no está implementado.");
   }
   async getCoachRecordsData(

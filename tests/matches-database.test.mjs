@@ -107,12 +107,14 @@ test("native match recording rejects invalid dates, duplicate players, missing p
     { playerIds: ["ana", "ana"] },
     { playerIds: ["missing"] },
     { id: "unknown" },
+    { venue: "" },
+    { venue: "Cancha 1" },
   ])
     await assert.rejects(x.service.upsertMatchAttendance({ ...x.input, ...change }));
   assert.equal(x.matches().length, 0);
 });
 test("recording action checks roles before touching attendance data", async () => {
-  for (const role of ["player", "fan", "treasurer", null]) {
+  for (const role of ["admin", "player", "fan", "treasurer", null]) {
     let touched = false;
     const runtime = createRuntime({
       mocks: {
@@ -133,7 +135,7 @@ test("recording action checks roles before touching attendance data", async () =
     assert.ok((await saveMatchAttendance({})).error);
     assert.equal(touched, false);
   }
-  for (const role of ["coach", "admin"]) {
+  for (const role of ["coach"]) {
     let saved;
     const runtime = createRuntime({
       mocks: {
@@ -172,6 +174,8 @@ test("fixture registration links use the internal form only when matches have mi
     localTeam: "La Nueva Guardia",
     visitorTeam: "Rival",
     isClubMatch: true,
+    id: "fixture-1",
+    convokedPlayerNames: ["Ana Pérez"],
   };
   const native = x.runtime
     .load("lib/match-registration-form.ts")
@@ -180,6 +184,9 @@ test("fixture registration links use the internal form only when matches have mi
   const url = new URL(native, "https://example.test");
   assert.equal(url.searchParams.get("date"), "2026-10-03");
   assert.equal(url.searchParams.get("sourceType"), "league");
+  assert.equal(url.searchParams.get("fixtureId"), "fixture-1");
+  assert.equal(url.searchParams.has("venue"), false);
+  assert.deepEqual(url.searchParams.getAll("player"), ["Ana Pérez"]);
   const legacy = createRuntime({
     mocks: {
       "@/services/database/matches-store": { matchesDatabaseEnabled: () => false },
@@ -188,4 +195,68 @@ test("fixture registration links use the internal form only when matches have mi
     .load("lib/match-registration-form.ts")
     .buildMatchRegistrationFormUrl({ match: fixture, playerNames: ["Ana Pérez"] });
   assert.equal(new URL(legacy).hostname, "docs.google.com");
+});
+
+test("native fixture links do not recalculate fees or preselect the entire squad when no call-up exists", async () => {
+  const x = setup();
+  const helper = x.runtime.load("lib/match-registration-form.ts");
+  const data = await helper.getRegistrationPlayerNamesByPeriod(
+    {
+      getPlayersData() {
+        throw new Error("must not fetch");
+      },
+      getFeeCalculatorData() {
+        throw new Error("must not calculate");
+      },
+    },
+    [],
+  );
+  assert.deepEqual(data, { __default: [] });
+  const url = new URL(
+    helper.buildMatchRegistrationFormUrl({
+      match: {
+        dateIso: "2026-10-03",
+        competitionKind: "cup",
+        localTeam: "La Nueva Guardia",
+        visitorTeam: "Rival",
+      },
+      playerNames: ["Ana Pérez", "Bea Gómez"],
+    }),
+    "https://example.test",
+  );
+  assert.deepEqual(url.searchParams.getAll("player"), []);
+});
+
+test("a saved match returns its ID and preserves the fixture link when editing attendance", async () => {
+  const x = setup();
+  const id = await x.service.upsertMatchAttendance({
+    ...x.input,
+    fixtureId: "fixture-42",
+  });
+  assert.ok(id);
+  assert.equal(x.matches()[0].fixtureId, "fixture-42");
+  const edited = await x.service.upsertMatchAttendance({
+    ...x.input,
+    id,
+    playerIds: ["ana"],
+  });
+  assert.equal(edited, id);
+  assert.equal(x.matches().length, 1);
+  assert.equal(x.matches()[0].fixtureId, "fixture-42");
+});
+
+test("retrying a fixture recording updates the same match even without the returned record ID", async () => {
+  const x = setup();
+  const first = await x.service.upsertMatchAttendance({
+    ...x.input,
+    fixtureId: "fixture-retry",
+  });
+  const retry = await x.service.upsertMatchAttendance({
+    ...x.input,
+    fixtureId: "fixture-retry",
+    playerIds: ["bea"],
+  });
+  assert.equal(retry, first);
+  assert.equal(x.matches().length, 1);
+  assert.deepEqual(x.matches()[0].players, ["Bea Gómez"]);
 });

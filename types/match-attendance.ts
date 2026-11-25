@@ -3,6 +3,7 @@ import type { LeagueCompetitionKind } from "@/types/fixture";
 import type { PlayerDirectoryItem } from "@/types/players";
 
 export interface AttendanceMatch {
+  fixtureId?: string;
   id: string;
   date: string;
   period: string;
@@ -15,6 +16,7 @@ export interface AttendanceMatch {
   loadedAt: string;
 }
 export interface UpsertMatchAttendanceInput {
+  fixtureId?: string;
   id?: string;
   date: string;
   rival: string;

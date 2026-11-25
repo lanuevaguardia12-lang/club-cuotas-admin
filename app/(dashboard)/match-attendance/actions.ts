@@ -11,24 +11,34 @@ export async function saveMatchAttendance(input: unknown) {
   const parsed = matchAttendanceSchema.safeParse(input);
   if (!parsed.success)
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+  let id: string;
   try {
-    await getDataService().upsertMatchAttendance(parsed.data);
+    id = await getDataService().upsertMatchAttendance(parsed.data);
+  } catch {
+    return {
+      error:
+        "No se pudo guardar. Verificá los jugadores y que el partido no esté cargado con otra ficha.",
+    };
+  }
+  try {
     for (const path of [
       "/match-attendance",
       "/fixture",
       "/",
       "/account",
-      "/my-fee",
+      "/mi-cuota",
       "/fee-calculator",
       "/coach-records",
       "/player-of-match",
     ])
       revalidatePath(path);
-    return { ok: true };
+    return { ok: true, id };
   } catch {
     return {
-      error:
-        "No se pudo guardar. Verificá los jugadores y que el partido no esté cargado con otra ficha.",
+      ok: true,
+      id,
+      warning:
+        "La asistencia se guardó. Recargá la página para actualizar las otras vistas.",
     };
   }
 }

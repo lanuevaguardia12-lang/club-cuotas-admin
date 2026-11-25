@@ -2580,7 +2580,7 @@ export class GoogleSheetsService implements IDataService {
     };
   }
 
-  async upsertMatchAttendance(input: UpsertMatchAttendanceInput): Promise<void> {
+  async upsertMatchAttendance(input: UpsertMatchAttendanceInput): Promise<string> {
     if (!matchesDatabaseEnabled())
       throw new Error("El registro interno de asistencias todavía no está activado.");
     const parsed = matchAttendanceSchema.parse(input);
@@ -2592,7 +2592,9 @@ export class GoogleSheetsService implements IDataService {
       throw new Error("No se pudo obtener el plantel.");
     const existing = parsed.id
       ? matches.find((match) => match.id === parsed.id)
-      : undefined;
+      : parsed.fixtureId
+        ? matches.find((match) => match.fixtureId === parsed.fixtureId)
+        : undefined;
     if (parsed.id && !existing) throw new Error("No se encontró el partido para editar.");
     const participants: { playerId?: string; playerName: string }[] =
       parsed.playerIds.map((id) => {
@@ -2611,28 +2613,28 @@ export class GoogleSheetsService implements IDataService {
       if (!matchesCodec.resolvePlayerId(name, playerRecords))
         participants.push({ playerName: name });
     }
-    await new MatchesStore().save(
-      {
-        id: existing?.id || createId("match"),
-        date: parsed.date,
-        period: parsed.date.slice(0, 7),
-        rival: parsed.rival,
-        sourceType: parsed.sourceType,
-        venue: parsed.venue,
-        coachAttended: parsed.coachAttended,
-        players: participants.map((p) => p.playerName),
-        loadedAt:
-          existing?.loadedAt ||
-          parseClubDateTime(formatClubFormTimestamp(new Date())) ||
-          parsed.date,
-      },
-      participants,
-    );
+    const saved: AttendanceMatch = {
+      fixtureId: parsed.fixtureId ?? existing?.fixtureId,
+      id: existing?.id || createId("match"),
+      date: parsed.date,
+      period: parsed.date.slice(0, 7),
+      rival: parsed.rival,
+      sourceType: parsed.sourceType,
+      venue: parsed.venue,
+      coachAttended: parsed.coachAttended,
+      players: participants.map((p) => p.playerName),
+      loadedAt:
+        existing?.loadedAt ||
+        parseClubDateTime(formatClubFormTimestamp(new Date())) ||
+        parsed.date,
+    };
+    await new MatchesStore().save(saved, participants);
     invalidateFeeCalculatorCache();
     invalidateDashboardCache();
     invalidateCashFlowCache();
     invalidatePlayerOfMatchCache();
     revalidateGoogleSheetsTag("google-sheets:account-profile");
+    return saved.id;
   }
 
   async getCoachRecordsData(period = getCurrentPeriod()): Promise<CoachRecordsData> {

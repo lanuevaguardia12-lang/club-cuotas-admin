@@ -87,7 +87,7 @@ export interface IDataService {
     input: RegisterPlayerPaymentInput,
   ): Promise<PaymentReceiptRecord>;
   getMatchAttendanceData(): Promise<MatchAttendanceData>;
-  upsertMatchAttendance(input: UpsertMatchAttendanceInput): Promise<void>;
+  upsertMatchAttendance(input: UpsertMatchAttendanceInput): Promise<string>;
   getCoachRecordsData(period?: string): Promise<CoachRecordsData>;
   upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;
   deleteCashFlowTransaction(transactionId: string): Promise<void>;

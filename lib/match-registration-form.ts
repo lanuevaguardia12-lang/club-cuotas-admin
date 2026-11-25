@@ -30,8 +30,13 @@ export function buildMatchRegistrationFormUrl({
       date: match.dateIso ?? "",
       rival: getMatchRival(match),
       sourceType: match.competitionKind,
-      venue: getClubHomeAway(match),
     });
+    if (match.id) params.set("fixtureId", match.id);
+    const called = match.convokedPlayerNames?.filter(Boolean) ?? [];
+    if (called.length) {
+      params.set("convoked", "1");
+      for (const name of called) params.append("player", name);
+    }
     return `/match-attendance?${params.toString()}`;
   }
   const url = new URL(getMatchRegistrationFormUrl());
@@ -82,6 +87,9 @@ export async function getRegistrationPlayerNamesByPeriod(
   dataService: IDataService,
   matches: LeagueFixtureMatch[],
 ) {
+  // The internal form loads the roster itself; its link carries only the
+  // actual call-up. Do not recalculate every month's fee just to build links.
+  if (matchesDatabaseEnabled()) return { [MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY]: [] };
   const basePlayerNames = (
     await dataService.getPlayersData().catch(() => ({ players: [] }))
   ).players

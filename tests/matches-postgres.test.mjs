@@ -40,6 +40,7 @@ test(
           const store = new MatchesStore();
           const original = {
             id,
+            fixtureId: `${id}-fixture`,
             date: "2100-10-03",
             period: "2100-10",
             rival: id,
