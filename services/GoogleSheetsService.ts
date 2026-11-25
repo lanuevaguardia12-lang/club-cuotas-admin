@@ -35,6 +35,7 @@ import {
 
 import {
   buildFundraisingLedger,
+  hasActiveFundraisingBenefits,
   planFundraisingBenefit,
   ALL_FUNDRAISING_SOURCES,
   buildFundraisingAccount,
@@ -280,6 +281,15 @@ interface FeeCalculatorRows {
 interface CashFlowTransactionRecord extends CashFlowTransaction {
   createdAt?: string;
   updatedAt?: string;
+}
+
+interface FinanceCalculationInputs {
+  playersRows: unknown[][];
+  financialRows: FeeCalculatorRows;
+  ledger: ReturnType<typeof buildFundraisingLedger>;
+  fees: FeeRecord[];
+  account?: Pick<AccountProfile, "userId" | "username" | "playerId">;
+  transactions?: CashFlowTransactionRecord[];
 }
 
 interface MatchRecord {
@@ -1228,14 +1238,21 @@ export class GoogleSheetsService implements IDataService {
     const cachedAt = new Date().toISOString();
 
     try {
-      this.assertConfigured();
+      const nativeFinance =
+        financeDatabaseEnabled() &&
+        directoryDatabaseEnabled() &&
+        matchesDatabaseEnabled();
+      if (!nativeFinance) this.assertConfigured();
       assertValidPeriod(period);
       const ledgerPeriods = getCashFlowLedgerPeriods(period);
+      const inputs = nativeFinance
+        ? await this.readFinanceCalculationInputs()
+        : undefined;
       const [transactions, feeIncomeByPeriod, operatingCostTransactions] =
         await Promise.all([
-          this.readCashFlowTransactions(),
-          this.readFeeIncomeByPeriod(ledgerPeriods),
-          this.readFeeCalculatorOperatingCostTransactions(ledgerPeriods),
+          inputs?.transactions ?? this.readCashFlowTransactions(),
+          this.readFeeIncomeByPeriod(ledgerPeriods, inputs),
+          this.readFeeCalculatorOperatingCostTransactions(ledgerPeriods, inputs),
         ]);
       const realManualTransactions = transactions.filter(
         (transaction) => transaction.scenario === "real",
@@ -1281,7 +1298,9 @@ export class GoogleSheetsService implements IDataService {
       return buildFallbackCashFlowData({
         period,
         status: "error",
-        message: serviceError.message,
+        message: financeDatabaseEnabled()
+          ? "No pudimos calcular el Cashflow con los datos actuales. Actualizá la página para volver a intentarlo."
+          : serviceError.message,
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
@@ -1610,7 +1629,7 @@ export class GoogleSheetsService implements IDataService {
     const existingTransaction = records.find((item) => item.id === transaction.id);
     if (existingTransaction?.incomeKind === "fundraising") {
       const applications = await this.readFundraisingBenefits(false);
-      if (applications.some((item) => item.fundraisingId === existingTransaction.id)) {
+      if (hasActiveFundraisingBenefits(applications, existingTransaction.id)) {
         throw new CashFlowInputError(
           "Esta recaudación ya tiene beneficios aplicados y no se puede modificar.",
         );
@@ -1805,8 +1824,9 @@ export class GoogleSheetsService implements IDataService {
     const source = records.find((item) => item.id === transactionId);
     if (
       source?.incomeKind === "fundraising" &&
-      (await this.readFundraisingBenefits(false)).some(
-        (item) => item.fundraisingId === transactionId,
+      hasActiveFundraisingBenefits(
+        await this.readFundraisingBenefits(false),
+        transactionId,
       )
     ) {
       throw new CashFlowInputError(
@@ -2342,7 +2362,7 @@ export class GoogleSheetsService implements IDataService {
     // Payment ownership is pinned to stable account/player identifiers. Display
     // names are editable and must never choose whose debt is being paid.
     const { playersRows, account, fees, financialRows, ledger } =
-      await this.readPlayerPaymentInputs(user);
+      await this.readFinanceCalculationInputs(user);
     const directory = mapRowsToPlayerDirectoryItems(playersRows);
     const identifiers = [account?.playerId, user.playerId, user.id, user.username].filter(
       (id): id is string => Boolean(id),
@@ -2413,18 +2433,14 @@ export class GoogleSheetsService implements IDataService {
     };
   }
 
-  private async readPlayerPaymentInputs(user: AuthUser): Promise<{
-    playersRows: unknown[][];
-    account: Pick<AccountProfile, "userId" | "username" | "playerId"> | undefined;
-    fees: FeeRecord[];
-    financialRows: FeeCalculatorRows;
-    ledger: ReturnType<typeof buildFundraisingLedger>;
-  }> {
+  private async readFinanceCalculationInputs(
+    user?: Pick<AuthUser, "id" | "username">,
+  ): Promise<FinanceCalculationInputs> {
     if (directoryDatabaseEnabled() && matchesDatabaseEnabled()) {
       const snapshot = await new PaymentQuoteStore().read(
         unquoteSheetTitle(getSheetPrefix(this.config.expensesRange)),
-        user.id,
-        user.username,
+        user?.id ?? "",
+        user?.username ?? "",
       );
       const directoryRows = (
         kind: "players",
@@ -2445,13 +2461,16 @@ export class GoogleSheetsService implements IDataService {
           ...snapshot[kind].map((r) => codec.row(codec.headers, r as never)),
         ];
       };
+      const transactions = mapRowsToCashFlowTransactions(financeRows("cash_flow"));
       return {
         playersRows: directoryRows("players", snapshot.players),
-        account: snapshot.accounts.find(
-          (profile) =>
-            profile.userId === user.id ||
-            profile.username.toLowerCase() === user.username.toLowerCase(),
-        ),
+        account: user
+          ? snapshot.accounts.find(
+              (profile) =>
+                profile.userId === user.id ||
+                profile.username.toLowerCase() === user.username.toLowerCase(),
+            )
+          : undefined,
         fees: snapshot.fees,
         financialRows: {
           costsRows: financeRows("costs"),
@@ -2461,15 +2480,13 @@ export class GoogleSheetsService implements IDataService {
           matchRows: [matchStorageHeaders, ...snapshot.matches.map(buildMatchStorageRow)],
           expenseRows: snapshot.expenses,
         },
-        ledger: buildFundraisingLedger(
-          mapRowsToCashFlowTransactions(financeRows("cash_flow")),
-          snapshot.benefits,
-        ),
+        transactions,
+        ledger: buildFundraisingLedger(transactions, snapshot.benefits),
       };
     }
     const [playersRows, account, fees, financialRows, ledger] = await Promise.all([
       this.readCachedPlayerDirectoryRows(),
-      this.findAccountProfile(user.id, user.username),
+      user ? this.findAccountProfile(user.id, user.username) : undefined,
       new FinanceStore().list<FeeRecord>("fees"),
       this.readFeeCalculatorRows(),
       this.readFundraisingLedger(),
@@ -5711,34 +5728,40 @@ export class GoogleSheetsService implements IDataService {
     return mapRowsToCashFlowTransactions(rows);
   }
 
-  private async readFeeIncomeByPeriod(periods: string[]) {
+  private async readFeeIncomeByPeriod(
+    periods: string[],
+    inputs?: FinanceCalculationInputs,
+  ) {
     const uniquePeriods = Array.from(new Set(periods));
-    const playerDirectory = await this.getPlayersData().catch(() => null);
-    const activePlayersFromDirectory =
-      playerDirectory?.players.filter((player) => player.status === "active").length ?? 0;
-    const entries = await Promise.all(
-      uniquePeriods.map(async (period) => {
-        const data = await this.getFeeCalculatorData(period);
-        const total = calculateExpectedFeeIncomeForCashFlow(
-          data,
-          activePlayersFromDirectory,
-        );
-
-        return [period, total] as const;
+    // Read once and calculate the whole series in memory. Calling the public
+    // per-month method concurrently queued hundreds of SQL reads; its fallback
+    // converted failed reads into apparently valid zero-income months.
+    const calculations = await this.buildFeeCalculatorDataForPeriods(
+      uniquePeriods,
+      undefined,
+      inputs?.ledger,
+      inputs,
+    );
+    return new Map(
+      calculations.map((data) => {
+        if (data.source.status === "error")
+          throw new Error("CASHFLOW_CALCULATION_FAILED");
+        return [data.period, calculateExpectedFeeIncomeForCashFlow(data)] as const;
       }),
     );
-
-    return new Map(entries);
   }
 
-  private async readFeeCalculatorOperatingCostTransactions(periods: string[]) {
+  private async readFeeCalculatorOperatingCostTransactions(
+    periods: string[],
+    inputs?: FinanceCalculationInputs,
+  ) {
     const targetPeriods = new Set(periods);
     const sourcePeriods = Array.from(
       new Set([...periods, ...periods.map(getPreviousPeriod)]),
     ).sort();
     const [{ costsRows, actualsRows, matchRows }, playersRows] = await Promise.all([
-      this.readFeeCalculatorRows(),
-      this.readCachedPlayerDirectoryRows().catch(() => []),
+      inputs?.financialRows ?? this.readFeeCalculatorRows(),
+      inputs?.playersRows ?? this.readCachedPlayerDirectoryRows(),
     ]);
     const players = mapRowsToPlayers(playersRows);
     const costs = mapRowsToFeeCalculatorCosts(costsRows);
@@ -10248,30 +10271,13 @@ function buildDashboardData({
   };
 }
 
-function calculateExpectedFeeIncomeForCashFlow(
-  data: FeeCalculatorData,
-  activePlayersFromDirectory: number,
-) {
-  const calculatedTotal = data.playerCalculations.reduce(
-    (sum, calculation) => sum + calculation.finalQuota,
-    0,
+function calculateExpectedFeeIncomeForCashFlow(data: FeeCalculatorData) {
+  return (
+    data.playerCalculations.reduce(
+      (cents, calculation) => cents + moneyCents(calculation.finalQuota),
+      0,
+    ) / 100
   );
-  const calculatedPlayers = data.playerCalculations.length;
-  const adjustedQuota = data.summary.baseQuota + (data.summary.additionalQuota ?? 0);
-  const activePlayersFromCalculator =
-    data.players.filter((player) => player.status === "active").length ||
-    data.summary.players;
-  const expectedPlayers = Math.max(
-    activePlayersFromCalculator,
-    activePlayersFromDirectory,
-    data.summary.players,
-  );
-
-  if (adjustedQuota > 0 && expectedPlayers > calculatedPlayers) {
-    return calculatedTotal + (expectedPlayers - calculatedPlayers) * adjustedQuota;
-  }
-
-  return calculatedTotal;
 }
 
 function buildCashFlowData({

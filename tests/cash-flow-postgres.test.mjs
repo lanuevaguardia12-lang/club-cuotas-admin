@@ -129,6 +129,29 @@ test(
             )[0].data.amount,
             100000,
           );
+          const [originalEvent] =
+            await tx`select data from club_finance.benefits where id=${prefix + "-benefit"}`;
+          await finance.financeTransaction(() =>
+            new finance.FinanceStore().save("benefits", {
+              ...originalEvent.data,
+              id: prefix + "-reversal",
+              reversalOf: originalEvent.data.id,
+            }),
+          );
+          await service.upsertCashFlowTransaction({ ...collection, amount: 200000 });
+          await service.deleteCashFlowTransaction(collection.id);
+          assert.equal(
+            (
+              await tx`select data from club_finance.cash_flow where id=${collection.id}`
+            )[0].data.active,
+            false,
+          );
+          assert.equal(
+            (
+              await tx`select count(*)::int as n from club_finance.benefits where fundraising_id=${collection.id}`
+            )[0].n,
+            2,
+          );
           assert.equal(sheets.calls.reads, 0);
           assert.equal(sheets.calls.writes, 0);
           assert.equal(sheets.calls.clients, 0);

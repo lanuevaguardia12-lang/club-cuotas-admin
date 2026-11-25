@@ -526,3 +526,26 @@ test("an attempt with no available balance does not block a benefit after credit
   assert.equal(ledger.applications[0].id, "retry");
   assert.equal(ledger.applications[0].allocations[0].amount, 100);
 });
+
+test("a collection can be edited and deleted after all its benefits were reversed, retaining the historic ledger", async () => {
+  const { service, input, sheets } = setup();
+  await service.upsertCashFlowTransaction(input);
+  await service.applyFundraisingBenefit({
+    fundraisingId: input.id,
+    period: "2026-10",
+    percent: 50,
+  });
+  const before = await service.getFeeCalculatorData("2026-10");
+  await assert.rejects(
+    service.deleteCashFlowTransaction(input.id),
+    /beneficios aplicados/,
+  );
+  await service.deleteFundraisingBenefit(before.benefitApplications[0].id);
+  const reversed = await service.getFeeCalculatorData("2026-10");
+  assert.equal(reversed.benefitApplications.length, 0);
+  await service.upsertCashFlowTransaction({ ...input, amount: 80000 });
+  await service.deleteCashFlowTransaction(input.id);
+  const after = await service.getFeeCalculatorData("2026-10");
+  assert.equal(after.fundraisingSources.length, 0);
+  assert.equal(sheets.rows.RecaudacionBeneficios.length, 3);
+});

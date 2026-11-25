@@ -750,8 +750,9 @@ function CashFlowTransactionsList({
                 {transaction.incomeKind === "fundraising" ? (
                   <p className="text-muted-foreground text-sm">
                     Saldo distribuido entre{" "}
-                    {transaction.participantPlayerIds?.length ?? 0} jugadores. Una vez
-                    aplicado un beneficio, la recaudación queda protegida contra cambios.
+                    {transaction.participantPlayerIds?.length ?? 0} jugadores. Para editar
+                    o eliminar la recaudación, quitá primero los beneficios que sigan
+                    aplicados en el calculador de cuotas.
                   </p>
                 ) : null}
                 <div className="flex justify-end gap-2">
@@ -923,6 +924,11 @@ function CashFlowMonthSummary({
           <ConceptBreakdown title="Ingresos del mes" rows={incomeRows} />
           <ConceptBreakdown title="Gastos del mes" rows={expenseRows} isExpense />
         </section>
+        <p className="text-muted-foreground text-xs">
+          Las cuotas calculadas suman los importes finales de los jugadores del mes, con
+          sus descuentos y devoluciones. Es el ingreso esperado e incluye las cuotas
+          pendientes de pago.
+        </p>
       </CardContent>
     </Card>
   );

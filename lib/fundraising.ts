@@ -10,6 +10,19 @@ import type {
 
 export const ALL_FUNDRAISING_SOURCES = "__all__";
 
+export function hasActiveFundraisingBenefits(
+  events: FundraisingBenefitApplication[],
+  fundraisingId: string,
+) {
+  const reversed = new Set(events.map((event) => event.reversalOf).filter(Boolean));
+  return events.some(
+    (event) =>
+      event.fundraisingId === fundraisingId &&
+      !event.reversalOf &&
+      !reversed.has(event.id),
+  );
+}
+
 export function planFundraisingBenefit(
   data: FeeCalculatorData,
   input: ApplyFundraisingBenefitInput,
