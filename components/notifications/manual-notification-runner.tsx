@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 
 type NotificationAuditType =
-  "all" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
+  "all" | "manual" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
 
 type ManualRunKind =
   | "birthday"

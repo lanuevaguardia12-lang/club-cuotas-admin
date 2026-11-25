@@ -36,13 +36,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  if (user.role === "admin") {
-    return NextResponse.json(
-      { message: "Las notificaciones push no estan disponibles para administradores." },
-      { status: 403 },
-    );
-  }
-
   if (!isPushConfigured()) {
     return NextResponse.json(
       { message: "Push notifications no esta configurado." },

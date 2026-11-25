@@ -11,6 +11,7 @@ import {
 
 import { markNotificationReadAction } from "@/app/(dashboard)/notifications/actions";
 import { EmptySection } from "@/components/layout/empty-section";
+import { NotificationComposer } from "@/components/notifications/notification-composer";
 import { NotificationManualRunPanel } from "@/components/notifications/manual-notification-runner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,7 @@ import type { PlayerDirectoryItem } from "@/types/players";
 export const dynamic = "force-dynamic";
 
 type NotificationAuditType =
-  "all" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
+  "all" | "manual" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
 type NotificationAuditStatus =
   "all" | "created" | "failed" | "no_subscription" | "sent" | "skipped";
 
@@ -55,6 +56,7 @@ interface NotificationAuditRow {
 
 const typeFilters: Array<{ label: string; value: NotificationAuditType }> = [
   { label: "Todas", value: "all" },
+  { label: "Personalizadas", value: "manual" },
   { label: "Próximo partido", value: "upcoming-match" },
   { label: "Cuotas", value: "fee" },
   { label: "MVP", value: "mvp" },
@@ -133,6 +135,15 @@ export default async function NotificationsPage({
           cumpleaños.
         </p>
       </header>
+
+      <NotificationComposer
+        users={accounts.map(({ userId, username, name, role }) => ({
+          userId,
+          username,
+          name,
+          role,
+        }))}
+      />
 
       <section className="grid gap-4 sm:grid-cols-4">
         <MetricCard
@@ -476,6 +487,7 @@ function buildNotificationDetail(
 }
 
 function getAuditTypeGroup(notification: AppNotification): NotificationAuditType {
+  if (notification.referenceId?.startsWith("manual:")) return "manual";
   if (isNotificationKind(notification, "birthday")) {
     return "birthday";
   }
@@ -503,6 +515,7 @@ function getAuditTypeGroup(notification: AppNotification): NotificationAuditType
 }
 
 function getNotificationTypeLabel(notification: AppNotification) {
+  if (notification.referenceId?.startsWith("manual:")) return "Personalizada";
   if (isNotificationKind(notification, "birthday")) {
     return "Cumpleaños";
   }
@@ -542,6 +555,7 @@ function isNotificationKind(
 
 function parseTypeFilter(value: string | undefined): NotificationAuditType {
   if (
+    value === "manual" ||
     value === "fee" ||
     value === "birthday" ||
     value === "match-registration" ||

@@ -4238,8 +4238,17 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
-  async getNotifications() {
+  async getNotifications({ fresh = false }: { fresh?: boolean } = {}) {
     this.assertConfigured();
+
+    if (fresh) {
+      return mapRowsToNotifications(
+        await this.readOptionalValuesFromSpreadsheet(
+          this.getAppSpreadsheetId(),
+          this.config.notificationsRange,
+        ),
+      );
+    }
 
     const rows = await unstable_cache(
       () =>
@@ -4277,6 +4286,11 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async createNotification(input: CreateNotificationInput): Promise<void> {
+    await this.createNotifications([input]);
+  }
+
+  async createNotifications(inputs: CreateNotificationInput[]): Promise<void> {
+    if (inputs.length === 0) return;
     this.assertConfigured();
 
     const spreadsheetId = this.getAppSpreadsheetId();
@@ -4296,7 +4310,7 @@ export class GoogleSheetsService implements IDataService {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${sheetPrefix}!A1:${toColumnName(headers.length - 1)}1`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: {
           values: [headers],
         },
@@ -4312,20 +4326,72 @@ export class GoogleSheetsService implements IDataService {
           notificationHeaders,
         );
 
-    const row = buildNotificationWritableRow(headers, {
-      id: createId("notification"),
-      createdAt: new Date().toISOString(),
-      input,
-    });
+    const rows = inputs.map((input) =>
+      buildNotificationWritableRow(headers, {
+        id: createId("notification"),
+        createdAt: new Date().toISOString(),
+        input,
+      }),
+    );
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: this.config.notificationsRange,
-      valueInputOption: "USER_ENTERED",
+      valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: [row],
+        values: rows,
       },
+    });
+    invalidatePremiumCache();
+  }
+
+  async updateNotificationDeliveries(
+    updates: import("@/types/premium").NotificationDeliveryUpdate[],
+  ): Promise<void> {
+    if (!updates.length) return;
+    this.assertConfigured();
+    const spreadsheetId = this.getAppSpreadsheetId();
+    const values = await this.readValuesFromSpreadsheet(
+      spreadsheetId,
+      this.config.notificationsRange,
+    );
+    const [headerRow = [], ...rows] = values;
+    const headers = headerRow.map((header) => normalizeHeader(String(header)));
+    const referenceIndex = findHeaderIndex(headers, [
+      "reference_id",
+      "referencia_id",
+      "entity_id",
+    ]);
+    if (referenceIndex < 0)
+      throw new Error("No se encontró la referencia de la notificación.");
+    const byReference = new Map(updates.map((update) => [update.referenceId, update]));
+    const prefix = getSheetPrefix(this.config.notificationsRange);
+    const data = rows.flatMap((row, rowIndex) => {
+      const update = byReference.get(String(row[referenceIndex] ?? ""));
+      if (!update) return [];
+      const fields = [
+        [["delivery_status", "estado_entrega"], update.deliveryStatus],
+        [["delivery_attempts", "intentos_entrega"], String(update.deliveryAttempts)],
+        [["delivery_error", "error_entrega"], update.deliveryError ?? ""],
+      ] as const;
+      return fields.flatMap(([aliases, value]) => {
+        const column = findHeaderIndex(headers, [...aliases]);
+        return column < 0
+          ? []
+          : [
+              {
+                range: `${prefix}!${toColumnName(column)}${rowIndex + 2}`,
+                values: [[value]],
+              },
+            ];
+      });
+    });
+    if (!data.length) return;
+    const sheets = await this.createSheetsClient();
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: "RAW", data },
     });
     invalidatePremiumCache();
   }

@@ -258,3 +258,10 @@ export interface CheckoutResult {
   checkoutUrl: string;
   status: PaymentStatus;
 }
+
+export interface NotificationDeliveryUpdate {
+  referenceId: string;
+  deliveryStatus: NotificationDeliveryStatus;
+  deliveryAttempts: number;
+  deliveryError?: string;
+}

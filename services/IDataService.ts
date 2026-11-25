@@ -121,9 +121,13 @@ export interface IDataService {
   createEquipmentAssignment(input: CreateEquipmentAssignmentInput): Promise<void>;
   deleteEquipmentAssignment(assignmentId: string): Promise<void>;
   getPremiumData(): Promise<PremiumData>;
-  getNotifications(): Promise<AppNotification[]>;
+  getNotifications(options?: { fresh?: boolean }): Promise<AppNotification[]>;
   recordAuditEvent(input: CreateAuditEventInput): Promise<void>;
   createNotification(input: CreateNotificationInput): Promise<void>;
+  createNotifications(inputs: CreateNotificationInput[]): Promise<void>;
+  updateNotificationDeliveries(
+    updates: import("@/types/premium").NotificationDeliveryUpdate[],
+  ): Promise<void>;
   markNotificationRead(notificationId: string): Promise<void>;
   markNotificationsRead(notificationIds: string[]): Promise<void>;
   getReminderJobs(): Promise<ReminderJob[]>;

@@ -27,10 +27,6 @@ export async function GET() {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
-  if (user.role === "admin") {
-    return NextResponse.json({ notifications: [], unreadCount: 0 });
-  }
-
   const notifications = (await getDataService().getNotifications())
     .filter((notification) => !isWhatsAppBotNotification(notification))
     .filter((notification) => notification.status !== "archived")
@@ -49,16 +45,6 @@ export async function PATCH(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
-  }
-
-  if (user.role === "admin") {
-    return NextResponse.json(
-      {
-        message:
-          "Las notificaciones personales no estan disponibles para administradores.",
-      },
-      { status: 403 },
-    );
   }
 
   const parsed = markReadSchema.safeParse(await request.json().catch(() => null));
@@ -122,6 +108,9 @@ export async function PATCH(request: NextRequest) {
 }
 
 function canUserSeeNotification(notification: AppNotification, user: AuthUser) {
+  if (notification.referenceId?.startsWith("manual:"))
+    return notification.targetUserId === user.id;
+  if (user.role === "admin") return false;
   const userKeys = buildNotificationUserKeys(user);
 
   if (notification.targetUserId || notification.targetPlayerId) {
