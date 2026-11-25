@@ -1,3 +1,7 @@
+import {
+  DEFAULT_REMINDER_TEMPLATE,
+  normalizePaymentReminderLinks,
+} from "@/lib/reminders";
 import type { AppSettings, UpdateAppSettingsInput } from "@/types/settings";
 import { BRAND_LOGO_URL, BRAND_PRIMARY_COLOR } from "@/lib/brand";
 
@@ -8,9 +12,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   clubName: DEFAULT_CLUB_NAME,
   logoUrl: normalizeLogoUrl(process.env.NEXT_PUBLIC_LOGO_URL) || BRAND_LOGO_URL,
   paymentAlias: process.env.NEXT_PUBLIC_PAYMENT_ALIAS ?? "",
-  whatsAppMessageTemplate:
-    process.env.NEXT_PUBLIC_REMINDER_TEMPLATE ??
-    "Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6",
+  whatsAppMessageTemplate: DEFAULT_REMINDER_TEMPLATE,
   monthlyFee: parsePositiveNumber(process.env.NEXT_PUBLIC_DEFAULT_MONTHLY_FEE),
   primaryColor:
     normalizeHexColor(process.env.NEXT_PUBLIC_PRIMARY_COLOR) ?? DEFAULT_PRIMARY_COLOR,
@@ -38,7 +40,7 @@ export function normalizeAppSettings(
     logoUrl: normalizeLogoUrl(input.logoUrl) || DEFAULT_APP_SETTINGS.logoUrl,
     paymentAlias: normalizeTextValue(input.paymentAlias),
     whatsAppMessageTemplate:
-      normalizeTextValue(input.whatsAppMessageTemplate) ||
+      normalizePaymentReminderLinks(normalizeTextValue(input.whatsAppMessageTemplate)) ||
       DEFAULT_APP_SETTINGS.whatsAppMessageTemplate,
     monthlyFee: parsePositiveNumber(input.monthlyFee),
     primaryColor:

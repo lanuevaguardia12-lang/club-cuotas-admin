@@ -1,4 +1,5 @@
 import "server-only";
+import { directoryDatabaseEnabled } from "@/services/database/directory-store";
 
 import { timingSafeEqual } from "node:crypto";
 
@@ -20,7 +21,7 @@ export class EnvAdminUserStore implements UserStore {
   async findByCredentials(credentials: UserCredentials): Promise<AuthUser | null> {
     const users = getEnvUsers();
 
-    if (users.length === 0) {
+    if (users.length === 0 && !directoryDatabaseEnabled()) {
       throw new Error("ADMIN_USERNAME/ADMIN_PASSWORD or AUTH_USERS_JSON are required.");
     }
 
@@ -31,7 +32,10 @@ export class EnvAdminUserStore implements UserStore {
     if (!user) {
       const account = await getDataService()
         .getAccountAuthByUsername(credentials.username)
-        .catch(() => null);
+        .catch((error) => {
+          if (directoryDatabaseEnabled()) throw error;
+          return null;
+        });
 
       if (!account?.passwordHash || !account.role) {
         return null;
@@ -57,7 +61,10 @@ export class EnvAdminUserStore implements UserStore {
 
     const override = await getDataService()
       .getAccountAuthOverride(user.id, user.username)
-      .catch(() => null);
+      .catch((error) => {
+        if (directoryDatabaseEnabled()) throw error;
+        return null;
+      });
     const passwordMatches = override?.passwordHash
       ? verifyPassword(credentials.password, override.passwordHash)
       : safeCompare(credentials.password, user.password);

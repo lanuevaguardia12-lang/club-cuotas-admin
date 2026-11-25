@@ -1,3 +1,6 @@
+import { PaymentReceiptsStore } from "@/services/database/payment-receipts-store";
+import { financeDatabaseEnabled } from "@/services/database/finance-store";
+import { formatPaymentAmount, paymentPeriodLabel } from "@/lib/player-payment";
 import { redirect } from "next/navigation";
 import { CreditCard, Landmark, Link2, WalletCards } from "lucide-react";
 
@@ -30,6 +33,9 @@ export default async function PaymentsPage() {
   }
 
   const premium = await getDataService().getPremiumData();
+  const receipts = financeDatabaseEnabled()
+    ? await new PaymentReceiptsStore().recent()
+    : [];
 
   return (
     <main className="grid gap-6">
@@ -64,6 +70,41 @@ export default async function PaymentsPage() {
           icon={<CreditCard className="size-4" aria-hidden="true" />}
         />
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Comprobantes de jugadores</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {receipts.map((receipt) => (
+            <div
+              key={receipt.id}
+              className="border-border grid min-w-0 gap-2 rounded-xl border p-4 sm:grid-cols-[1fr_auto]"
+            >
+              <div className="min-w-0">
+                <p className="font-medium break-words">{receipt.playerName}</p>
+                <p className="text-muted-foreground mt-1 text-sm break-words">
+                  {receipt.quotas.map((q) => paymentPeriodLabel(q.period)).join(" · ")}
+                </p>
+                <p className="mt-2 font-semibold tabular-nums">
+                  {formatPaymentAmount(receipt.totalCents)}
+                </p>
+              </div>
+              <a
+                href={`/api/payment-receipts/${receipt.id}`}
+                className="text-primary inline-flex min-h-11 items-center text-sm font-medium"
+              >
+                Ver comprobante
+              </a>
+            </div>
+          ))}
+          {!receipts.length ? (
+            <p className="text-muted-foreground text-sm">
+              Todavía no hay comprobantes cargados desde la app.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <section className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
         <CreateCheckoutForm />

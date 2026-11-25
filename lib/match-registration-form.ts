@@ -1,4 +1,5 @@
 import "server-only";
+import { matchesDatabaseEnabled } from "@/services/database/matches-store";
 
 import { APP_TEAM_NAME } from "@/lib/league-fixture";
 import type { IDataService } from "@/services/IDataService";
@@ -24,6 +25,15 @@ export function buildMatchRegistrationFormUrl({
   match,
   playerNames,
 }: BuildMatchRegistrationFormUrlInput) {
+  if (matchesDatabaseEnabled()) {
+    const params = new URLSearchParams({
+      date: match.dateIso ?? "",
+      rival: getMatchRival(match),
+      sourceType: match.competitionKind,
+      venue: getClubHomeAway(match),
+    });
+    return `/match-attendance?${params.toString()}`;
+  }
   const url = new URL(getMatchRegistrationFormUrl());
   const entries = getMatchRegistrationFormEntries();
 

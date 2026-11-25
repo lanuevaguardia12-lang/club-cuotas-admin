@@ -1,8 +1,22 @@
 export const REMINDER_TEMPLATE_STORAGE_KEY = "club-cuotas-reminder-template";
 
-export const DEFAULT_REMINDER_TEMPLATE =
+export const PLAYER_PAYMENT_PAGE_URL = `${(process.env.NEXT_PUBLIC_APP_URL || "https://club-cuotas-admin.vercel.app").replace(/\/+$/, "")}/pagar-cuota`;
+
+export function normalizePaymentReminderLinks(template: string) {
+  return template
+    .replace(
+      /https:\/\/forms\.gle\/FFmGxDKRM4UNhM5h6(?:\?[^\s]*)?/g,
+      PLAYER_PAYMENT_PAGE_URL,
+    )
+    .replace(
+      /https:\/\/docs\.google\.com\/forms\/d\/e\/1FAIpQLScNPtChGadjifgrXFRZjDYsMVaIniB-EIRRvKfT4SAGKhqfuA\/viewform(?:\?[^\s]*)?/g,
+      PLAYER_PAYMENT_PAGE_URL,
+    );
+}
+export const DEFAULT_REMINDER_TEMPLATE = normalizePaymentReminderLinks(
   process.env.NEXT_PUBLIC_REMINDER_TEMPLATE ??
-  "Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\nEl monto es {monto}.\nY completar el formulario! https://forms.gle/FFmGxDKRM4UNhM5h6";
+    `Buenas {nombre}, ¿cómo estás? Porfa acordate de pagar la cuota de {mes}.\\nEl monto es {monto}.\\nPodés registrar tu pago y comprobante acá: ${PLAYER_PAYMENT_PAGE_URL}`,
+);
 
 export interface ReminderTemplateValues {
   clubName: string;
@@ -16,7 +30,7 @@ const SPANISH_MONTH_NAME_PATTERN =
   /\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+\d{4})?\b/gi;
 
 export function buildReminderMessage(template: string, values: ReminderTemplateValues) {
-  return template
+  return normalizePaymentReminderLinks(template)
     .replaceAll("{nombre}", values.playerName)
     .replaceAll("{mes}", values.currentMonth)
     .replaceAll("{monto}", values.feeAmount)

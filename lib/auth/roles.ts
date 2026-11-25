@@ -1,6 +1,7 @@
 import type { AuthRole, AuthUser } from "@/types/auth";
 
 export type Permission =
+  | "matches:manage"
   | "dashboard:read"
   | "account:manage"
   | "players:read"
@@ -43,6 +44,7 @@ export const roleDescriptions: Record<AuthRole, string> = {
 
 const rolePermissions: Record<AuthRole, Permission[]> = {
   admin: [
+    "matches:manage",
     "dashboard:read",
     "account:manage",
     "players:read",
@@ -67,6 +69,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "player-of-match:manage",
   ],
   coach: [
+    "matches:manage",
     "dashboard:read",
     "account:manage",
     "fixture:read",

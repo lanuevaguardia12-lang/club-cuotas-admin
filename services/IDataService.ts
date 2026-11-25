@@ -1,3 +1,12 @@
+import type {
+  PlayerPaymentData,
+  PaymentReceiptRecord,
+  RegisterPlayerPaymentInput,
+} from "@/types/player-payment";
+import type {
+  MatchAttendanceData,
+  UpsertMatchAttendanceInput,
+} from "@/types/match-attendance";
 import type { ApplyFundraisingBenefitInput } from "@/types/fundraising";
 import type {
   AccountAuthOverride,
@@ -72,6 +81,13 @@ export interface IDataService {
   deleteFundraisingBenefit(applicationId: string): Promise<void>;
   applyFundraisingBenefit(input: ApplyFundraisingBenefitInput): Promise<void>;
   getCashFlowData(period?: string): Promise<CashFlowData>;
+  getPlayerPaymentData(user: AuthUser): Promise<PlayerPaymentData>;
+  registerPlayerPayment(
+    user: AuthUser,
+    input: RegisterPlayerPaymentInput,
+  ): Promise<PaymentReceiptRecord>;
+  getMatchAttendanceData(): Promise<MatchAttendanceData>;
+  upsertMatchAttendance(input: UpsertMatchAttendanceInput): Promise<void>;
   getCoachRecordsData(period?: string): Promise<CoachRecordsData>;
   upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void>;
   deleteCashFlowTransaction(transactionId: string): Promise<void>;

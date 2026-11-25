@@ -276,6 +276,24 @@ export class DatabaseService implements IDataService {
     };
   }
 
+  async getPlayerPaymentData(): Promise<
+    import("@/types/player-payment").PlayerPaymentData
+  > {
+    throw new Error("DatabaseService todavía no está implementado.");
+  }
+  async registerPlayerPayment(): Promise<
+    import("@/types/player-payment").PaymentReceiptRecord
+  > {
+    throw new Error("DatabaseService todavía no está implementado.");
+  }
+  async getMatchAttendanceData(): Promise<
+    import("@/types/match-attendance").MatchAttendanceData
+  > {
+    throw new Error("DatabaseService todavía no está implementado.");
+  }
+  async upsertMatchAttendance(): Promise<void> {
+    throw new Error("DatabaseService todavía no está implementado.");
+  }
   async getCoachRecordsData(
     period = new Date().toISOString().slice(0, 7),
   ): Promise<CoachRecordsData> {

@@ -70,7 +70,7 @@ export interface AccountUser {
   hasPassword: boolean;
   passwordUpdatedAt: string;
   updatedAt: string;
-  source: "env" | "sheet" | "env+sheet";
+  source: "env" | "sheet" | "env+sheet" | "database" | "env+database";
 }
 
 export interface CreateFanAccountInput {

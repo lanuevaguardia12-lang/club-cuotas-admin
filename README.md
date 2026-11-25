@@ -147,7 +147,7 @@ utils/
 
 ## Requisitos
 
-- Node.js 20 o superior
+- Node.js 22 (igual que producción y CI)
 - npm
 
 La version recomendada esta fijada en `.nvmrc`.
@@ -1378,12 +1378,38 @@ servicios simulados; no leen ni escriben planillas reales.
 
 ### Migracion a PostgreSQL
 
-La interfaz `IDataService` define todo lo que la app necesita. Para migrar:
+Jugadores, equipos y cuentas pueden usar Supabase con `DIRECTORY_DATA_SOURCE=postgresql`.
+El resto de la migración sigue en preparación; `DatabaseService` todavía no reemplaza a
+`GoogleSheetsService`. Mantener `DATA_SOURCE=google-sheets` hasta implementar
+el servicio, los formularios internos y verificar la equivalencia de datos.
 
-1. Implementar `DatabaseService` con PostgreSQL.
-2. Mantener los mismos metodos del contrato.
-3. Cambiar `DATA_SOURCE=postgresql`.
-4. No modificar componentes de UI.
+- `DATABASE_URL`: conexión de Supabase Transaction pooler para la aplicación.
+- `DIRECT_URL`: conexión de sesión para las herramientas de migración.
+- Guardar conexiones en `.env.local` y configuración de origen en
+  `.env.production.local`, ambos excluidos de Git. Nunca imprimir sus valores.
+- `npm run db:check`: comprueba ambas conexiones con consultas de lectura.
+- `npm run db:migrate`: aplica SQL versionado en una transacción, con bloqueo
+  para evitar ejecuciones simultáneas y comprobación de cambios de checksum.
+- `npm run db:archive-sheets`: copia todas las pestañas de las planillas
+  configuradas a `club_private`, conservando celdas, fórmulas y metadatos.
+  Usa permisos de lectura de Google; no modifica las planillas ni activa PostgreSQL.
+  Verifica el contenido guardado antes de confirmar la transacción completa.
+- `RUN_DATABASE_TESTS=1 node --test tests/database-migration.test.mjs`: prueba
+  de integración explícita contra la base configurada. Verifica permisos y
+  rollback; las filas de prueba no quedan guardadas. Se omite en `npm test`.
+
+El esquema privado no se expone a `anon` ni `authenticated` y tiene RLS activado.
+Los archivos históricos de comprobantes permanecen en Drive durante esta etapa;
+la copia de celdas conserva sus referencias, no descarga esos archivos.
+Cada archivo histórico queda como lote `staged`: aún requiere transformar los
+registros, comprobar cuotas/saldos/permisos y capturar los cambios posteriores
+antes de activar la nueva base. No es una copia simultánea de todas las planillas.
+
+Decisiones: conservar todo el historial y cuentas/roles; registro de pagos sin
+aprobación manual; formularios internos de pagos y partidos; comprobantes nuevos
+privados en Supabase Storage. La deuda acumulada y el pago de varios meses ya están
+implementados; los pagos parciales y la lectura automática de PDF quedan para una etapa posterior. Los beneficios de
+recaudación existentes y la base de devoluciones deben conservar su comportamiento.
 
 ## Produccion, rendimiento y SEO
 
@@ -1608,3 +1634,176 @@ npm run ci
 - Webhook de Mercado Pago apuntando a `/api/webhooks/mercado-pago`.
 - Webhook de Stripe apuntando a `/api/webhooks/stripe`.
 - Pago de prueba validado en `/payments`.
+
+### Directorio y cuentas en Supabase
+
+Las tablas privadas `club_directory.players`, `teams` y `accounts` conservan los
+registros canónicos de la app. Las identidades, usuarios (únicos sin distinguir
+mayúsculas), estados y roles tienen restricciones e índices PostgreSQL. Los campos
+históricos adicionales se conservan en JSONB, incluidos fotos, fechas y hashes.
+El esquema no está expuesto a `anon` ni `authenticated`; las operaciones pasan por
+el servidor y los permisos existentes de la aplicación.
+
+Después de `npm run db:migrate`, importar un lote confirmado:
+
+```bash
+npm run db:import-directory -- <UUID-del-lote>
+```
+
+La importación es transaccional, coteja todos los campos y registra el lote. Una
+repetición del mismo lote no sobrescribe cambios. Se rechaza importar otro lote
+sobre tablas ocupadas. No se crean contraseñas nuevas ni se migran usuarios a
+Supabase Auth: se conserva la autenticación existente y los usuarios configurados
+en el entorno siguen funcionando. Las cuentas exclusivas del entorno permanecen
+en Vercel; no están incluidas en la cantidad importada desde Sheets.
+
+Para activar esta etapa, usar `DATA_SOURCE=google-sheets` y
+`DIRECTORY_DATA_SOURCE=postgresql`, junto con `DATABASE_URL` en el servidor. Cuotas,
+pagos, asistencias y estadísticas siguen usando su proveedor anterior. Los módulos
+que consultan el plantel reciben el directorio de Supabase. Antes de activar en
+producción, verificar que las tres hojas no hayan cambiado desde el lote y probar
+los accesos en un entorno de prueba. Después del cambio, mantener las escrituras
+del directorio desde la app; las hojas históricas ya no reciben esas ediciones.
+No volver a Sheets después de nuevas escrituras sin reconciliar primero los datos.
+
+Pruebas de restricciones y privacidad contra la base configurada (los registros de
+prueba se revierten):
+
+```bash
+RUN_DATABASE_TESTS=1 node --test tests/database-migration.test.mjs tests/directory-database.test.mjs
+```
+
+### Finanzas en Supabase
+
+La etapa financiera usa `FINANCE_DATA_SOURCE=postgresql`, manteniendo
+`DATA_SOURCE=google-sheets` y `DIRECTORY_DATA_SOURCE=postgresql`. Las tablas privadas
+`club_finance` contienen costos, ajustes reales, estados mensuales, movimientos de
+cashflow, beneficios, cuotas pagadas, pagos de proveedores y política de devolución.
+Los importes, tipos, periodos e identidades tienen columnas e índices PostgreSQL;
+los demás campos canónicos se conservan en JSONB.
+
+```bash
+npm run db:migrate
+npm run db:import-finance -- <UUID-del-lote>
+npm run db:verify-finance -- <UUID-del-lote>
+RUN_DATABASE_TESTS=1 node --test tests/finance-postgres.test.mjs
+```
+
+La importación registra y coteja cada entidad en una sola transacción. Las
+respuestas originales del formulario y los gastos históricos se conservan en
+`historic_sources`; los pagos del formulario se consolidan por jugador y mes en
+`fees`, conservando las fechas originales y el estado pagado. Los comprobantes
+históricos mantienen sus referencias en Drive. Los pagos de proveedores aprobados
+se guardan junto con el estado de la cuota en una misma transacción y los reintentos
+conservan una sola operación por proveedor e identificador externo.
+
+Las operaciones financieras se serializan mediante un bloqueo transaccional para
+que la validación de saldo y su consumo sean indivisibles. Editar/eliminar un costo
+y reintegrar sus beneficios ocurre en un mismo commit. El libro de beneficios solo
+admite eventos nuevos; PostgreSQL rechaza modificar o eliminar eventos anteriores.
+La invalidación de caché ocurre después del commit, nunca con datos parciales.
+
+El motor de cálculo compartido conserva la cuota base fija separada de costos
+variables y beneficios. El cotejo compara todos los meses del lote, incluyendo
+base actual/anterior, ajustes, adicionales, devolución, beneficio y total final.
+La pantalla de pago acumula deuda y permite pagar varios meses; los pagos parciales
+y la lectura de PDF siguen pendientes.
+
+La activación local no cambia Vercel. Antes de activar finanzas en producción hay
+que reemplazar el formulario externo de pagos y cotejar cualquier nueva respuesta
+recibida en Sheets desde el lote: una vez activado este origen, las lecturas
+financieras usan Supabase y dejan de incorporar respuestas nuevas de Google Forms.
+Los partidos y asistencias todavía se leen desde Sheets.
+
+### Partidos y asistencias en Supabase
+
+`MATCHES_DATA_SOURCE=postgresql` activa los partidos registrados, la asistencia del
+DT y de jugadores y los resúmenes de temporada en el esquema privado `club_matches`.
+Mantener `DATA_SOURCE=google-sheets` durante la migración por etapas. Se usa el
+mismo bloqueo de las operaciones financieras al cambiar un partido: el calculador
+no puede observar un partido con su asistencia parcialmente guardada.
+
+```bash
+npm run db:migrate
+npm run db:import-matches -- <UUID-del-lote>
+npm run db:verify-finance -- <UUID-del-lote> --matches
+RUN_DATABASE_TESTS=1 node --test tests/matches-postgres.test.mjs
+```
+
+La importación usa `Partidos jugados formulario` de la planilla de partidos y
+`AsistenciasJugadores` de la planilla de la app. Conserva fecha, competencia, rival,
+condición, primera carga, participantes y asistencia del DT. Las presencias tienen
+filas independientes, con vínculo al jugador cuando la identificación es inequívoca.
+Los nombres históricos fuera del plantel se conservan sin inventar jugadores.
+El orden original de partidos del mismo día se conserva para mantener las rachas.
+
+La fuente contiene versiones repetidas de los resúmenes. Todas se guardan en
+`snapshot_history`; el resumen vigente es el más reciente por jugador/temporada.
+Las estadísticas de la app siguen calculándose a partir de los partidos, usando
+las mismas reglas anteriores. Las otras hojas derivadas quedan conservadas en el
+archivo completo del lote y no se toman como una segunda fuente de asistencia.
+
+El registro interno está en `/match-attendance`. Administrador y DT pueden registrar
+o editar fecha, rival, competencia, condición, asistencia del DT y jugadores elegidos.
+El permiso `matches:manage` no habilita a jugadores, fans ni tesoreros a editar
+asistencias. La pantalla solo envía al cliente nombres, identificadores y estado
+del plantel, sin documentos, teléfonos ni correos. Los botones de registrar jugadores
+del fixture y del inicio usan esta pantalla cuando el origen está activado.
+Los nombres históricos no vinculados se conservan al editar un partido.
+
+La activación local no publica nada en Vercel. Antes del cambio productivo hay que
+capturar y reconciliar respuestas nuevas del formulario desde el lote y cerrar el
+formulario anterior para evitar nuevas cargas en Sheets. Fixture oficial, ajustes
+del fixture y votos MVP mantienen sus proveedores actuales durante esta etapa.
+
+### Pago de varias cuotas con comprobante
+
+`/pagar-cuota` identifica al jugador desde su sesión y los identificadores estables
+de su cuenta; el nombre de pantalla nunca elige al titular de la deuda. Suma cuotas
+pendientes de todos los años disponibles hasta el mes actual, con devoluciones y
+beneficios incluidos en cada cuota. No incorpora meses futuros, cuotas pagadas ni
+importes todavía sin definir; estos últimos se muestran por separado.
+
+Desde Inicio y Mi cuota, Registrar pago abre esta pantalla interna. El jugador
+selecciona uno o varios meses, ve el total, puede copiar el alias del club y adjunta
+un único PDF/JPG/PNG/WebP de hasta 4 MB. Los importes se recalculan en el servidor
+al confirmar y se rechaza una selección si cambió desde que se mostró en pantalla.
+No se recibe del navegador ningún identificador de jugador.
+
+El comprobante se guarda en el bucket privado `club-payment-receipts`, y la operación
+en `club_finance.payment_receipts` / `payment_receipt_items`. La operación completa
+marca todas las cuotas elegidas como pagadas y conserva sus importes en el mismo
+commit, sin modificar costos, cuota base ni beneficios. El identificador de solicitud
+hace seguros los reintentos; un fallo revierte todos los cambios de cuotas. Se
+eliminan los archivos temporales no vinculados cuando se confirma que no hubo commit.
+Ante un resultado de commit incierto se verifica el registro antes de borrar nada.
+
+Las descargas pasan por `/api/payment-receipts/[id]`, que permite al titular y a los
+roles con `payments:manage` (administrador/tesorero) obtener el archivo. Se sirven
+como adjuntos privados sin caché. El jugador ve sus últimos comprobantes en su
+pantalla de pago; administración los encuentra en Pagos. Las pruebas de formato,
+tamaño, pertenencia y concurrencia no interpretan el monto del PDF: la lectura del
+monto del comprobante sigue siendo una etapa posterior.
+
+Configurar `SUPABASE_URL` y `SUPABASE_SECRET_KEY` solo en el entorno del servidor,
+junto con la conexión PostgreSQL y los orígenes de datos de esta migración. No usar
+variables `NEXT_PUBLIC_` para esta clave. El esquema/bucket se crean con
+`npm run db:migrate`. Se conserva la autenticación de la app, sin cuentas nuevas
+en Supabase Auth. La pantalla adapta sus tarjetas a celular y mantiene el resumen
+sobre la navegación inferior, con controles táctiles y selección múltiple.
+
+```bash
+node --test tests/player-payment.test.mjs tests/player-payment-routes.test.mjs
+RUN_DATABASE_TESTS=1 node --test tests/player-payment-postgres.test.mjs
+RUN_STORAGE_TESTS=1 node --test tests/payment-storage.test.mjs
+```
+
+Esta configuración local no publica la app en Vercel. Para el despliegue habrá que
+configurar las mismas variables privadas en Vercel y reconciliar los pagos nuevos
+recibidos por el formulario de Google desde el lote histórico antes de cerrarlo.
+
+El despliegue principal usa la integración Git de Vercel. El workflow de despliegue
+por CLI es opcional y solo corre cuando están configurados sus tres secretos; la
+validación de CI y el estado del despliegue de Vercel siguen siendo independientes.
+Los enlaces antiguos del formulario de pagos se reemplazan al generar recordatorios
+para llevar al jugador a `/pagar-cuota`. No se envían mensajes durante el despliegue.

@@ -190,8 +190,8 @@ export default async function MyFeePage({ searchParams }: MyFeePageProps) {
                 <div>
                   <p className="text-sm font-medium">¿Ya hiciste el pago?</p>
                   <p className="text-muted-foreground text-xs">
-                    Abrí el formulario precargado para {formatPeriod(currentMonth.period)}
-                    .
+                    Elegí qué cuotas pagar y cargá tu comprobante para{" "}
+                    {formatPeriod(currentMonth.period)}.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">

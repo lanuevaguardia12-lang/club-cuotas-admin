@@ -1,4 +1,35 @@
 import "server-only";
+import { PaymentReceiptsStore } from "@/services/database/payment-receipts-store";
+import {
+  moneyCents,
+  currentPaymentDate,
+  playerPaymentSchema,
+  paymentReceiptSchema,
+  selectPaymentQuotas,
+  assertReceiptReplay,
+} from "@/lib/player-payment";
+import type {
+  PlayerPaymentData,
+  PaymentReceiptRecord,
+  RegisterPlayerPaymentInput,
+} from "@/types/player-payment";
+import { MatchesStore, matchesDatabaseEnabled } from "@/services/database/matches-store";
+import { matchAttendanceSchema } from "@/lib/match-attendance";
+import type {
+  MatchAttendanceData,
+  UpsertMatchAttendanceInput,
+  AttendanceMatch,
+} from "@/types/match-attendance";
+import {
+  FinanceStore,
+  financeDatabaseEnabled,
+  financeTransaction,
+  inFinanceTransaction,
+} from "@/services/database/finance-store";
+import {
+  directoryDatabaseEnabled,
+  DirectoryStore,
+} from "@/services/database/directory-store";
 
 import {
   buildFundraisingLedger,
@@ -157,6 +188,7 @@ import type {
 import type { TeamProfile, TeamsData, UpsertTeamProfileInput } from "@/types/teams";
 
 function revalidateGoogleSheetsTag(tag: string) {
+  if (inFinanceTransaction()) return;
   try {
     unstable_expireTag(tag);
   } catch {
@@ -545,6 +577,7 @@ const feeCalculatorPlayerStatusHeaders = [
 const feeRefundPolicyHeaders = ["desde", "hasta", "devolucion"];
 
 const accountProfileHeaders = [
+  "player_id",
   "user_id",
   "username",
   "rol",
@@ -916,6 +949,9 @@ export class GoogleSheetsService implements IDataService {
 
   private getProfileCacheIdentity() {
     return [
+      directoryDatabaseEnabled() ? "directory-postgresql-v1" : "directory-sheets",
+      financeDatabaseEnabled() ? "finance-postgresql-v1" : "finance-sheets",
+      matchesDatabaseEnabled() ? "matches-postgresql-v1" : "matches-sheets",
       this.getAppSpreadsheetId(),
       this.getClubSpreadsheetId(),
       this.config.clientEmail ?? "",
@@ -988,6 +1024,7 @@ export class GoogleSheetsService implements IDataService {
       userId: input.userId,
       username: input.username,
       role: existing?.role ?? input.role,
+      playerId: existing?.playerId,
       name: existing?.name || input.name,
       birthDate: existing?.birthDate ?? "",
       email: existing?.email ?? "",
@@ -1016,20 +1053,23 @@ export class GoogleSheetsService implements IDataService {
 
     const now = new Date().toISOString();
 
-    await this.upsertAccountProfile({
-      userId: input.userId,
-      username: input.username,
-      role: input.role,
-      playerId: input.playerId,
-      name: input.name,
-      birthDate: input.birthDate ?? "",
-      email: input.email ?? "",
-      phone: input.phone ?? "",
-      profilePhotoDataUrl: "",
-      passwordHash: input.passwordHash,
-      passwordUpdatedAt: now,
-      updatedAt: now,
-    });
+    await this.upsertAccountProfile(
+      {
+        userId: input.userId,
+        username: input.username,
+        role: input.role,
+        playerId: input.playerId,
+        name: input.name,
+        birthDate: input.birthDate ?? "",
+        email: input.email ?? "",
+        phone: input.phone ?? "",
+        profilePhotoDataUrl: "",
+        passwordHash: input.passwordHash,
+        passwordUpdatedAt: now,
+        updatedAt: now,
+      },
+      true,
+    );
     invalidateAccountCache();
   }
 
@@ -1049,19 +1089,22 @@ export class GoogleSheetsService implements IDataService {
 
     const now = new Date().toISOString();
 
-    await this.upsertAccountProfile({
-      userId: input.userId,
-      username: input.username,
-      role: "fan",
-      name: input.name,
-      birthDate: input.birthDate,
-      email: "",
-      phone: "",
-      profilePhotoDataUrl: "",
-      passwordHash: input.passwordHash,
-      passwordUpdatedAt: now,
-      updatedAt: now,
-    });
+    await this.upsertAccountProfile(
+      {
+        userId: input.userId,
+        username: input.username,
+        role: "fan",
+        name: input.name,
+        birthDate: input.birthDate,
+        email: "",
+        phone: "",
+        profilePhotoDataUrl: "",
+        passwordHash: input.passwordHash,
+        passwordUpdatedAt: now,
+        updatedAt: now,
+      },
+      true,
+    );
     invalidateAccountCache();
   }
 
@@ -1083,7 +1126,7 @@ export class GoogleSheetsService implements IDataService {
       hasPassword: Boolean(profile.passwordHash),
       passwordUpdatedAt: profile.passwordUpdatedAt,
       updatedAt: profile.updatedAt,
-      source: "sheet",
+      source: directoryDatabaseEnabled() ? "database" : "sheet",
     }));
   }
 
@@ -1093,7 +1136,7 @@ export class GoogleSheetsService implements IDataService {
   ): Promise<AccountAuthOverride | null> {
     this.assertConfigured();
 
-    const account = await this.findAccountProfile(userId, username).catch(() => null);
+    const account = await this.findAccountProfile(userId, username);
 
     if (!account) {
       return null;
@@ -1215,7 +1258,9 @@ export class GoogleSheetsService implements IDataService {
           draftCashFlowTransactions.length === 0 &&
           expectedFeeIncome === 0
             ? "Google Sheets conectado, sin movimientos ni cuotas calculadas."
-            : "Cash Flow real y borrador obtenidos desde Google Sheets y calculador de cuota.",
+            : financeDatabaseEnabled()
+              ? "Cash Flow obtenido desde Supabase y el calculador de cuota."
+              : "Cash Flow real y borrador obtenidos desde Google Sheets y calculador de cuota.",
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
@@ -1235,6 +1280,8 @@ export class GoogleSheetsService implements IDataService {
   private async readFundraisingBenefits(
     cached = true,
   ): Promise<FundraisingBenefitApplication[]> {
+    if (financeDatabaseEnabled())
+      return new FinanceStore().list<FundraisingBenefitApplication>("benefits");
     const read = () =>
       this.readOptionalValuesFromSpreadsheet(
         this.getAppSpreadsheetId(),
@@ -1250,22 +1297,7 @@ export class GoogleSheetsService implements IDataService {
           },
         )()
       : await read();
-    return rowsToRecords(rows).map((record) => ({
-      id: pick(record, ["id"]),
-      reversalOf: pick(record, ["anula_beneficio_id"]) || undefined,
-      fundraisingId: pick(record, ["recaudacion_id"]),
-      concept: pick(record, ["concepto"]),
-      period: pick(record, ["periodo"]),
-      percent: Number(pick(record, ["porcentaje"])),
-      createdAt: pick(record, ["creado_en"]),
-      allocations: parseFundraisingAllocations(pick(record, ["reparto"])),
-      costId: pick(record, ["costo_id"]) || undefined,
-      costName: pick(record, ["costo_nombre"]) || undefined,
-      costAmounts: JSON.parse(pick(record, ["limites_gasto"]) || "{}") as Record<
-        string,
-        number
-      >,
-    }));
+    return mapRowsToFundraisingBenefits(rows);
   }
 
   private async readFundraisingLedger(cached = true) {
@@ -1282,6 +1314,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async applyFundraisingBenefit(input: ApplyFundraisingBenefitInput): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.applyFundraisingBenefit(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
     assertValidPeriod(input.period);
     if (!Number.isFinite(input.percent) || input.percent <= 0 || input.percent > 100) {
@@ -1354,6 +1395,10 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async appendFundraisingEvents(events: FundraisingBenefitApplication[]) {
+    if (financeDatabaseEnabled()) {
+      for (const event of events) await new FinanceStore().save("benefits", event);
+      return;
+    }
     const headers = await this.prepareFundraisingHeaders();
     await (
       await this.createSheetsClient()
@@ -1369,6 +1414,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async deleteFundraisingBenefit(applicationId: string): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.deleteFundraisingBenefit(applicationId));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
     const ledger = await this.readFundraisingLedger(false);
     const original = ledger.applications.find(
@@ -1449,6 +1503,11 @@ export class GoogleSheetsService implements IDataService {
           allocations,
         });
     }
+    if (financeDatabaseEnabled()) {
+      await new FinanceStore().save("costs", cost);
+      await this.appendFundraisingEvents(events);
+      return true;
+    }
     const benefitHeaders = await this.prepareFundraisingHeaders();
     const sheets = await this.createSheetsClient();
     const spreadsheetId = this.getAppSpreadsheetId();
@@ -1506,6 +1565,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async upsertCashFlowTransaction(input: UpsertCashFlowTransactionInput): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.upsertCashFlowTransaction(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const spreadsheetId = this.config.spreadsheetId;
@@ -1555,6 +1623,17 @@ export class GoogleSheetsService implements IDataService {
         return { ...allocation, playerName: player.name };
       });
       transaction.amount = roundMoney(transaction.amount);
+    }
+    if (financeDatabaseEnabled()) {
+      await new FinanceStore().save("cash_flow", {
+        ...transaction,
+        id: transaction.id || createId("cash-flow"),
+        active: existingTransaction?.active ?? true,
+        source: "manual",
+        createdAt: existingTransaction?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return;
     }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
@@ -1655,6 +1734,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async deleteCashFlowTransaction(transactionId: string): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.deleteCashFlowTransaction(transactionId));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const spreadsheetId = this.config.spreadsheetId;
@@ -1689,6 +1777,15 @@ export class GoogleSheetsService implements IDataService {
       );
     }
     const [headerRow = [], ...dataRows] = values;
+    if (financeDatabaseEnabled()) {
+      if (source)
+        await new FinanceStore().save("cash_flow", {
+          ...source,
+          active: false,
+          updatedAt: new Date().toISOString(),
+        });
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.cashFlowRange);
     let headers = normalizeWritableHeaders(headerRow, cashFlowHeaders);
@@ -1760,12 +1857,14 @@ export class GoogleSheetsService implements IDataService {
               : "Jugadores administrados desde el ABM de la app.",
         },
         source: {
-          provider: "google-sheets",
+          provider: directoryDatabaseEnabled() ? "postgresql" : "google-sheets",
           status: players.length === 0 ? "empty" : "ready",
           message:
             players.length === 0
               ? "Google Sheets conectado, sin jugadores cargados."
-              : "Jugadores obtenidos desde Google Sheets.",
+              : directoryDatabaseEnabled()
+                ? "Jugadores obtenidos desde Supabase."
+                : "Jugadores obtenidos desde Google Sheets.",
           cachedAt,
           revalidateSeconds: this.config.cacheTtlSeconds,
         },
@@ -1780,7 +1879,7 @@ export class GoogleSheetsService implements IDataService {
           description: serviceError.message,
         },
         source: {
-          provider: "google-sheets",
+          provider: directoryDatabaseEnabled() ? "postgresql" : "google-sheets",
           status: "error",
           message: serviceError.message,
           cachedAt,
@@ -1791,6 +1890,28 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async upsertPlayer(input: UpsertPlayerInput): Promise<void> {
+    if (directoryDatabaseEnabled()) {
+      await new DirectoryStore().mutate("players", (records) => {
+        const players = records as unknown as PlayerDirectoryItem[];
+        const existing =
+          players.find((p) => p.id === input.id) ??
+          (!input.id
+            ? players.find(
+                (p) => p.name.toLowerCase() === input.name.trim().toLowerCase(),
+              )
+            : undefined);
+        return normalizePlayerInput(
+          input,
+          new Set(players.map((p) => p.id)),
+          new Date().toISOString(),
+          input.id || existing?.id,
+          existing,
+        );
+      });
+      invalidatePlayersCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const spreadsheetId = this.getAppSpreadsheetId();
@@ -1876,6 +1997,25 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async replacePlayers(players: UpsertPlayerInput[]): Promise<void> {
+    if (directoryDatabaseEnabled()) {
+      const ids = new Set<string>();
+      const normalized = players.map((p) => {
+        const player = normalizePlayerInput(
+          { ...p, status: "active" },
+          ids,
+          new Date().toISOString(),
+        );
+        ids.add(player.id);
+        return player;
+      });
+      await new DirectoryStore().replacePlayers(normalized);
+      invalidatePlayersCache();
+      invalidateDashboardCache();
+      invalidateFeeCalculatorCache();
+      invalidateCashFlowCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const spreadsheetId = this.getAppSpreadsheetId();
@@ -1926,6 +2066,12 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async deletePlayer(playerId: string): Promise<void> {
+    if (directoryDatabaseEnabled()) {
+      await new DirectoryStore().deletePlayer(playerId);
+      invalidatePlayersCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const spreadsheetId = this.getAppSpreadsheetId();
@@ -1993,12 +2139,14 @@ export class GoogleSheetsService implements IDataService {
               : "Equipos administrados desde la app.",
         },
         source: {
-          provider: "google-sheets",
+          provider: directoryDatabaseEnabled() ? "postgresql" : "google-sheets",
           status: teams.length === 0 ? "empty" : "ready",
           message:
             teams.length === 0
               ? "Google Sheets conectado, sin equipos cargados."
-              : "Equipos obtenidos desde Google Sheets.",
+              : directoryDatabaseEnabled()
+                ? "Equipos obtenidos desde Supabase."
+                : "Equipos obtenidos desde Google Sheets.",
           cachedAt,
           revalidateSeconds: this.config.cacheTtlSeconds,
         },
@@ -2013,7 +2161,7 @@ export class GoogleSheetsService implements IDataService {
           description: serviceError.message,
         },
         source: {
-          provider: "google-sheets",
+          provider: directoryDatabaseEnabled() ? "postgresql" : "google-sheets",
           status: "error",
           message: serviceError.message,
           cachedAt,
@@ -2024,6 +2172,25 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async upsertTeamProfile(input: UpsertTeamProfileInput): Promise<void> {
+    if (directoryDatabaseEnabled()) {
+      await new DirectoryStore().mutate("teams", (records) => {
+        const existing = (records as unknown as TeamProfile[]).find(
+          (t) =>
+            t.id === input.id ||
+            (!input.id &&
+              normalizeTeamProfileKey(t.name) === normalizeTeamProfileKey(input.name)),
+        );
+        return normalizeTeamProfileInput(
+          input,
+          new Date().toISOString(),
+          input.id || existing?.id,
+          existing,
+        );
+      });
+      invalidateTeamsCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const spreadsheetId = this.getAppSpreadsheetId();
@@ -2130,6 +2297,223 @@ export class GoogleSheetsService implements IDataService {
     }
   }
 
+  async getPlayerPaymentData(user: AuthUser): Promise<PlayerPaymentData> {
+    if (user.role !== "player")
+      throw new Error("Esta pantalla es exclusiva para jugadores.");
+    if (!financeDatabaseEnabled())
+      throw new Error("El registro interno de pagos todavía no está activado.");
+    // Payment ownership is pinned to stable account/player identifiers. Display
+    // names are editable and must never choose whose debt is being paid.
+    const directory = mapRowsToPlayerDirectoryItems(
+      await this.readCachedPlayerDirectoryRows(),
+    );
+    const account = await this.findAccountProfile(user.id, user.username);
+    const identifiers = [account?.playerId, user.playerId, user.id, user.username].filter(
+      (id): id is string => Boolean(id),
+    );
+    const directoryPlayer = identifiers
+      .map(
+        (id) =>
+          directory.find((player) => player.id === id) ||
+          directory.find((player) => player.id === createClubPlayerId(id)),
+      )
+      .find(Boolean);
+    if (!directoryPlayer)
+      throw new Error("No encontramos un jugador asociado a tu cuenta.");
+    const [records, financialRows] = await Promise.all([
+      this.readDashboardRecords(),
+      this.readFeeCalculatorRows(),
+    ]);
+    const costs = mapRowsToFeeCalculatorCostRecords(financialRows.costsRows);
+    const current = currentPaymentDate().slice(0, 7);
+    const starts = [
+      ...costs.map((c) => c.startPeriod),
+      ...records.fees
+        .filter((f) => f.playerId === directoryPlayer.id)
+        .map((f) => f.period),
+    ]
+      .filter((p) => /^\d{4}-\d{2}$/.test(p) && p <= current)
+      .sort();
+    const periods: string[] = [];
+    if (starts[0]) {
+      let period = starts[0];
+      while (period <= current) {
+        periods.push(period);
+        period = addMonthsToPeriod(period, 1);
+      }
+    }
+    const calculations = await this.buildFeeCalculatorDataForPeriods(periods);
+    const quotas: PlayerPaymentData["quotas"] = [],
+      undefinedPeriods: string[] = [];
+    for (const data of calculations) {
+      if (data.source.status === "error")
+        throw new Error("No se pudo calcular la deuda actual.");
+      const fee = records.fees.find(
+        (f) => f.playerId === directoryPlayer.id && f.period === data.period,
+      );
+      if (fee?.status === "paid") continue;
+      const calculation = data.playerCalculations.find(
+        (p) => p.playerId === directoryPlayer.id,
+      );
+      if (data.summary.quotaStatus !== "defined") {
+        if (data.costs.some((c) => isCostActiveForPeriod(c, data.period)))
+          undefinedPeriods.push(data.period);
+        continue;
+      }
+      const amount = calculation?.finalQuota ?? fee?.amount ?? 0;
+      if (amount > 0)
+        quotas.push({ period: data.period, amountCents: moneyCents(amount) });
+    }
+    return {
+      playerId: directoryPlayer.id,
+      playerName: directoryPlayer.name,
+      quotas,
+      totalDebtCents: quotas.reduce((sum, q) => sum + q.amountCents, 0),
+      undefinedPeriods,
+    };
+  }
+
+  async registerPlayerPayment(
+    user: AuthUser,
+    input: RegisterPlayerPaymentInput,
+  ): Promise<PaymentReceiptRecord> {
+    if (user.role !== "player" || !financeDatabaseEnabled())
+      throw new Error("No autorizado.");
+    const parsed = playerPaymentSchema.parse(input);
+    const receipt = paymentReceiptSchema.parse(input.receipt);
+    const record = await financeTransaction(async () => {
+      const store = new PaymentReceiptsStore();
+      const existing = await store.find(parsed.id);
+      if (existing) {
+        assertReceiptReplay(existing, user.id, {
+          expectedQuotas: parsed.expectedQuotas,
+          sha256: receipt.sha256,
+        });
+        return existing;
+      }
+      const data = await this.getPlayerPaymentData(user);
+      const { selected, total } = selectPaymentQuotas(data, parsed.expectedQuotas);
+      const record: PaymentReceiptRecord = {
+        id: parsed.id,
+        userId: user.id,
+        playerId: data.playerId,
+        playerName: data.playerName,
+        totalCents: total,
+        createdAt: new Date().toISOString(),
+        ...receipt,
+        quotas: selected,
+      };
+      await store.insert(record);
+      const fees = await new FinanceStore().list<FeeRecord>("fees");
+      for (const quota of selected) {
+        const existing = fees.find(
+          (f) => f.playerId === data.playerId && f.period === quota.period,
+        );
+        await new FinanceStore().save("fees", {
+          ...existing,
+          id: existing?.id || createId("fee"),
+          playerId: data.playerId,
+          period: quota.period,
+          amount: quota.amountCents / 100,
+          status: "paid",
+          paidAt: currentPaymentDate(),
+        });
+      }
+      return record;
+    });
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
+    invalidateCashFlowCache();
+    invalidatePremiumCache();
+    return record;
+  }
+
+  async getMatchAttendanceData(): Promise<MatchAttendanceData> {
+    const [matches, directory] = await Promise.all([
+      this.readPlayerOfMatchMatches(),
+      this.getPlayersData(),
+    ]);
+    if (directory.source.status === "error")
+      throw new Error("No se pudo obtener el plantel.");
+    const playerRecords = mapRowsToPlayers([
+      playerDirectoryHeaders,
+      ...directory.players.map((player) =>
+        buildPlayerDirectoryWritableRow(playerDirectoryHeaders, player),
+      ),
+    ]);
+    return {
+      matches: matches.map((match) => ({
+        ...match,
+        participantPlayerIds: match.players
+          .map((name) => matchesCodec.resolvePlayerId(name, playerRecords))
+          .filter((id): id is string => Boolean(id)),
+      })),
+      players: directory.players,
+      source: {
+        provider: matchesDatabaseEnabled() ? "postgresql" : "google-sheets",
+        status: matches.length ? "ready" : "empty",
+        message: "Partidos y asistencias.",
+        cachedAt: new Date().toISOString(),
+        revalidateSeconds: 0,
+      },
+    };
+  }
+
+  async upsertMatchAttendance(input: UpsertMatchAttendanceInput): Promise<void> {
+    if (!matchesDatabaseEnabled())
+      throw new Error("El registro interno de asistencias todavía no está activado.");
+    const parsed = matchAttendanceSchema.parse(input);
+    const [matches, directory] = await Promise.all([
+      new MatchesStore().list(),
+      this.getPlayersData(),
+    ]);
+    if (directory.source.status === "error")
+      throw new Error("No se pudo obtener el plantel.");
+    const existing = parsed.id
+      ? matches.find((match) => match.id === parsed.id)
+      : undefined;
+    if (parsed.id && !existing) throw new Error("No se encontró el partido para editar.");
+    const participants: { playerId?: string; playerName: string }[] =
+      parsed.playerIds.map((id) => {
+        const player = directory.players.find((player) => player.id === id);
+        if (!player) throw new Error("Uno de los jugadores seleccionados ya no existe.");
+        return { playerId: player.id, playerName: player.name };
+      });
+    const playerRecords = mapRowsToPlayers([
+      playerDirectoryHeaders,
+      ...directory.players.map((player) =>
+        buildPlayerDirectoryWritableRow(playerDirectoryHeaders, player),
+      ),
+    ]);
+    // Keep historical participants absent from the current directory when editing.
+    for (const name of existing?.players ?? []) {
+      if (!matchesCodec.resolvePlayerId(name, playerRecords))
+        participants.push({ playerName: name });
+    }
+    await new MatchesStore().save(
+      {
+        id: existing?.id || createId("match"),
+        date: parsed.date,
+        period: parsed.date.slice(0, 7),
+        rival: parsed.rival,
+        sourceType: parsed.sourceType,
+        venue: parsed.venue,
+        coachAttended: parsed.coachAttended,
+        players: participants.map((p) => p.playerName),
+        loadedAt:
+          existing?.loadedAt ||
+          parseClubDateTime(formatClubFormTimestamp(new Date())) ||
+          parsed.date,
+      },
+      participants,
+    );
+    invalidateFeeCalculatorCache();
+    invalidateDashboardCache();
+    invalidateCashFlowCache();
+    invalidatePlayerOfMatchCache();
+    revalidateGoogleSheetsTag("google-sheets:account-profile");
+  }
+
   async getCoachRecordsData(period = getCurrentPeriod()): Promise<CoachRecordsData> {
     const cachedAt = new Date().toISOString();
 
@@ -2152,7 +2536,9 @@ export class GoogleSheetsService implements IDataService {
         actuals,
         matches,
         status: "ready",
-        message: "Registros DT obtenidos desde Google Sheets.",
+        message: matchesDatabaseEnabled()
+          ? "Registros DT obtenidos desde Supabase."
+          : "Registros DT obtenidos desde Google Sheets.",
         cachedAt,
         revalidateSeconds: this.config.cacheTtlSeconds,
       });
@@ -2210,7 +2596,9 @@ export class GoogleSheetsService implements IDataService {
     const message =
       players.length === 0 && costs.length === 0
         ? "Google Sheets conectado, sin costos del calculador cargados."
-        : "Calculador de cuota obtenido desde Google Sheets.";
+        : financeDatabaseEnabled()
+          ? "Calculador de cuota obtenido desde Supabase."
+          : "Calculador de cuota obtenido desde Google Sheets.";
 
     return periods.map((period) => ({
       ...buildFeeCalculatorData({
@@ -2281,6 +2669,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async upsertFeeCalculatorCost(input: UpsertFeeCalculatorCostInput): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.upsertFeeCalculatorCost(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
@@ -2290,6 +2687,21 @@ export class GoogleSheetsService implements IDataService {
       this.config.feeCalculatorCostsRange,
     );
     const now = new Date().toISOString();
+    if (financeDatabaseEnabled()) {
+      const existing = mapRowsToFeeCalculatorCostRecords(rows).find(
+        (item) => item.id === cost.id,
+      );
+      const next = {
+        ...cost,
+        id: cost.id || createId("cost"),
+        active: existing?.active ?? true,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+      if (!(await this.updateCostAndBenefits(next, [], 0)))
+        await new FinanceStore().save("costs", next);
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
 
@@ -2410,6 +2822,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async deleteFeeCalculatorCost(costId: string): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.deleteFeeCalculatorCost(costId));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
@@ -2453,6 +2874,15 @@ export class GoogleSheetsService implements IDataService {
       ))
     )
       return;
+    if (financeDatabaseEnabled()) {
+      if (existing)
+        await new FinanceStore().save("costs", {
+          ...existing,
+          active: false,
+          updatedAt: new Date().toISOString(),
+        });
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
     const spreadsheetRow = targetRowIndex + 2;
@@ -2481,10 +2911,24 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async resetFeeCalculatorCosts(): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.resetFeeCalculatorCosts());
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
     await this.assertNoCostBenefitsBeforeReset();
 
     const spreadsheetId = this.getAppSpreadsheetId();
+    if (financeDatabaseEnabled()) {
+      await new FinanceStore().replace("costs", []);
+      await new FinanceStore().replace("actuals", []);
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const costsSheetPrefix = getSheetPrefix(this.config.feeCalculatorCostsRange);
     const actualsSheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
@@ -2529,6 +2973,15 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async updateFeeCalculatorActual(input: UpdateFeeCalculatorActualInput): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.updateFeeCalculatorActual(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
     assertValidPeriod(input.period);
 
@@ -2539,6 +2992,17 @@ export class GoogleSheetsService implements IDataService {
       this.config.feeCalculatorActualsRange,
     );
     const now = new Date().toISOString();
+    if (financeDatabaseEnabled()) {
+      const existing = mapRowsToFeeCalculatorActuals(rows).find(
+        (item) => item.costId === actual.costId && item.period === actual.period,
+      );
+      await new FinanceStore().save("actuals", {
+        ...actual,
+        id: existing?.id || createId("actual"),
+        updatedAt: now,
+      });
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorActualsRange);
 
@@ -2633,6 +3097,15 @@ export class GoogleSheetsService implements IDataService {
   async updateFeeCalculatorPlayerStatus(
     input: UpdateFeeCalculatorPlayerStatusInput,
   ): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.updateFeeCalculatorPlayerStatus(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
     assertValidPeriod(input.period);
 
@@ -2643,6 +3116,18 @@ export class GoogleSheetsService implements IDataService {
       this.config.feeCalculatorPlayerStatusesRange,
     );
     const now = new Date().toISOString();
+    if (financeDatabaseEnabled()) {
+      const existing = mapRowsToFeeCalculatorPlayerStatuses(rows).find(
+        (item) =>
+          item.playerId === playerStatus.playerId && item.period === playerStatus.period,
+      );
+      await new FinanceStore().save("player_statuses", {
+        ...playerStatus,
+        id: existing?.id || createId("player-status"),
+        updatedAt: now,
+      });
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.feeCalculatorPlayerStatusesRange);
 
@@ -2751,10 +3236,26 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async updateFeeRefundPolicy(input: UpdateFeeRefundPolicyInput): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.updateFeeRefundPolicy(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
     this.assertConfigured();
 
     const feeCalculatorSpreadsheetId = this.getAppSpreadsheetId();
     const rules = normalizeFeeRefundPolicyInput(input);
+    if (financeDatabaseEnabled()) {
+      await new FinanceStore().replace(
+        "refund_policy",
+        rules.map((rule, index) => ({ ...rule, id: `rule-${index}` })),
+      );
+      return;
+    }
     const sheets = await this.createSheetsClient();
     const sheetPrefix = getSheetPrefix(this.config.refundPolicyRange);
 
@@ -2934,6 +3435,36 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async updatePlayerFeeStatus(input: UpdatePlayerFeeStatusInput) {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.updatePlayerFeeStatus(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
+    if (financeDatabaseEnabled()) {
+      assertValidPeriod(input.period);
+      const store = new FinanceStore();
+      const existing = (await store.list<FeeRecord>("fees")).find(
+        (f) => f.playerId === input.playerId && f.period === input.period,
+      );
+      const player = mapRowsToPlayers(await this.readCachedPlayerDirectoryRows()).find(
+        (p) => p.id === input.playerId,
+      );
+      if (!player && !existing) throw new Error("No se encontró el jugador.");
+      await store.save("fees", {
+        ...existing,
+        id: existing?.id || createId("fee"),
+        playerId: input.playerId,
+        period: input.period,
+        amount: existing?.amount ?? player?.monthlyFee ?? 0,
+        status: input.status === "paid" ? "paid" : "pending",
+        paidAt: input.status === "paid" ? getTodayIsoDate() : "",
+      });
+      return;
+    }
     this.assertConfigured();
     assertValidPeriod(input.period);
 
@@ -3839,6 +4370,42 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async upsertPaymentRecord(input: UpsertPaymentRecordInput): Promise<void> {
+    if (financeDatabaseEnabled() && !inFinanceTransaction()) {
+      await financeTransaction(() => this.upsertPaymentRecord(input));
+      invalidateFeeCalculatorCache();
+      invalidateDashboardCache();
+      invalidateCashFlowCache();
+      invalidatePremiumCache();
+      return;
+    }
+
+    if (financeDatabaseEnabled()) {
+      const store = new FinanceStore();
+      const now = new Date().toISOString();
+      const existing = (await store.list<PaymentRecord>("payments")).find(
+        (p) => p.provider === input.provider && p.externalId === input.externalId,
+      );
+      const payment = mapRowsToPaymentRecords([
+        paymentHeaders,
+        buildPaymentWritableRow(paymentHeaders, input, now),
+      ])[0];
+      await store.save("payments", {
+        ...payment,
+        id: existing?.id || payment.id,
+        createdAt: existing?.createdAt || payment.createdAt,
+      });
+      if (
+        (input.status === "approved" || input.status === "paid") &&
+        input.playerId &&
+        input.period
+      )
+        await this.updatePlayerFeeStatus({
+          playerId: input.playerId,
+          period: input.period,
+          status: "paid",
+        });
+      return;
+    }
     this.assertConfigured();
 
     const values = await this.readValues(this.config.paymentsRange);
@@ -4091,6 +4658,13 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedDashboardRows() {
+    if (financeDatabaseEnabled()) {
+      const [playersRows, feesRows] = await Promise.all([
+        this.readCachedPlayerDirectoryRows(),
+        this.readValues(this.config.feesRange),
+      ]);
+      return { playersRows, feesRows, formResponseRows: [] };
+    }
     const spreadsheetId = this.getAppSpreadsheetId();
     const playersSpreadsheetId = spreadsheetId;
     const clubSpreadsheetId = this.getClubSpreadsheetId();
@@ -4114,6 +4688,9 @@ export class GoogleSheetsService implements IDataService {
       },
       [
         "google-sheets-dashboard",
+        directoryDatabaseEnabled() ? "directory-postgresql-v1" : "directory-sheets",
+        financeDatabaseEnabled() ? "finance-postgresql-v1" : "finance-sheets",
+        matchesDatabaseEnabled() ? "matches-postgresql-v1" : "matches-sheets",
         spreadsheetId,
         playersSpreadsheetId,
         clubSpreadsheetId,
@@ -4131,6 +4708,8 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedPlayerDirectoryRows() {
+    if (directoryDatabaseEnabled())
+      return this.readPlayerDirectoryRows(this.getAppSpreadsheetId());
     const spreadsheetId = this.getAppSpreadsheetId();
 
     return unstable_cache(
@@ -4144,6 +4723,11 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedTeamProfileRows() {
+    if (directoryDatabaseEnabled())
+      return this.readOptionalValuesFromSpreadsheet(
+        this.getAppSpreadsheetId(),
+        this.config.teamsRange,
+      );
     const spreadsheetId = this.getAppSpreadsheetId();
 
     return unstable_cache(
@@ -4158,6 +4742,8 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedCashFlowRows() {
+    if (financeDatabaseEnabled())
+      return this.readOptionalValues(this.config.cashFlowRange);
     const spreadsheetId = this.config.spreadsheetId;
 
     if (!spreadsheetId) {
@@ -4198,6 +4784,11 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readCachedAccountProfileRows() {
+    if (directoryDatabaseEnabled())
+      return this.readOptionalValuesFromSpreadsheet(
+        this.getAppSpreadsheetId(),
+        this.config.accountProfilesRange,
+      );
     const spreadsheetId = this.getAppSpreadsheetId();
 
     return unstable_cache(
@@ -4252,7 +4843,12 @@ export class GoogleSheetsService implements IDataService {
     );
   }
 
-  private async upsertAccountProfile(profile: AccountProfileRecord) {
+  private async upsertAccountProfile(profile: AccountProfileRecord, createOnly = false) {
+    if (directoryDatabaseEnabled()) {
+      await new DirectoryStore().saveAccount(profile, createOnly);
+      return;
+    }
+
     const spreadsheetId = this.getAppSpreadsheetId();
     const range = this.config.accountProfilesRange;
     const sheetPrefix = getSheetPrefix(range);
@@ -4320,6 +4916,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async upsertPlayerAttendanceSnapshot(snapshot: PlayerAttendanceSnapshotRecord) {
+    if (matchesDatabaseEnabled()) return new MatchesStore().saveSnapshot(snapshot);
     const spreadsheetId = this.getAppSpreadsheetId();
     const range = this.config.playerAttendanceSnapshotsRange;
     const sheetPrefix = getSheetPrefix(range);
@@ -4413,6 +5010,8 @@ export class GoogleSheetsService implements IDataService {
       },
       [
         "google-sheets-premium",
+        financeDatabaseEnabled() ? "finance-postgresql-v1" : "finance-sheets",
+        matchesDatabaseEnabled() ? "matches-postgresql-v1" : "matches-sheets",
         spreadsheetId,
         this.config.auditRange,
         this.config.logsRange,
@@ -4446,6 +5045,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readPlayerOfMatchMatches(): Promise<MatchRecord[]> {
+    if (matchesDatabaseEnabled()) return new MatchesStore().list();
     const spreadsheetId = this.config.matchesSpreadsheetId;
 
     if (!spreadsheetId) {
@@ -4553,7 +5153,20 @@ export class GoogleSheetsService implements IDataService {
       );
     }
 
-    return unstable_cache(
+    const cache =
+      financeDatabaseEnabled() || matchesDatabaseEnabled()
+        ? (
+            fn: () => Promise<{
+              costsRows: unknown[][];
+              actualsRows: unknown[][];
+              playerStatusRows: unknown[][];
+              refundPolicyRows: unknown[][];
+              matchRows: unknown[][];
+              expenseRows: unknown[][];
+            }>,
+          ) => fn
+        : unstable_cache;
+    return cache(
       async () => {
         const [
           costsRows,
@@ -4627,6 +5240,65 @@ export class GoogleSheetsService implements IDataService {
     spreadsheetId: string | undefined,
     range: string,
   ) {
+    if (
+      matchesDatabaseEnabled() &&
+      spreadsheetId === this.config.matchesSpreadsheetId &&
+      unquoteSheetTitle(getSheetPrefix(range)) ===
+        unquoteSheetTitle(getSheetPrefix(this.config.matchesRange))
+    ) {
+      const matches = await new MatchesStore().list();
+      return [matchStorageHeaders, ...matches.map(buildMatchStorageRow)];
+    }
+    if (financeDatabaseEnabled()) {
+      const title = unquoteSheetTitle(getSheetPrefix(range));
+      const kinds = [
+        [this.config.cashFlowRange, "cash_flow"],
+        [this.config.feeCalculatorCostsRange, "costs"],
+        [this.config.feeCalculatorActualsRange, "actuals"],
+        [this.config.feeCalculatorPlayerStatusesRange, "player_statuses"],
+        [this.config.refundPolicyRange, "refund_policy"],
+        [this.config.feesRange, "fees"],
+        [this.config.paymentsRange, "payments"],
+      ] as const;
+      if (spreadsheetId === this.getAppSpreadsheetId()) {
+        const kind = kinds.find(
+          ([configured]) => unquoteSheetTitle(getSheetPrefix(configured)) === title,
+        )?.[1];
+        if (kind) {
+          const codec = financeCodec[kind];
+          const records = await new FinanceStore().list(kind);
+          return [
+            codec.headers,
+            ...records.map((record) => codec.row(codec.headers, record as never)),
+          ];
+        }
+      }
+      if (
+        spreadsheetId === this.getClubSpreadsheetId() &&
+        title === unquoteSheetTitle(getSheetPrefix(this.config.expensesRange))
+      )
+        return new FinanceStore().source(title);
+    }
+    if (directoryDatabaseEnabled() && spreadsheetId === this.getAppSpreadsheetId()) {
+      const title = getSheetPrefix(range).replace(/^'|'$/g, "");
+      const kind =
+        title === getSheetPrefix(this.config.playersRange).replace(/^'|'$/g, "")
+          ? "players"
+          : title === getSheetPrefix(this.config.teamsRange).replace(/^'|'$/g, "")
+            ? "teams"
+            : title ===
+                getSheetPrefix(this.config.accountProfilesRange).replace(/^'|'$/g, "")
+              ? "accounts"
+              : null;
+      if (kind) {
+        const records = await new DirectoryStore().list(kind);
+        const codec = directoryCodec[kind];
+        return [
+          codec.headers,
+          ...records.map((record) => codec.row(codec.headers, record as never)),
+        ];
+      }
+    }
     if (!spreadsheetId) {
       throw new DataServiceError(
         "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
@@ -4664,6 +5336,7 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readFormResponseRows(spreadsheetId: string) {
+    if (financeDatabaseEnabled()) return [];
     const configuredRows = await this.readOptionalValuesFromSpreadsheet(
       spreadsheetId,
       this.config.formResponsesRange,
@@ -4896,6 +5569,17 @@ export class GoogleSheetsService implements IDataService {
   }
 
   private async readDashboardRecords(): Promise<DashboardRecords> {
+    if (financeDatabaseEnabled()) {
+      const [rows, fees] = await Promise.all([
+        this.readCachedPlayerDirectoryRows(),
+        new FinanceStore().list<FeeRecord>("fees"),
+      ]);
+      return {
+        players: mapRowsToPlayers(rows),
+        fees,
+        message: "Datos financieros obtenidos desde Supabase.",
+      };
+    }
     const { playersRows, feesRows, formResponseRows } =
       await this.readCachedDashboardRows();
     const players = mapRowsToPlayers(playersRows);
@@ -5409,7 +6093,7 @@ function buildAccountProfileFromInput(
     userId: input.userId,
     username: input.username,
     role: input.role,
-    playerId: input.playerId,
+    playerId: input.playerId ?? existing?.playerId,
     name: input.name.trim(),
     birthDate: input.birthDate?.trim() ?? existing?.birthDate ?? "",
     email: input.email?.trim() ?? "",
@@ -5944,7 +6628,10 @@ function mapRowsToFees(rows: unknown[][]): FeeRecord[] {
   });
 }
 
-function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRecord[] {
+function mapRowsToCashFlowTransactions(
+  rows: unknown[][],
+  includeInactive = false,
+): CashFlowTransactionRecord[] {
   return rowsToRecords(rows)
     .map((record, index): CashFlowTransactionRecord | null => {
       const date = parseDate(pick(record, ["fecha", "date", "dia", "day"]));
@@ -5978,7 +6665,7 @@ function mapRowsToCashFlowTransactions(rows: unknown[][]): CashFlowTransactionRe
         pick(record, ["escenario", "scenario", "tipo_escenario"]),
       );
 
-      if (amount === 0 || !active) {
+      if (!includeInactive && (amount === 0 || !active)) {
         return null;
       }
 
@@ -8050,7 +8737,7 @@ function buildFeeCalculatorData({
           : "Cargá los costos mensuales para calcular la cuota base y la cuota por jugador.",
     },
     source: {
-      provider: "google-sheets",
+      provider: financeDatabaseEnabled() ? "postgresql" : "google-sheets",
       status,
       message,
       cachedAt,
@@ -8148,7 +8835,7 @@ function buildCoachRecordsData({
     paymentPeriod,
     period,
     source: {
-      provider: "google-sheets",
+      provider: matchesDatabaseEnabled() ? "postgresql" : "google-sheets",
       status: sourceStatus,
       message,
       cachedAt,
@@ -9442,7 +10129,7 @@ function buildDashboardData({
           : "Carga jugadores y cuotas en Google Sheets para ver el dashboard completo.",
     },
     source: {
-      provider: "google-sheets",
+      provider: financeDatabaseEnabled() ? "postgresql" : "google-sheets",
       status,
       message,
       cachedAt,
@@ -9514,7 +10201,7 @@ function buildCashFlowData({
     period,
     draft: draftScenario,
     source: {
-      provider: "google-sheets",
+      provider: financeDatabaseEnabled() ? "postgresql" : "google-sheets",
       status,
       message,
       cachedAt,
@@ -9631,7 +10318,7 @@ function buildFallbackCashFlowData({
     period,
     draft: draftScenario,
     source: {
-      provider: "google-sheets",
+      provider: financeDatabaseEnabled() ? "postgresql" : "google-sheets",
       status,
       message,
       cachedAt,
@@ -10207,7 +10894,7 @@ function buildFallbackDashboardData({
       description: "Configura Google Sheets para empezar a ver informacion real.",
     },
     source: {
-      provider: "google-sheets",
+      provider: financeDatabaseEnabled() ? "postgresql" : "google-sheets",
       status,
       message,
       cachedAt,
@@ -12990,3 +13677,145 @@ function isMissingSheetRangeError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   return /unable to parse range|range.*not found/i.test(message);
 }
+
+export const directoryCodec = {
+  players: {
+    headers: playerDirectoryHeaders,
+    parse: mapRowsToPlayerDirectoryItems,
+    row: buildPlayerDirectoryWritableRow,
+  },
+  teams: {
+    headers: teamProfileHeaders,
+    parse: mapRowsToTeamProfiles,
+    row: buildTeamProfileWritableRow,
+  },
+  accounts: {
+    headers: accountProfileHeaders,
+    parse: mapRowsToAccountProfiles,
+    row: buildAccountProfileWritableRow,
+  },
+};
+
+const canonicalFeeHeaders = [
+  "id",
+  "jugador_id",
+  "periodo",
+  "monto",
+  "estado",
+  "vencimiento",
+  "fecha_pago",
+];
+export const financeCodec = {
+  costs: {
+    headers: feeCalculatorCostHeaders,
+    parse: mapRowsToFeeCalculatorCostRecords,
+    row: buildFeeCalculatorCostWritableRow,
+  },
+  actuals: {
+    headers: feeCalculatorActualHeaders,
+    parse: mapRowsToFeeCalculatorActuals,
+    row: buildFeeCalculatorActualWritableRow,
+  },
+  player_statuses: {
+    headers: feeCalculatorPlayerStatusHeaders,
+    parse: mapRowsToFeeCalculatorPlayerStatuses,
+    row: buildFeeCalculatorPlayerStatusWritableRow,
+  },
+  cash_flow: {
+    headers: cashFlowHeaders,
+    parse: (rows: unknown[][]) => mapRowsToCashFlowTransactions(rows, true),
+    row: buildCashFlowWritableRow,
+  },
+  fees: {
+    headers: canonicalFeeHeaders,
+    parse: mapRowsToFees,
+    row: (_headers: string[], fee: FeeRecord) => [
+      fee.id,
+      fee.playerId,
+      fee.period,
+      fee.amount,
+      fee.status,
+      fee.dueDate ?? "",
+      fee.paidAt ?? "",
+    ],
+  },
+  payments: {
+    headers: paymentHeaders,
+    parse: mapRowsToPaymentRecords,
+    row: (headers: string[], payment: PaymentRecord) =>
+      buildPaymentWritableRow(headers, payment, payment.updatedAt).map((value, index) =>
+        headers[index] === "created_at" ? payment.createdAt : value,
+      ),
+  },
+  refund_policy: {
+    headers: feeRefundPolicyHeaders,
+    parse: mapRowsToRefundPolicy,
+    row: (_headers: string[], rule: FeeRefundPolicyRule) => [
+      rule.fromPercent,
+      rule.toPercent,
+      rule.refundPercent,
+    ],
+  },
+};
+export const financeImport = {
+  mapFormResponsesToPaidFees,
+  mergeFeeRecords,
+  mapRowsToPlayers,
+};
+
+export function mapRowsToFundraisingBenefits(
+  rows: unknown[][],
+): FundraisingBenefitApplication[] {
+  return rowsToRecords(rows).map((record) => ({
+    id: pick(record, ["id"]),
+    reversalOf: pick(record, ["anula_beneficio_id"]) || undefined,
+    fundraisingId: pick(record, ["recaudacion_id"]),
+    concept: pick(record, ["concepto"]),
+    period: pick(record, ["periodo"]),
+    percent: Number(pick(record, ["porcentaje"])),
+    createdAt: pick(record, ["creado_en"]),
+    allocations: parseFundraisingAllocations(pick(record, ["reparto"])),
+    costId: pick(record, ["costo_id"]) || undefined,
+    costName: pick(record, ["costo_nombre"]) || undefined,
+    costAmounts: JSON.parse(pick(record, ["limites_gasto"]) || "{}") as Record<
+      string,
+      number
+    >,
+  }));
+}
+
+const matchStorageHeaders = [
+  "id",
+  "fecha",
+  "rival",
+  "competencia",
+  "jugadores",
+  "sede",
+  "dt",
+  "marca_temporal",
+];
+function buildMatchStorageRow(match: AttendanceMatch) {
+  return [
+    match.id,
+    match.date,
+    match.rival,
+    match.sourceType ?? "",
+    match.players.join("\n"),
+    match.venue,
+    match.coachAttended ? "si" : "no",
+    match.loadedAt,
+  ];
+}
+export const matchesCodec = {
+  headers: matchStorageHeaders,
+  parse: mapRowsToMatches,
+  row: buildMatchStorageRow,
+  parseSnapshots: mapRowsToPlayerAttendanceSnapshots,
+  summary: buildPlayerAttendanceSummary,
+  canonicalize: canonicalizeMatchRecordsPlayers,
+  resolvePlayerId(name: string, players: PlayerRecord[]) {
+    const keys = buildPlayerLookupKeys(name);
+    const matches = players.filter((p) => playerMatchesLookup(p, keys));
+    return matches.length === 1 ? matches[0].id : undefined;
+  },
+};

@@ -196,7 +196,7 @@ async function getUsersForAdmin(): Promise<AccountUser[]> {
       passwordUpdatedAt: sheetUser.passwordUpdatedAt,
       phone: sheetUser.phone || existing.phone,
       updatedAt: sheetUser.updatedAt,
-      source: "env+sheet",
+      source: sheetUser.source === "database" ? "env+database" : "env+sheet",
     });
   });
 
@@ -212,6 +212,8 @@ async function getUsersForAdmin(): Promise<AccountUser[]> {
 }
 
 function formatSource(source: AccountUser["source"]) {
+  if (source === "database") return "Supabase";
+  if (source === "env+database") return "Env + Supabase";
   if (source === "env+sheet") {
     return "Env + Sheet";
   }
