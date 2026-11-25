@@ -7,9 +7,10 @@ No crea cuentas, no une por nombre o email y no cambia el correo de contacto del
 ## Configuración
 
 1. En Google Cloud → Google Auth Platform, configurar la marca de la aplicación
-   y una audiencia externa. Para que pueda ingresar todo el club, publicar la
-   aplicación en producción; mientras esté en pruebas, solo acceden los usuarios
-   de prueba que se hayan agregado en Google.
+   y una audiencia externa para los miembros del club. Esta integración solo pide
+   `openid` y `email`: Google exceptúa estos permisos básicos de la lista de
+   usuarios de prueba, incluso con el estado Testing. Ver
+   [estados de una app OAuth](https://developers.google.com/identity/protocols/oauth2/production-readiness/overview).
 2. Crear un cliente OAuth de tipo **Aplicación web**. Agregar como URI de redirección:
    `https://club-cuotas-admin.vercel.app/api/auth/google/callback`.
    El dominio debe coincidir con `NEXT_PUBLIC_APP_URL`. Los accesos con Google
