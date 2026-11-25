@@ -2,6 +2,7 @@ import "server-only";
 import { PaymentReceiptsStore } from "@/services/database/payment-receipts-store";
 import { PaymentQuoteStore } from "@/services/database/payment-quote-store";
 import { CashFlowInputError } from "@/lib/cash-flow-errors";
+import { getAttendanceFixtureRival } from "@/lib/match-registration-form";
 import {
   moneyCents,
   currentPaymentDate,
@@ -2596,6 +2597,12 @@ export class GoogleSheetsService implements IDataService {
         ? matches.find((match) => match.fixtureId === parsed.fixtureId)
         : undefined;
     if (parsed.id && !existing) throw new Error("No se encontró el partido para editar.");
+    const rival =
+      existing?.rival ??
+      (parsed.fixtureId
+        ? await getAttendanceFixtureRival(parsed.fixtureId, parsed.date)
+        : parsed.rival);
+    if (!rival) throw new Error("No se encontró el partido en el fixture.");
     const participants: { playerId?: string; playerName: string }[] =
       parsed.playerIds.map((id) => {
         const player = directory.players.find((player) => player.id === id);
@@ -2614,11 +2621,11 @@ export class GoogleSheetsService implements IDataService {
         participants.push({ playerName: name });
     }
     const saved: AttendanceMatch = {
-      fixtureId: parsed.fixtureId ?? existing?.fixtureId,
+      fixtureId: existing?.fixtureId ?? parsed.fixtureId,
       id: existing?.id || createId("match"),
       date: parsed.date,
       period: parsed.date.slice(0, 7),
-      rival: parsed.rival,
+      rival,
       sourceType: parsed.sourceType,
       venue: parsed.venue,
       coachAttended: parsed.coachAttended,

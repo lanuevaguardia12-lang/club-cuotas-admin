@@ -118,10 +118,10 @@ export function MatchAttendanceEditor({
                 <label className="grid gap-1 text-sm">
                   Rival
                   <input
-                    required
-                    maxLength={150}
+                    readOnly
+                    aria-readonly="true"
+                    placeholder="Abrí el partido desde el fixture"
                     value={draft.rival}
-                    onChange={(e) => setDraft({ ...draft, rival: e.target.value })}
                     className={field}
                   />
                 </label>
@@ -237,7 +237,7 @@ export function MatchAttendanceEditor({
                 ) : null}
               </div>
               <div className="flex gap-2">
-                <Button type="submit">
+                <Button type="submit" disabled={!draft.rival}>
                   {pending
                     ? "Guardando…"
                     : draft.id

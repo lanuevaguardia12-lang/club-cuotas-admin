@@ -13,6 +13,10 @@ function setup() {
   const runtime = createRuntime({
     mocks: {
       googleapis: sheets.googleapis,
+      "@/lib/match-registration-form": {
+        getAttendanceFixtureRival: async (id) =>
+          id === "missing-fixture" ? null : "Rival",
+      },
       "@/services/database/matches-store": {
         matchesDatabaseEnabled: () => true,
         MatchesStore: class {
@@ -153,6 +157,7 @@ test("recording action checks roles before touching attendance data", async () =
       "app/(dashboard)/match-attendance/actions.ts",
     );
     const input = {
+      fixtureId: "fixture-action",
       date: "2026-10-03",
       rival: "Rival",
       sourceType: "league",
@@ -259,4 +264,67 @@ test("retrying a fixture recording updates the same match even without the retur
   assert.equal(retry, first);
   assert.equal(x.matches().length, 1);
   assert.deepEqual(x.matches()[0].players, ["Bea Gómez"]);
+});
+
+test("the opponent is fixed to the fixture for a new record and to the recorded match when editing", async () => {
+  const x = setup();
+  const id = await x.service.upsertMatchAttendance({
+    ...x.input,
+    fixtureId: "fixture-locked",
+    rival: "Changed by client",
+  });
+  assert.equal(x.matches()[0].rival, "Rival");
+  await x.service.upsertMatchAttendance({
+    ...x.input,
+    id,
+    rival: "Another change",
+    fixtureId: "different-fixture",
+  });
+  assert.equal(x.matches()[0].rival, "Rival");
+  assert.equal(x.matches()[0].fixtureId, "fixture-locked");
+});
+
+test("a new attendance with an unavailable fixture cannot save a posted opponent", async () => {
+  const x = setup();
+  await assert.rejects(
+    x.service.upsertMatchAttendance({ ...x.input, fixtureId: "missing-fixture" }),
+    /No se encontró el partido/,
+  );
+  assert.equal(x.matches().length, 0);
+});
+
+test("the fixed opponent is resolved from the actual fixture teams", async () => {
+  const runtime = createRuntime({
+    mocks: {
+      "@/lib/league-fixture": {
+        APP_TEAM_NAME: "La Nueva Guardia",
+        getLeagueFixtureData: async () => ({
+          allClubMatches: [
+            {
+              id: "fixture-home",
+              isClubMatch: true,
+              localTeam: "La Nueva Guardia",
+              visitorTeam: "Rival local",
+            },
+            {
+              id: "fixture-away",
+              isClubMatch: true,
+              localTeam: "Rival visitante",
+              visitorTeam: "La Nueva Guardia",
+            },
+          ],
+        }),
+      },
+    },
+  });
+  const helper = runtime.load("lib/match-registration-form.ts");
+  assert.equal(
+    await helper.getAttendanceFixtureRival("fixture-home", "2026-11-21"),
+    "Rival local",
+  );
+  assert.equal(
+    await helper.getAttendanceFixtureRival("fixture-away", "2026-11-21"),
+    "Rival visitante",
+  );
+  assert.equal(await helper.getAttendanceFixtureRival("missing", "2026-11-21"), null);
 });

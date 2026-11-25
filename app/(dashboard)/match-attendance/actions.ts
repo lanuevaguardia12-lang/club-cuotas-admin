@@ -11,6 +11,8 @@ export async function saveMatchAttendance(input: unknown) {
   const parsed = matchAttendanceSchema.safeParse(input);
   if (!parsed.success)
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+  if (!parsed.data.id && !parsed.data.fixtureId)
+    return { error: "Abrí el partido desde el fixture para cargar su asistencia." };
   let id: string;
   try {
     id = await getDataService().upsertMatchAttendance(parsed.data);

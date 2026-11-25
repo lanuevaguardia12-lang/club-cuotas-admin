@@ -1,7 +1,7 @@
 import "server-only";
 import { matchesDatabaseEnabled } from "@/services/database/matches-store";
 
-import { APP_TEAM_NAME } from "@/lib/league-fixture";
+import { APP_TEAM_NAME, getLeagueFixtureData } from "@/lib/league-fixture";
 import type { IDataService } from "@/services/IDataService";
 import type { LeagueFixtureMatch } from "@/types/fixture";
 import type { PlayerOfMatchMatch } from "@/types/player-of-match";
@@ -14,6 +14,14 @@ export const MATCH_REGISTRATION_DEFAULT_PLAYERS_KEY = "__default";
 export interface MatchRegistrationStatus {
   playersCount: number;
   registered: boolean;
+}
+
+export async function getAttendanceFixtureRival(fixtureId: string, date?: string) {
+  const data = await getLeagueFixtureData({ year: date?.slice(0, 4) });
+  const match = data.allClubMatches.find(
+    (item) => item.id === fixtureId && item.isClubMatch && !item.involvesBye,
+  );
+  return match ? getMatchRival(match) : null;
 }
 
 interface BuildMatchRegistrationFormUrlInput {
