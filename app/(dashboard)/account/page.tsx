@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { UserRound } from "lucide-react";
 
 import { AccountContent } from "@/components/account/account-content";
+import { GoogleAccountCard } from "@/components/auth/google-account-provider";
 import { Badge } from "@/components/ui/badge";
 import { LOGIN_PATH } from "@/lib/auth/constants";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -11,7 +12,11 @@ import type { AuthUser } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ google?: string }>;
+}) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -19,6 +24,7 @@ export default async function AccountPage() {
   }
 
   const data = await loadAccountProfile(user);
+  const params = await searchParams;
 
   return (
     <main className="grid gap-6">
@@ -53,6 +59,7 @@ export default async function AccountPage() {
         </div>
       ) : null}
 
+      <GoogleAccountCard outcome={params.google} />
       <AccountContent profile={data.profile} />
     </main>
   );

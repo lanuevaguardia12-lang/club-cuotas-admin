@@ -3,6 +3,10 @@ import type { Metadata } from "next";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { LoginForm } from "@/components/auth/login-form";
 import { appConfig } from "@/lib/env";
+import { GoogleButton } from "@/components/auth/google-button";
+import { googleAuthEnabled } from "@/lib/auth/google-config";
+import { GOOGLE_MESSAGES } from "@/lib/auth/google-messages";
+import { getSafeRedirectPath } from "@/lib/auth/redirects";
 
 export const metadata: Metadata = {
   title: "Login",
@@ -11,6 +15,7 @@ export const metadata: Metadata = {
 interface LoginPageProps {
   searchParams: Promise<{
     redirectTo?: string;
+    google?: string;
   }>;
 }
 
@@ -30,6 +35,22 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </div>
         </div>
 
+        {params.google && GOOGLE_MESSAGES[params.google] ? (
+          <p role="status" className="mb-4 rounded-md border p-3 text-sm">
+            {GOOGLE_MESSAGES[params.google]}
+          </p>
+        ) : null}
+        {googleAuthEnabled() ? (
+          <div className="mb-5 grid gap-4">
+            <GoogleButton
+              mode="login"
+              redirectTo={getSafeRedirectPath(params.redirectTo)}
+            />
+            <p className="text-muted-foreground text-center text-xs">
+              O ingresá con tu usuario y contraseña
+            </p>
+          </div>
+        ) : null}
         <LoginForm redirectTo={params.redirectTo} />
       </section>
     </main>

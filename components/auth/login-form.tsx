@@ -83,7 +83,7 @@ export function LoginForm({ redirectTo = "/" }: LoginFormProps) {
 
       <div className="grid gap-2">
         <label htmlFor="username" className="text-sm font-medium">
-          {mode === "fan-login" ? "Usuario fan" : "Usuario administrador"}
+          {mode === "fan-login" ? "Usuario fan" : "Usuario"}
         </label>
         <div className="border-input bg-background focus-within:ring-ring flex items-center gap-2 rounded-md border px-3 py-2 focus-within:ring-2">
           <UserRound className="text-muted-foreground size-4" aria-hidden="true" />
