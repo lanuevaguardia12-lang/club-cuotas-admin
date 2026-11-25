@@ -1,6 +1,7 @@
 import "server-only";
 import { PaymentReceiptsStore } from "@/services/database/payment-receipts-store";
 import { PaymentQuoteStore } from "@/services/database/payment-quote-store";
+import { CashFlowInputError } from "@/lib/cash-flow-errors";
 import {
   moneyCents,
   currentPaymentDate,
@@ -1584,11 +1585,12 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    this.assertConfigured();
+    const nativeFinance = financeDatabaseEnabled();
+    if (!nativeFinance) this.assertConfigured();
 
-    const spreadsheetId = this.config.spreadsheetId;
+    const spreadsheetId = this.config.spreadsheetId ?? "";
 
-    if (!spreadsheetId) {
+    if (!spreadsheetId && !nativeFinance) {
       throw new DataServiceError(
         "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
         "CONFIGURATION_ERROR",
@@ -1596,17 +1598,20 @@ export class GoogleSheetsService implements IDataService {
     }
 
     const transaction = normalizeCashFlowTransactionInput(input);
-    const rows = await this.readOptionalValuesFromSpreadsheet(
-      spreadsheetId,
-      this.config.cashFlowRange,
-    );
-    const existingTransaction = mapRowsToCashFlowTransactions(rows).find(
-      (item) => item.id === transaction.id,
-    );
+    const rows = nativeFinance
+      ? []
+      : await this.readOptionalValuesFromSpreadsheet(
+          spreadsheetId,
+          this.config.cashFlowRange,
+        );
+    const records = nativeFinance
+      ? await new FinanceStore().list<CashFlowTransactionRecord>("cash_flow")
+      : mapRowsToCashFlowTransactions(rows);
+    const existingTransaction = records.find((item) => item.id === transaction.id);
     if (existingTransaction?.incomeKind === "fundraising") {
       const applications = await this.readFundraisingBenefits(false);
       if (applications.some((item) => item.fundraisingId === existingTransaction.id)) {
-        throw new Error(
+        throw new CashFlowInputError(
           "Esta recaudación ya tiene beneficios aplicados y no se puede modificar.",
         );
       }
@@ -1617,17 +1622,35 @@ export class GoogleSheetsService implements IDataService {
         transaction.scenario !== "real" ||
         transaction.repeatsMonthly
       ) {
-        throw new Error("La recaudación debe ser un ingreso real de una sola vez.");
+        throw new CashFlowInputError(
+          "La recaudación debe ser un ingreso real de una sola vez.",
+        );
       }
-      const players = mapRowsToPlayers(await this.readPlayerDirectoryRows(spreadsheetId));
+      const playersRows = directoryDatabaseEnabled()
+        ? [
+            playerDirectoryHeaders,
+            ...(await new DirectoryStore().list("players")).map((player) =>
+              buildPlayerDirectoryWritableRow(playerDirectoryHeaders, player as never),
+            ),
+          ]
+        : await this.readPlayerDirectoryRows(spreadsheetId!);
+      const players = mapRowsToPlayers(playersRows);
       const playerMap = new Map(players.map((player) => [player.id, player]));
-      transaction.fundraisingAllocations = splitFundraisingAmount(
-        transaction.amount,
-        transaction.participantPlayerIds ?? [],
-      ).map((allocation) => {
+      let allocations;
+      try {
+        allocations = splitFundraisingAmount(
+          transaction.amount,
+          transaction.participantPlayerIds ?? [],
+        );
+      } catch {
+        throw new CashFlowInputError(
+          "Ingresá un monto válido y seleccioná al menos un jugador.",
+        );
+      }
+      transaction.fundraisingAllocations = allocations.map((allocation) => {
         const player = playerMap.get(allocation.playerId);
         if (!player)
-          throw new Error(
+          throw new CashFlowInputError(
             "Uno de los jugadores seleccionados ya no existe en el plantel.",
           );
         return { ...allocation, playerName: player.name };
@@ -1753,36 +1776,40 @@ export class GoogleSheetsService implements IDataService {
       return;
     }
 
-    this.assertConfigured();
+    const nativeFinance = financeDatabaseEnabled();
+    if (!nativeFinance) this.assertConfigured();
 
-    const spreadsheetId = this.config.spreadsheetId;
+    const spreadsheetId = this.config.spreadsheetId ?? "";
 
-    if (!spreadsheetId) {
+    if (!spreadsheetId && !nativeFinance) {
       throw new DataServiceError(
         "GOOGLE_SHEETS_SPREADSHEET_ID no esta configurado.",
         "CONFIGURATION_ERROR",
       );
     }
 
-    const values = await this.readOptionalValuesFromSpreadsheet(
-      spreadsheetId,
-      this.config.cashFlowRange,
-    );
+    const values = nativeFinance
+      ? []
+      : await this.readOptionalValuesFromSpreadsheet(
+          spreadsheetId,
+          this.config.cashFlowRange,
+        );
 
-    if (values.length === 0) {
+    if (!nativeFinance && values.length === 0) {
       return;
     }
 
-    const source = mapRowsToCashFlowTransactions(values).find(
-      (item) => item.id === transactionId,
-    );
+    const records = nativeFinance
+      ? await new FinanceStore().list<CashFlowTransactionRecord>("cash_flow")
+      : mapRowsToCashFlowTransactions(values);
+    const source = records.find((item) => item.id === transactionId);
     if (
       source?.incomeKind === "fundraising" &&
       (await this.readFundraisingBenefits(false)).some(
         (item) => item.fundraisingId === transactionId,
       )
     ) {
-      throw new Error(
+      throw new CashFlowInputError(
         "Esta recaudación ya tiene beneficios aplicados y no se puede eliminar.",
       );
     }
@@ -11709,17 +11736,11 @@ function normalizeCashFlowTransactionInput(
   const endPeriod = normalizePeriod(input.endPeriod);
 
   if (!date) {
-    throw new DataServiceError(
-      "La fecha del movimiento debe ser valida.",
-      "CONFIGURATION_ERROR",
-    );
+    throw new CashFlowInputError("La fecha del movimiento debe ser valida.");
   }
 
   if (!period || !startPeriod || !endPeriod) {
-    throw new DataServiceError(
-      "El periodo del movimiento debe tener formato AAAA-MM.",
-      "CONFIGURATION_ERROR",
-    );
+    throw new CashFlowInputError("El periodo del movimiento debe tener formato AAAA-MM.");
   }
 
   const repeatsMonthly = Boolean(input.repeatsMonthly);

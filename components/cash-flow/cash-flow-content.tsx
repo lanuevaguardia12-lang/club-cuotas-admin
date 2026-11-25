@@ -26,6 +26,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { useLoadingRouter } from "@/hooks/use-loading-router";
 import { splitFundraisingAmount } from "@/lib/fundraising";
+import {
+  CASH_FLOW_SAVE_UNCONFIRMED,
+  CASH_FLOW_DELETE_UNCONFIRMED,
+} from "@/lib/cash-flow-errors";
 import type {
   CashFlowData,
   CashFlowMatrixRow,
@@ -124,6 +128,7 @@ export function CashFlowContent({
   const [deletingId, setDeletingId] = useState("");
   const [loadingMessage, setLoadingMessage] = useState("");
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
   const [playerSearch, setPlayerSearch] = useState("");
   const activeData: CashFlowScenarioData = activeScenario === "draft" ? data.draft : data;
   const {
@@ -211,6 +216,7 @@ export function CashFlowContent({
 
   async function onSubmit(values: TransactionFormValues) {
     setMessage("");
+    setMessageIsError(false);
     setLoadingMessage(
       values.id ? "Actualizando movimiento..." : "Guardando movimiento...",
     );
@@ -223,24 +229,28 @@ export function CashFlowContent({
         };
 
     try {
-      await saveCashFlowTransaction({
+      const result = await saveCashFlowTransaction({
         ...normalizedValues,
         incomeKind: isFundraising ? "fundraising" : "general",
         participantPlayerIds: isFundraising ? values.participantPlayerIds : [],
       });
+      if (!result.ok) {
+        setMessageIsError(true);
+        setMessage(result.message);
+        return;
+      }
       reset(getDefaultValues(data.period, activeScenario));
       setEditingId("");
       setMessage(
-        values.id
-          ? `${scenarioLabels[activeScenario]} actualizado`
-          : `${scenarioLabels[activeScenario]} guardado`,
+        result.warning ??
+          (values.id
+            ? `${scenarioLabels[activeScenario]} actualizado`
+            : `${scenarioLabels[activeScenario]} guardado`),
       );
       router.refresh();
-      window.setTimeout(() => setMessage(""), 2200);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "No se pudo guardar el movimiento.",
-      );
+    } catch {
+      setMessageIsError(true);
+      setMessage(CASH_FLOW_SAVE_UNCONFIRMED);
     } finally {
       setLoadingMessage("");
     }
@@ -298,17 +308,22 @@ export function CashFlowContent({
     }
 
     setDeletingId(transaction.id);
+    setMessage("");
+    setMessageIsError(false);
     setLoadingMessage(`Eliminando ${transaction.concept}...`);
 
     try {
-      await deleteCashFlowTransaction(transaction.id);
-      setMessage("Movimiento eliminado");
+      const result = await deleteCashFlowTransaction(transaction.id);
+      if (!result.ok) {
+        setMessageIsError(true);
+        setMessage(result.message);
+        return;
+      }
+      setMessage(result.warning ?? "Movimiento eliminado");
       router.refresh();
-      window.setTimeout(() => setMessage(""), 2200);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "No se pudo eliminar el movimiento.",
-      );
+    } catch {
+      setMessageIsError(true);
+      setMessage(CASH_FLOW_DELETE_UNCONFIRMED);
     } finally {
       setDeletingId("");
       setLoadingMessage("");
@@ -624,7 +639,10 @@ export function CashFlowContent({
                   {editingId ? "Actualizar" : "Guardar"}
                 </Button>
                 {message ? (
-                  <span role="status" className="text-sm font-medium">
+                  <span
+                    role={messageIsError ? "alert" : "status"}
+                    className={`text-sm font-medium ${messageIsError ? "text-destructive" : ""}`}
+                  >
                     {message}
                   </span>
                 ) : null}

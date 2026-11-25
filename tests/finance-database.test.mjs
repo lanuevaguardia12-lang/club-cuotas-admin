@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createRuntime, createSheetsMock } from "./runtime.mjs";
 
-function setup() {
+function setup(config = {}) {
   let records = Object.fromEntries(
     [
       "costs",
@@ -85,6 +85,7 @@ function setup() {
     matchesSpreadsheetId: "matches",
     clientEmail: "test@example.com",
     privateKey: "test",
+    ...config,
   });
   const cost = (id, type, period, amount) =>
     service.upsertFeeCalculatorCost({
@@ -237,4 +238,24 @@ test("Supabase payment retries are idempotent and approval marks the month paid 
   await assert.rejects(x.service.upsertPaymentRecord({ ...input, externalId: "second" }));
   assert.deepEqual(x.records(), before);
   assert.equal(x.sheets.calls.writes, 0);
+});
+
+test("native cashflow saving, editing and deletion do not require Sheets credentials or a spreadsheet ID", async () => {
+  const x = setup({
+    spreadsheetId: "",
+    clubSpreadsheetId: "",
+    clientEmail: "",
+    privateKey: "",
+  });
+  await x.service.upsertCashFlowTransaction(x.income);
+  assert.equal(x.records().cash_flow.length, 1);
+  assert.equal(x.records().cash_flow[0].fundraisingAllocations.length, 10);
+  await x.service.upsertCashFlowTransaction({ ...x.income, amount: 50000 });
+  assert.equal(x.records().cash_flow.length, 1);
+  assert.equal(x.records().cash_flow[0].amount, 50000);
+  await x.service.deleteCashFlowTransaction(x.income.id);
+  assert.equal(x.records().cash_flow[0].active, false);
+  assert.equal(x.sheets.calls.reads, 0);
+  assert.equal(x.sheets.calls.writes, 0);
+  assert.equal(x.sheets.calls.clients, 0);
 });
