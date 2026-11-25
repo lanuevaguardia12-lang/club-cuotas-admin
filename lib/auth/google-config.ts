@@ -4,8 +4,8 @@ import { directoryDatabaseEnabled } from "@/services/database/directory-store";
 export function googleAuthEnabled() {
   return Boolean(
     directoryDatabaseEnabled() &&
-    process.env.GOOGLE_CLIENT_ID &&
-    process.env.GOOGLE_CLIENT_SECRET &&
+    process.env.GOOGLE_CLIENT_ID?.trim() &&
+    process.env.GOOGLE_CLIENT_SECRET?.trim() &&
     process.env.AUTH_SECRET,
   );
 }
@@ -22,8 +22,8 @@ export function googleAuthConfig() {
   )
     throw new Error("GOOGLE_NOT_CONFIGURED");
   return {
-    clientId: process.env.GOOGLE_CLIENT_ID!,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    clientId: process.env.GOOGLE_CLIENT_ID!.trim(),
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!.trim(),
     origin: url.origin,
     callbackUrl: `${url.origin}/api/auth/google/callback`,
   };

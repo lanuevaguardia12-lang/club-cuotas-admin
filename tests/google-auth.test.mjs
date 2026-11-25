@@ -379,3 +379,32 @@ test("OAuth return paths cannot redirect to another site; unconfigured login sta
     x.cleanup();
   }
 });
+
+test("OAuth configuration trims pasted whitespace and keeps blank credentials disabled", () => {
+  const keys = ["AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"];
+  const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.AUTH_SECRET = "test-only-auth-secret";
+    process.env.GOOGLE_CLIENT_ID = " test-client.apps.googleusercontent.com\n";
+    process.env.GOOGLE_CLIENT_SECRET = " test-only-client-secret\n";
+    const runtime = createRuntime({
+      mocks: {
+        "@/services/database/directory-store": { directoryDatabaseEnabled: () => true },
+      },
+    });
+    const config = runtime.load("lib/auth/google-config.ts");
+    assert.equal(config.googleAuthEnabled(), true);
+    assert.equal(
+      config.googleAuthConfig().clientId,
+      "test-client.apps.googleusercontent.com",
+    );
+    assert.equal(config.googleAuthConfig().clientSecret, "test-only-client-secret");
+    process.env.GOOGLE_CLIENT_SECRET = " \n ";
+    assert.equal(config.googleAuthEnabled(), false);
+  } finally {
+    for (const key of keys) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  }
+});
