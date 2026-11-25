@@ -78,6 +78,8 @@ export function createRuntime({
     }).outputText;
     const localRequire = (name) => {
       if (name in mocks) return mocks[name];
+      if (name === "googleapis/build/src/apis/sheets/index.js" && "googleapis" in mocks)
+        return mocks.googleapis.google;
       if (name === "server-only") return {};
       if (name === "next/cache") return nextCache;
       if (name.startsWith("@/")) return load(`${name.slice(2)}.ts`);

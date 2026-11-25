@@ -1,4 +1,5 @@
 import { Wallet } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 
@@ -23,13 +24,13 @@ export function PaymentFormButton({
       variant={compact ? "outline" : "default"}
       title={label}
     >
-      <a
+      <Link
         href={`/pagar-cuota?period=${encodeURIComponent(period)}`}
         aria-label={`${label} de ${playerName}`}
       >
         <Wallet className="size-4" />
         <span className={compact ? "sr-only" : undefined}>{label}</span>
-      </a>
+      </Link>
     </Button>
   );
 }

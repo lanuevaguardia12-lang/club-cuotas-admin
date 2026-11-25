@@ -1,5 +1,6 @@
 import "server-only";
 import { PaymentReceiptsStore } from "@/services/database/payment-receipts-store";
+import { PaymentQuoteStore } from "@/services/database/payment-quote-store";
 import {
   moneyCents,
   currentPaymentDate,
@@ -46,7 +47,7 @@ import type {
 } from "@/types/fundraising";
 
 import { unstable_cache, unstable_expireTag } from "next/cache";
-import type { sheets_v4 } from "googleapis";
+import type { sheets_v4 } from "googleapis/build/src/apis/sheets/index.js";
 
 import {
   APP_SETTINGS_ROWS,
@@ -264,6 +265,15 @@ interface FeeRecord {
   status: FeeStatus;
   dueDate?: string;
   paidAt?: string;
+}
+
+interface FeeCalculatorRows {
+  costsRows: unknown[][];
+  actualsRows: unknown[][];
+  playerStatusRows: unknown[][];
+  refundPolicyRows: unknown[][];
+  matchRows: unknown[][];
+  expenseRows: unknown[][];
 }
 
 interface CashFlowTransactionRecord extends CashFlowTransaction {
@@ -2304,10 +2314,9 @@ export class GoogleSheetsService implements IDataService {
       throw new Error("El registro interno de pagos todavía no está activado.");
     // Payment ownership is pinned to stable account/player identifiers. Display
     // names are editable and must never choose whose debt is being paid.
-    const directory = mapRowsToPlayerDirectoryItems(
-      await this.readCachedPlayerDirectoryRows(),
-    );
-    const account = await this.findAccountProfile(user.id, user.username);
+    const { playersRows, account, fees, financialRows, ledger } =
+      await this.readPlayerPaymentInputs(user);
+    const directory = mapRowsToPlayerDirectoryItems(playersRows);
     const identifiers = [account?.playerId, user.playerId, user.id, user.username].filter(
       (id): id is string => Boolean(id),
     );
@@ -2320,37 +2329,41 @@ export class GoogleSheetsService implements IDataService {
       .find(Boolean);
     if (!directoryPlayer)
       throw new Error("No encontramos un jugador asociado a tu cuenta.");
-    const [records, financialRows] = await Promise.all([
-      this.readDashboardRecords(),
-      this.readFeeCalculatorRows(),
-    ]);
     const costs = mapRowsToFeeCalculatorCostRecords(financialRows.costsRows);
     const current = currentPaymentDate().slice(0, 7);
     const starts = [
       ...costs.map((c) => c.startPeriod),
-      ...records.fees
-        .filter((f) => f.playerId === directoryPlayer.id)
-        .map((f) => f.period),
+      ...fees.filter((f) => f.playerId === directoryPlayer.id).map((f) => f.period),
     ]
       .filter((p) => /^\d{4}-\d{2}$/.test(p) && p <= current)
       .sort();
     const periods: string[] = [];
+    const playerFees = new Map<string, FeeRecord>();
+    for (const fee of fees) {
+      if (fee.playerId === directoryPlayer.id && !playerFees.has(fee.period))
+        playerFees.set(fee.period, fee);
+    }
     if (starts[0]) {
       let period = starts[0];
       while (period <= current) {
-        periods.push(period);
+        if (playerFees.get(period)?.status !== "paid") periods.push(period);
         period = addMonthsToPeriod(period, 1);
       }
     }
-    const calculations = await this.buildFeeCalculatorDataForPeriods(periods);
+    // Reuse this request's fresh inputs. Do not cache balances across requests:
+    // the same path is also used to revalidate a payment inside its transaction.
+    const calculations = await this.buildFeeCalculatorDataForPeriods(
+      periods,
+      undefined,
+      ledger,
+      { playersRows, financialRows },
+    );
     const quotas: PlayerPaymentData["quotas"] = [],
       undefinedPeriods: string[] = [];
     for (const data of calculations) {
       if (data.source.status === "error")
         throw new Error("No se pudo calcular la deuda actual.");
-      const fee = records.fees.find(
-        (f) => f.playerId === directoryPlayer.id && f.period === data.period,
-      );
+      const fee = playerFees.get(data.period);
       if (fee?.status === "paid") continue;
       const calculation = data.playerCalculations.find(
         (p) => p.playerId === directoryPlayer.id,
@@ -2371,6 +2384,70 @@ export class GoogleSheetsService implements IDataService {
       totalDebtCents: quotas.reduce((sum, q) => sum + q.amountCents, 0),
       undefinedPeriods,
     };
+  }
+
+  private async readPlayerPaymentInputs(user: AuthUser): Promise<{
+    playersRows: unknown[][];
+    account: Pick<AccountProfile, "userId" | "username" | "playerId"> | undefined;
+    fees: FeeRecord[];
+    financialRows: FeeCalculatorRows;
+    ledger: ReturnType<typeof buildFundraisingLedger>;
+  }> {
+    if (directoryDatabaseEnabled() && matchesDatabaseEnabled()) {
+      const snapshot = await new PaymentQuoteStore().read(
+        unquoteSheetTitle(getSheetPrefix(this.config.expensesRange)),
+        user.id,
+        user.username,
+      );
+      const directoryRows = (
+        kind: "players",
+        records: Record<string, unknown>[],
+      ): unknown[][] => {
+        const codec = directoryCodec[kind];
+        return [
+          codec.headers,
+          ...records.map((r) => codec.row(codec.headers, r as never)),
+        ];
+      };
+      const financeRows = (
+        kind: "costs" | "actuals" | "player_statuses" | "refund_policy" | "cash_flow",
+      ): unknown[][] => {
+        const codec = financeCodec[kind];
+        return [
+          codec.headers,
+          ...snapshot[kind].map((r) => codec.row(codec.headers, r as never)),
+        ];
+      };
+      return {
+        playersRows: directoryRows("players", snapshot.players),
+        account: snapshot.accounts.find(
+          (profile) =>
+            profile.userId === user.id ||
+            profile.username.toLowerCase() === user.username.toLowerCase(),
+        ),
+        fees: snapshot.fees,
+        financialRows: {
+          costsRows: financeRows("costs"),
+          actualsRows: financeRows("actuals"),
+          playerStatusRows: financeRows("player_statuses"),
+          refundPolicyRows: financeRows("refund_policy"),
+          matchRows: [matchStorageHeaders, ...snapshot.matches.map(buildMatchStorageRow)],
+          expenseRows: snapshot.expenses,
+        },
+        ledger: buildFundraisingLedger(
+          mapRowsToCashFlowTransactions(financeRows("cash_flow")),
+          snapshot.benefits,
+        ),
+      };
+    }
+    const [playersRows, account, fees, financialRows, ledger] = await Promise.all([
+      this.readCachedPlayerDirectoryRows(),
+      this.findAccountProfile(user.id, user.username),
+      new FinanceStore().list<FeeRecord>("fees"),
+      this.readFeeCalculatorRows(),
+      this.readFundraisingLedger(),
+    ]);
+    return { playersRows, account, fees, financialRows, ledger };
   }
 
   async registerPlayerPayment(
@@ -2561,7 +2638,11 @@ export class GoogleSheetsService implements IDataService {
   private async buildFeeCalculatorDataForPeriods(
     periods: string[],
     cachedAt = new Date().toISOString(),
-    providedLedger?: Awaited<ReturnType<GoogleSheetsService["readFundraisingLedger"]>>,
+    providedLedger?: ReturnType<typeof buildFundraisingLedger>,
+    providedInputs?: {
+      playersRows: unknown[][];
+      financialRows: FeeCalculatorRows;
+    },
   ) {
     const [
       {
@@ -2575,8 +2656,8 @@ export class GoogleSheetsService implements IDataService {
       cachedPlayersRows,
       ledger,
     ] = await Promise.all([
-      this.readFeeCalculatorRows(),
-      this.readCachedPlayerDirectoryRows(),
+      providedInputs?.financialRows ?? this.readFeeCalculatorRows(),
+      providedInputs?.playersRows ?? this.readCachedPlayerDirectoryRows(),
       providedLedger ? Promise.resolve(providedLedger) : this.readFundraisingLedger(),
     ]);
     const playersRows =
@@ -5140,7 +5221,7 @@ export class GoogleSheetsService implements IDataService {
     return mergedHeaders;
   }
 
-  private async readFeeCalculatorRows() {
+  private async readFeeCalculatorRows(): Promise<FeeCalculatorRows> {
     const spreadsheetId = this.getAppSpreadsheetId();
     const matchesSpreadsheetId = this.config.matchesSpreadsheetId;
     const feeCalculatorSpreadsheetId = spreadsheetId;
@@ -5430,14 +5511,16 @@ export class GoogleSheetsService implements IDataService {
     // A cache hit should not load the full Google API client at cold start.
     // Keep both the import and authentication lazy, and share the same promise
     // across parallel reads in this request.
-    this.sheetsClient ??= import("googleapis").then(({ google }) => {
-      const auth = new google.auth.JWT({
-        email: this.config.clientEmail,
-        key: this.config.privateKey?.replace(/\\n/g, "\n"),
-        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-      });
-      return google.sheets({ version: "v4", auth });
-    });
+    this.sheetsClient ??= import("googleapis/build/src/apis/sheets/index.js").then(
+      (api) => {
+        const auth = new api.auth.JWT({
+          email: this.config.clientEmail,
+          key: this.config.privateKey?.replace(/\\n/g, "\n"),
+          scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+        });
+        return api.sheets({ version: "v4", auth });
+      },
+    );
     return this.sheetsClient;
   }
 

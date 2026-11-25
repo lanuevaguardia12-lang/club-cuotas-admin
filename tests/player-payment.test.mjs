@@ -58,6 +58,7 @@ function setup() {
     ],
   };
   let receipts = [];
+  const reads = [];
   let failFees = false;
   const context = new AsyncLocalStorage();
   let queue = Promise.resolve();
@@ -66,10 +67,25 @@ function setup() {
     now: date,
     mocks: {
       googleapis: sheets.googleapis,
+      "@/services/database/payment-quote-store": {
+        PaymentQuoteStore: class {
+          async read() {
+            reads.push("snapshot");
+            return structuredClone({
+              ...records,
+              players: [player],
+              accounts: [],
+              matches: [],
+              expenses: [],
+            });
+          }
+        },
+      },
       "@/services/database/directory-store": {
         directoryDatabaseEnabled: () => true,
         DirectoryStore: class {
-          async list() {
+          async list(kind) {
+            reads.push(`directory:${kind}`);
             return [player];
           }
         },
@@ -78,6 +94,7 @@ function setup() {
         matchesDatabaseEnabled: () => true,
         MatchesStore: class {
           async list() {
+            reads.push("matches");
             return [];
           }
         },
@@ -104,9 +121,11 @@ function setup() {
         },
         FinanceStore: class {
           async list(kind) {
+            reads.push(`finance:${kind}`);
             return structuredClone(records[kind]);
           }
           async source() {
+            reads.push("expenses");
             return [];
           }
           async save(kind, record) {
@@ -158,6 +177,7 @@ function setup() {
     receipt,
     sheets,
     runtime,
+    reads,
     records: () => records,
     receipts: () => receipts,
     failFees() {
@@ -180,6 +200,25 @@ test("debt spans years and excludes paid, future and undefined quotas", async ()
   assert.ok(data.undefinedPeriods.includes("2026-07"));
   assert.equal(x.sheets.calls.reads, 0);
   await assert.rejects(x.service.getPlayerPaymentData({ ...x.user, role: "fan" }));
+});
+test("a payment quote reads each source once and observes changes on the next request", async () => {
+  const x = setup();
+  const before = await x.service.getPlayerPaymentData(x.user);
+  assert.deepEqual(x.reads, ["snapshot"]);
+  x.records().fees.push({
+    id: "new-payment",
+    playerId: "ana",
+    period: "2026-10",
+    amount: 50000,
+    status: "paid",
+    paidAt: "2026-11-24",
+  });
+  const after = await x.service.getPlayerPaymentData(x.user);
+  assert.equal(after.totalDebtCents, before.totalDebtCents - 5000000);
+  assert.equal(
+    after.quotas.some((quota) => quota.period === "2026-10"),
+    false,
+  );
 });
 test("paying October and November stores one receipt, pays both months, leaves older debt and is idempotent", async () => {
   const x = setup();
