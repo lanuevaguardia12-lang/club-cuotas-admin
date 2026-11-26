@@ -17,13 +17,10 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type CSSProperties } from "react";
+import { useRef, useState, useTransition, type CSSProperties } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 
-import {
-  submitPlayerOfMatchVote,
-  updatePlayerOfMatchMatch,
-} from "@/app/(dashboard)/player-of-match/actions";
+import { updatePlayerOfMatchMatch } from "@/app/(dashboard)/player-of-match/actions";
 import {
   CompetitionBadge,
   getCompetitionCardClass,
@@ -709,12 +706,20 @@ function MatchVoteCard({
         </div>
 
         {match.userVote ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <VoteResult label="Primer voto" value={match.userVote.firstVotePlayerName} />
-            <VoteResult
-              label="Segundo voto"
-              value={match.userVote.secondVotePlayerName}
-            />
+          <div className="grid gap-3">
+            <p role="status" className="text-primary font-semibold">
+              Voto registrado correctamente
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <VoteResult
+                label="Primer voto"
+                value={match.userVote.firstVotePlayerName}
+              />
+              <VoteResult
+                label="Segundo voto"
+                value={match.userVote.secondVotePlayerName}
+              />
+            </div>
           </div>
         ) : canVote ? (
           <PlayerVoteForm match={match} players={voteablePlayers} voteMode={voteMode} />
@@ -1049,8 +1054,8 @@ function PlayerVoteForm({
   players: string[];
   voteMode: "coach" | "fan" | "player";
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setPending] = useState(false);
+  const submitting = useRef(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
   const {
@@ -1069,20 +1074,50 @@ function PlayerVoteForm({
   const firstVote = watch("firstVotePlayerName");
   const secondVote = watch("secondVotePlayerName");
 
-  function onSubmit(values: PlayerOfMatchVoteFormValues) {
+  async function onSubmit(values: PlayerOfMatchVoteFormValues) {
+    if (submitting.current || success) return;
+    submitting.current = true;
+    setPending(true);
     setMessage("");
-    setSuccess(false);
-
-    startTransition(async () => {
-      const result = await submitPlayerOfMatchVote(values);
-
+    try {
+      const response = await fetch("/api/player-of-match/vote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const result = (await response.json()) as { ok: boolean; message: string };
+      if (!response.ok && result.ok) throw new Error("Respuesta inválida");
       setMessage(result.message);
       setSuccess(result.ok);
+    } catch {
+      setMessage(
+        "No se pudo confirmar el voto. Volvé a abrir la votación para verificar si quedó registrado antes de reintentar.",
+      );
+    } finally {
+      submitting.current = false;
+      setPending(false);
+    }
+  }
 
-      if (result.ok) {
-        window.setTimeout(() => router.refresh(), 650);
-      }
-    });
+  if (success) {
+    return (
+      <div
+        role="status"
+        className="border-primary/30 bg-primary/5 grid gap-3 rounded-md border p-4"
+      >
+        <p className="text-primary flex items-center gap-2 font-semibold">
+          <CheckCircle2 className="size-5 shrink-0" aria-hidden="true" />
+          Voto registrado correctamente
+        </p>
+        <p className="text-muted-foreground text-sm">
+          Gracias por participar. Tus elecciones quedaron guardadas.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <VoteResult label="Primer voto" value={firstVote} />
+          <VoteResult label="Segundo voto" value={secondVote} />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1091,43 +1126,46 @@ function PlayerVoteForm({
       onSubmit={handleSubmit(onSubmit)}
     >
       <LoadingModal open={isPending} description="Guardando voto..." />
-      <input type="hidden" {...register("matchId")} />
-      <div className="border-border bg-primary/5 text-primary rounded-md border p-3 text-sm">
-        <p className="font-semibold">Cómo suma tu voto</p>
-        <p className="mt-1 text-xs leading-relaxed">
-          {voteMode === "fan"
-            ? "Como fan, cada voto suma 1 punto. Elegí dos jugadores que hayan participado en el partido."
-            : voteMode === "coach"
-              ? "Como DT, tu primer voto vale 4 puntos y tu segundo voto vale 2 puntos. Elegí dos jugadores que hayan participado en el partido."
-              : "Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros del partido; tu propio nombre no participa de tus opciones."}
-        </p>
-      </div>
-      <VoteSelect
-        disabledOption={secondVote}
-        error={errors.firstVotePlayerName?.message}
-        label="Primer voto"
-        players={players}
-        registration={register("firstVotePlayerName")}
-        selected={Boolean(firstVote)}
-      />
-      <VoteSelect
-        disabledOption={firstVote}
-        error={errors.secondVotePlayerName?.message}
-        label="Segundo voto"
-        players={players}
-        registration={register("secondVotePlayerName")}
-        selected={Boolean(secondVote)}
-      />
-      <Button
-        type="submit"
-        disabled={isPending}
-        className={success ? "club-animate-select-pop" : undefined}
-      >
-        <Trophy />
-        Votar MVP
-      </Button>
+      <fieldset disabled={isPending} className="contents">
+        <input type="hidden" {...register("matchId")} />
+        <div className="border-border bg-primary/5 text-primary rounded-md border p-3 text-sm">
+          <p className="font-semibold">Cómo suma tu voto</p>
+          <p className="mt-1 text-xs leading-relaxed">
+            {voteMode === "fan"
+              ? "Como fan, cada voto suma 1 punto. Elegí dos jugadores que hayan participado en el partido."
+              : voteMode === "coach"
+                ? "Como DT, tu primer voto vale 4 puntos y tu segundo voto vale 2 puntos. Elegí dos jugadores que hayan participado en el partido."
+                : "Tu primer voto vale 2 puntos. Tu segundo voto vale 1 punto. Elegí dos compañeros del partido; tu propio nombre no participa de tus opciones."}
+          </p>
+        </div>
+        <VoteSelect
+          disabledOption={secondVote}
+          error={errors.firstVotePlayerName?.message}
+          label="Primer voto"
+          players={players}
+          registration={register("firstVotePlayerName")}
+          selected={Boolean(firstVote)}
+        />
+        <VoteSelect
+          disabledOption={firstVote}
+          error={errors.secondVotePlayerName?.message}
+          label="Segundo voto"
+          players={players}
+          registration={register("secondVotePlayerName")}
+          selected={Boolean(secondVote)}
+        />
+        <Button
+          type="submit"
+          disabled={isPending}
+          className={success ? "club-animate-select-pop" : undefined}
+        >
+          <Trophy />
+          Votar MVP
+        </Button>
+      </fieldset>
       {message ? (
         <p
+          role="alert"
           className={`club-animate-fade-up flex items-center gap-2 text-sm font-medium ${
             success ? "text-primary" : "text-destructive"
           }`}

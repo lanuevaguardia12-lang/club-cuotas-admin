@@ -54,11 +54,11 @@ export async function submitPlayerOfMatchVote(
       voterRole: user.role,
       voterUserId: user.id,
     });
-    revalidatePath("/player-of-match");
-
+    // The service expires the vote cache. Avoid rerendering the whole page
+    // before acknowledging the saved vote to the user.
     return {
       ok: true,
-      message: "Voto registrado.",
+      message: "Voto registrado correctamente",
     };
   } catch (error) {
     return {
