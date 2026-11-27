@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { updateFixtureMatchConvocation } from "@/app/(dashboard)/fixture/actions";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { drawSponsorFooter, getSponsorFooterLabelY } from "@/lib/plate-sponsors";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
@@ -654,7 +655,7 @@ async function drawConvocationPlate(
 ) {
   const logo = await loadTeamCrestImage(teamProfiles, teamName);
   const rival = getMatchRival(match, teamName);
-  const footerY = height - (compact ? 64 : 104);
+  const footerY = getSponsorFooterLabelY(height);
   const listY = compact ? 388 : 580;
   const listHeight = footerY - listY - (compact ? 52 : 82);
   const palette = getCompetitionSharePlatePalette(match.competitionKind);
@@ -717,12 +718,7 @@ async function drawConvocationPlate(
     y: listY,
   });
 
-  drawCenteredText(context, "LA NUEVA GUARDIA", width / 2, footerY, {
-    color: "rgba(255,255,255,0.72)",
-    font: compact ? "800 30px Arial, sans-serif" : "800 34px Arial, sans-serif",
-    letterSpacing: 0,
-    maxWidth: width - 160,
-  });
+  await drawSponsorFooter(context);
 }
 
 function drawConvocationList(
@@ -758,14 +754,13 @@ function drawConvocationList(
   context.restore();
 
   const padding = compact ? 34 : 42;
-  const columns = 1;
-  const gap = 0;
-  const columnWidth = width - padding * 2;
-  const rowsPerColumn = players.length;
-  const headerHeight = 0;
   const coachHeight = coachName ? (compact ? 52 : 64) : 0;
-  const rowsAvailableHeight =
-    height - padding * 2 - headerHeight - coachHeight - (coachName ? 12 : 0);
+  const rowsAvailableHeight = height - padding * 2 - coachHeight - (coachName ? 12 : 0);
+  const maxRows = Math.max(1, Math.floor(rowsAvailableHeight / 38));
+  const columns = Math.max(1, Math.ceil(players.length / maxRows));
+  const rowsPerColumn = Math.ceil(players.length / columns);
+  const gap = 18;
+  const columnWidth = (width - padding * 2 - (columns - 1) * gap) / columns;
   const rowHeight = Math.min(
     compact ? 58 : 64,
     Math.max(38, Math.floor(rowsAvailableHeight / Math.max(rowsPerColumn, 1))),
@@ -780,7 +775,7 @@ function drawConvocationList(
       column * rowsPerColumn + rowsPerColumn,
     );
     const columnX = x + padding + column * (columnWidth + gap);
-    const firstRowY = y + padding + headerHeight;
+    const firstRowY = y + padding;
 
     columnPlayers.forEach((player, index) => {
       const rowY = firstRowY + index * rowHeight;

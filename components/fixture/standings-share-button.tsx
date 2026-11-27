@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { drawSponsorFooter, getSponsorFooterLabelY } from "@/lib/plate-sponsors";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
@@ -181,7 +182,7 @@ async function drawStandingsPlate(
   const width = compact ? POST_WIDTH : STORY_WIDTH;
   const height = compact ? POST_HEIGHT : STORY_HEIGHT;
   const logo = await loadTeamCrestImage(teamProfiles, teamName);
-  const footerY = height - (compact ? 70 : 108);
+  const footerY = getSponsorFooterLabelY(height);
   const tableY = compact ? 338 : 474;
   const tableX = compact ? 58 : 64;
   const tableWidth = width - tableX * 2;
@@ -248,12 +249,7 @@ async function drawStandingsPlate(
     y: legendY,
   });
 
-  drawCenteredText(context, "LA NUEVA GUARDIA", width / 2, footerY, {
-    color: "rgba(255,255,255,0.72)",
-    font: compact ? "800 30px Arial, sans-serif" : "800 34px Arial, sans-serif",
-    letterSpacing: 0,
-    maxWidth: width - 160,
-  });
+  await drawSponsorFooter(context);
 }
 
 function drawStandingsTable(
@@ -282,6 +278,12 @@ function drawStandingsTable(
     Math.min(64, Math.floor((height - headerHeight - 20) / Math.max(rows.length, 1))),
   );
   const tableHeight = headerHeight + rows.length * rowHeight + 18;
+
+  // Fit the full table above the legend even for divisions with many teams.
+  context.save();
+  context.translate(0, tableY);
+  context.scale(1, Math.min(1, height / tableHeight));
+  context.translate(0, -tableY);
 
   context.save();
   const gradient = context.createLinearGradient(
@@ -389,6 +391,7 @@ function drawStandingsTable(
       rowHeight,
     );
   });
+  context.restore();
 }
 
 interface StandingsLegendItem {

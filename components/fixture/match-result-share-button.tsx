@@ -5,6 +5,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { drawSponsorFooter } from "@/lib/plate-sponsors";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { parseGoalCountMarker, stripGoalCountMarker } from "@/lib/fixture-goals";
 import {
@@ -495,18 +496,7 @@ async function drawMatchResultPlate(
     });
   }
 
-  drawCenteredText(
-    context,
-    "LA NUEVA GUARDIA",
-    width / 2,
-    height - (compact ? 78 : 108),
-    {
-      color: "rgba(255,255,255,0.72)",
-      font: compact ? "800 30px Arial, sans-serif" : "800 34px Arial, sans-serif",
-      letterSpacing: 0,
-      maxWidth: width - 160,
-    },
-  );
+  await drawSponsorFooter(context);
 }
 
 async function drawPhotoOverlayMatchResultPlate(
@@ -581,24 +571,11 @@ async function drawPhotoOverlayMatchResultPlate(
       palette,
       scorers,
       width,
-      y: compact ? 705 : 1170,
+      y: compact ? 684 : 1170,
     });
   }
 
-  drawCenteredText(
-    context,
-    "LA NUEVA GUARDIA",
-    width / 2,
-    height - (compact ? 46 : 104),
-    {
-      color: "rgba(255,255,255,0.78)",
-      font: compact ? "800 24px Arial, sans-serif" : "800 34px Arial, sans-serif",
-      letterSpacing: 0,
-      maxWidth: width - 160,
-      shadowBlur: 12,
-      shadowColor: "rgba(0,0,0,0.4)",
-    },
-  );
+  await drawSponsorFooter(context);
 }
 
 async function drawPhotoOverlayBackground(

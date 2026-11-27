@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { drawSponsorFooter } from "@/lib/plate-sponsors";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { getCompetitionStageLabel } from "@/lib/league-competition-label";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
@@ -312,11 +313,7 @@ async function drawMvpStory(
     result: orderedPodium[2],
   });
 
-  drawCenteredText(context, "LA NUEVA GUARDIA", STORY_WIDTH / 2, 1818, {
-    color: palette.footerColor,
-    font: "800 34px Arial, sans-serif",
-    letterSpacing: 0,
-  });
+  await drawSponsorFooter(context, palette.footerColor);
 }
 
 function drawBackground(context: CanvasRenderingContext2D, palette: MvpStoryPalette) {

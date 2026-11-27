@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { drawSponsorFooter, getSponsorFooterLabelY } from "@/lib/plate-sponsors";
 import { drawFittedCrestImage } from "@/lib/crest-canvas";
 import { getTeamCrestDataUrl, getTeamCrestFit } from "@/lib/team-profiles";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,7 @@ interface LoadedTeamCrest {
 }
 
 interface RankingShareButtonProps {
+  showSponsors?: boolean;
   className?: string;
   filePrefix: string;
   primaryLabel: string;
@@ -51,6 +53,7 @@ interface RankingShareButtonProps {
 
 export function RankingShareButton({
   className,
+  showSponsors = false,
   filePrefix,
   primaryLabel,
   rows,
@@ -72,7 +75,7 @@ export function RankingShareButton({
     setMessage("");
 
     try {
-      const blob = await createRankingBlob(exportRows, format, {
+      const blob = await createRankingBlob(exportRows, format, showSponsors, {
         primaryLabel,
         secondaryLabel,
         subtitle,
@@ -151,6 +154,7 @@ export function RankingShareButton({
 async function createRankingBlob(
   rows: RankingShareRow[],
   format: RankingShareFormat,
+  showSponsors: boolean,
   metadata: {
     primaryLabel: string;
     secondaryLabel?: string;
@@ -173,7 +177,7 @@ async function createRankingBlob(
     throw new Error("Tu navegador no pudo preparar la imagen.");
   }
 
-  await drawRankingPlate(context, rows, compact, metadata);
+  await drawRankingPlate(context, rows, compact, showSponsors, metadata);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -190,6 +194,7 @@ async function drawRankingPlate(
   context: CanvasRenderingContext2D,
   rows: RankingShareRow[],
   compact: boolean,
+  showSponsors: boolean,
   {
     primaryLabel,
     secondaryLabel,
@@ -211,7 +216,9 @@ async function drawRankingPlate(
   const width = compact ? POST_WIDTH : STORY_WIDTH;
   const height = compact ? POST_HEIGHT : STORY_HEIGHT;
   const logo = await loadTeamCrestImage(teamProfiles, teamName);
-  const footerY = height - (compact ? 70 : 108);
+  const footerY = showSponsors
+    ? getSponsorFooterLabelY(height)
+    : height - (compact ? 70 : 108);
   const tableY = compact ? 338 : 486;
   const tableX = compact ? 58 : 64;
   const tableWidth = width - tableX * 2;
@@ -252,6 +259,11 @@ async function drawRankingPlate(
     tableY,
     valueLabel,
   });
+
+  if (showSponsors) {
+    await drawSponsorFooter(context);
+    return;
+  }
 
   drawCenteredText(context, "LA NUEVA GUARDIA", width / 2, footerY, {
     color: "rgba(255,255,255,0.72)",

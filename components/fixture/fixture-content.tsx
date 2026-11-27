@@ -717,6 +717,7 @@ function LeastBeatenTable({
           Valla menos vencida
         </CardTitle>
         <RankingShareButton
+          showSponsors
           filePrefix="valla-menos-vencida"
           primaryLabel="Club"
           rows={shareRows}
