@@ -147,17 +147,28 @@ test("the annual announcement targets voters, preserves a direct link in the inb
     },
   });
   const { POST } = runtime.load("app/api/notifications/annual-mvp/route.ts");
-  const send = (origin = "https://test") =>
+  const { annualMvpNoticeSchema } = runtime.load("lib/annual-mvp.ts");
+  assert.deepEqual(annualMvpNoticeSchema.parse({ year: 2026 }), {
+    year: 2026,
+    title: "Votá al MVP del año",
+    message:
+      "Hacé clic y votá al MVP del año. El premio se entrega en la fiesta de fin de año.",
+  });
+  const message =
+    "Hacé clic para votar. El premio se entrega en la fiesta de fin de año.";
+  const notice = { year: 2026, title: " MVP del año 2026 ", message };
+  const send = (origin = "https://test", payload = notice) =>
     POST(
       new NextRequest("https://test/api/notifications/annual-mvp", {
         method: "POST",
         headers: { origin },
-        body: JSON.stringify({ year: 2026 }),
+        body: JSON.stringify(payload),
       }),
     );
   assert.equal((await send()).status, 403);
   user = admin;
   assert.equal((await send("https://other.test")).status, 403);
+  assert.equal((await send("https://test", { ...notice, title: " " })).status, 400);
   assert.equal((await (await send()).json()).created, 2);
   assert.equal((await (await send()).json()).alreadyCreated, 2);
   assert.deepEqual(
@@ -167,12 +178,15 @@ test("the annual announcement targets voters, preserves a direct link in the inb
   assert.ok(
     records.every(
       (record) =>
-        record.notificationKind === "annual-mvp" && record.url === "/mvp-del-ano/2026",
+        record.notificationKind === "annual-mvp" &&
+        record.url === "/mvp-del-ano/2026" &&
+        record.title === "MVP del año 2026" &&
+        record.message === message,
     ),
   );
   assert.deepEqual(
-    pushes.map((push) => push.url),
-    ["/mvp-del-ano/2026"],
+    pushes.map(({ url, title, body }) => ({ url, title, body })),
+    [{ url: "/mvp-del-ano/2026", title: "MVP del año 2026", body: message }],
   );
   open = false;
   assert.equal((await send()).status, 409);

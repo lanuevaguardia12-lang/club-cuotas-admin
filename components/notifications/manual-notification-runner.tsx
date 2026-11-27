@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
+import { annualMvpNoticeDefaults } from "@/lib/annual-mvp";
 
 export type NotificationAuditType =
   | "all"
@@ -58,7 +59,7 @@ export function NotificationManualRunPanel({
   const [message, setMessage] = useState("");
   const [tone, setTone] = useState<"error" | "success">("success");
 
-  async function runAction(action: ManualRunAction) {
+  async function runAction(action: ManualRunAction, body = action.body) {
     const confirmed = window.confirm(
       `¿${action.label}${action.kind === "annual-mvp" ? ` ${action.body.year}` : ""} ahora?`,
     );
@@ -73,7 +74,7 @@ export function NotificationManualRunPanel({
 
     try {
       const response = await fetch(action.path, {
-        body: JSON.stringify(action.body),
+        body: JSON.stringify(body),
         headers: {
           "content-type": "application/json",
         },
@@ -117,6 +118,7 @@ export function NotificationManualRunPanel({
   }
 
   const loadingAction = actions.find((action) => action.kind === loadingKind);
+  const annualNotice = actions.find((action) => action.kind === "annual-mvp");
 
   return (
     <div className="grid gap-2 sm:justify-items-end">
@@ -124,35 +126,81 @@ export function NotificationManualRunPanel({
         open={Boolean(loadingAction)}
         description={loadingAction?.loadingLabel}
       />
-      <div className="flex flex-wrap gap-2 sm:justify-end">
-        {selectedType === "annual-mvp" && year !== undefined ? (
-          <select
-            aria-label="Año de la votación"
-            value={year}
-            onChange={(event) => setChosenYear(Number(event.target.value))}
-            disabled={Boolean(loadingKind)}
-            className="border-input bg-background h-8 rounded-md border px-2 text-sm"
-          >
-            {annualMvpYears?.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        {actions.map((action) => (
-          <Button
-            key={action.kind}
-            type="button"
-            size="sm"
-            onClick={() => void runAction(action)}
-            disabled={Boolean(loadingKind)}
-          >
-            {action.kind === "fee-reminder" ? <BellRing /> : <Send />}
-            {action.label}
-          </Button>
-        ))}
-      </div>
+      {annualNotice ? (
+        <form
+          className="w-full min-w-0 sm:w-96"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const fields = new FormData(event.currentTarget);
+            void runAction(annualNotice, {
+              ...annualNotice.body,
+              title: fields.get("title"),
+              message: fields.get("message"),
+            });
+          }}
+        >
+          <fieldset className="grid gap-3" disabled={Boolean(loadingKind)}>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Año de la votación
+              <select
+                value={year}
+                onChange={(event) => setChosenYear(Number(event.target.value))}
+                className="border-input bg-background h-9 w-fit rounded-md border px-2 text-sm"
+              >
+                {annualMvpYears?.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Título
+              <input
+                required
+                name="title"
+                maxLength={120}
+                defaultValue={annualMvpNoticeDefaults.title}
+                className="border-input bg-background h-9 rounded-md border px-3 text-sm font-normal"
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Texto
+              <textarea
+                required
+                name="message"
+                maxLength={2000}
+                rows={3}
+                defaultValue={annualMvpNoticeDefaults.message}
+                className="border-input bg-background rounded-md border px-3 py-2 text-sm font-normal"
+              />
+            </label>
+            <Button
+              type="submit"
+              size="sm"
+              className="justify-self-start sm:justify-self-end"
+            >
+              <Send />
+              {annualNotice.label}
+            </Button>
+          </fieldset>
+        </form>
+      ) : (
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          {actions.map((action) => (
+            <Button
+              key={action.kind}
+              type="button"
+              size="sm"
+              onClick={() => void runAction(action)}
+              disabled={Boolean(loadingKind)}
+            >
+              {action.kind === "fee-reminder" ? <BellRing /> : <Send />}
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
       {message ? (
         <p
           className={

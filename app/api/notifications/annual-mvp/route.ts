@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { annualMvpYearSchema } from "@/lib/annual-mvp";
+import { annualMvpNoticeSchema } from "@/lib/annual-mvp";
 import { sendAnnualMvpNotifications } from "@/lib/annual-mvp-notifications";
 import { userToAuditActor } from "@/lib/audit";
 import { hasPermission } from "@/lib/auth/roles";
@@ -25,18 +25,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const input = await request.json().catch(() => null);
-  const year = annualMvpYearSchema.safeParse(input?.year);
-  if (!year.success)
+  const input = annualMvpNoticeSchema.safeParse(await request.json().catch(() => null));
+  if (!input.success) {
+    const issue = input.error.issues[0];
     return NextResponse.json(
-      { message: "Elegí el año de la votación." },
+      {
+        message:
+          issue.path[0] === "title" || issue.path[0] === "message"
+            ? issue.message
+            : "Elegí el año de la votación.",
+      },
       { status: 400 },
     );
+  }
 
   try {
     return NextResponse.json(
       await sendAnnualMvpNotifications(
-        year.data,
+        input.data,
         getDataService(),
         userToAuditActor(user),
       ),

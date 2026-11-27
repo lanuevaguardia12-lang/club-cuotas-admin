@@ -55,6 +55,7 @@ import type { TeamProfile } from "@/types/teams";
 
 interface PlayerOfMatchContentProps {
   annualMvp: ReactNode;
+  openAnnualMvp: ReactNode;
   initialTab: "mvp" | "annual";
   canManage: boolean;
   canVote: boolean;
@@ -67,6 +68,7 @@ type PlayerOfMatchTab = "mvp" | "annual" | "ranking" | "rachas";
 
 export function PlayerOfMatchContent({
   annualMvp,
+  openAnnualMvp,
   initialTab,
   canManage,
   canVote,
@@ -120,6 +122,7 @@ export function PlayerOfMatchContent({
         ))}
       </nav>
 
+      {activeTab === "mvp" ? openAnnualMvp : null}
       {activeTab === "mvp" && !hasMatchData ? (
         <Card className="border-dashed">
           <CardContent className="p-6 text-center">

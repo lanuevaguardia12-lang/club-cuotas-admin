@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { AnnualMvpNoticeInput } from "@/lib/annual-mvp";
 import { getRolePermissions } from "@/lib/auth/roles";
 import { sendAccountNotifications } from "@/lib/manual-notifications";
 import { AnnualMvpStore } from "@/services/database/annual-mvp-store";
@@ -7,7 +8,7 @@ import type { IDataService } from "@/services/IDataService";
 import type { AuditActor } from "@/types/premium";
 
 export async function sendAnnualMvpNotifications(
-  year: number,
+  { year, title, message }: AnnualMvpNoticeInput,
   dataService: IDataService,
   actor: AuditActor,
 ) {
@@ -19,13 +20,12 @@ export async function sendAnnualMvpNotifications(
       )
       .map((account) => [account.userId, account]),
   );
-  const title = `Ya podés votar al MVP del año ${year}`;
   const store = new AnnualMvpStore();
   const result = await sendAccountNotifications(
     dataService,
     [...voters.values()].map((account) => ({
       title,
-      message: "Entrá a MVP del año y elegí a tu jugador.",
+      message,
       referenceId: `annual-mvp:${year}:${account.userId}`,
       targetRole: account.role,
       targetUserId: account.userId,

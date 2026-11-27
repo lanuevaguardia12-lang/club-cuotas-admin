@@ -20,16 +20,10 @@ export default async function SurveysPage() {
         <ClipboardList className="text-primary size-7" />
         Encuestas
       </h1>
-      {surveys ? (
-        <SurveyManager
-          currentYear={Number(attendanceToday().slice(0, 4))}
-          surveys={surveys}
-        />
-      ) : (
-        <p role="alert" className="text-destructive text-sm">
-          No se pudieron cargar las encuestas.
-        </p>
-      )}
+      <SurveyManager
+        currentYear={Number(attendanceToday().slice(0, 4))}
+        surveys={surveys}
+      />
     </main>
   );
 }

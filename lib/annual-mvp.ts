@@ -6,6 +6,30 @@ import type { MatchAttendanceData } from "@/types/match-attendance";
 
 export const annualMvpYearSchema = z.coerce.number().int().min(1900).max(9999);
 
+export const annualMvpNoticeDefaults = {
+  title: "Votá al MVP del año",
+  message:
+    "Hacé clic y votá al MVP del año. El premio se entrega en la fiesta de fin de año.",
+};
+
+export const annualMvpNoticeSchema = z.object({
+  year: annualMvpYearSchema,
+  title: z
+    .string()
+    .trim()
+    .min(1, "Escribí un título.")
+    .max(120, "El título puede tener hasta 120 caracteres.")
+    .default(annualMvpNoticeDefaults.title),
+  message: z
+    .string()
+    .trim()
+    .min(1, "Escribí el texto del aviso.")
+    .max(2000, "El texto puede tener hasta 2000 caracteres.")
+    .default(annualMvpNoticeDefaults.message),
+});
+
+export type AnnualMvpNoticeInput = z.infer<typeof annualMvpNoticeSchema>;
+
 export interface AnnualMvpCandidate {
   id: string;
   name: string;

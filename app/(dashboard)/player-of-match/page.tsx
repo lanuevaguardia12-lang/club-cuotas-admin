@@ -4,7 +4,7 @@ import { Trophy } from "lucide-react";
 import { AnnualMvpCard } from "@/components/player-of-match/annual-mvp-card";
 import { PlayerOfMatchContent } from "@/components/player-of-match/player-of-match-content";
 import { Badge } from "@/components/ui/badge";
-import { isAnnualMvpSelfVote } from "@/lib/annual-mvp";
+import { isAnnualMvpSelfVote, type AnnualMvpSurvey } from "@/lib/annual-mvp";
 import { LOGIN_PATH } from "@/lib/auth/constants";
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -42,6 +42,16 @@ export default async function PlayerOfMatchPage({
     annualSurveys && requestedSurvey
       ? [requestedSurvey, ...annualSurveys.filter((survey) => survey !== requestedSurvey)]
       : annualSurveys;
+  const renderSurvey = (survey: AnnualMvpSurvey) => (
+    <AnnualMvpCard
+      key={survey.year}
+      survey={survey}
+      canVote={canVote}
+      excludedIds={survey.candidates
+        .filter((candidate) => isAnnualMvpSelfVote(candidate, user))
+        .map((candidate) => candidate.id)}
+    />
+  );
 
   return (
     <main className="grid min-w-0 gap-6 overflow-hidden">
@@ -66,18 +76,10 @@ export default async function PlayerOfMatchPage({
       <PlayerOfMatchContent
         key={showAnnualFirst ? `annual-${requestedYear ?? "all"}` : "mvp"}
         initialTab={showAnnualFirst ? "annual" : "mvp"}
+        openAnnualMvp={surveys?.filter((survey) => !survey.closed).map(renderSurvey)}
         annualMvp={
           surveys?.length ? (
-            surveys.map((survey) => (
-              <AnnualMvpCard
-                key={survey.year}
-                survey={survey}
-                canVote={canVote}
-                excludedIds={survey.candidates
-                  .filter((candidate) => isAnnualMvpSelfVote(candidate, user))
-                  .map((candidate) => candidate.id)}
-              />
-            ))
+            surveys.map(renderSurvey)
           ) : (
             <p className="text-muted-foreground rounded-md border p-4 text-sm">
               {surveys
