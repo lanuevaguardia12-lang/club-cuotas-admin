@@ -306,6 +306,7 @@ interface MatchRecord {
   localTeam?: string;
   visitorTeam?: string;
   players: string[];
+  participants?: AttendanceMatch["participants"];
   venue: string;
   coachAttended: boolean;
   loadedAt: string;
@@ -2551,8 +2552,11 @@ export class GoogleSheetsService implements IDataService {
   }
 
   async getMatchAttendanceData(): Promise<MatchAttendanceData> {
+    const usesDatabase = matchesDatabaseEnabled();
     const [matches, directory] = await Promise.all([
-      this.readPlayerOfMatchMatches(),
+      usesDatabase
+        ? new MatchesStore().list({ includeParticipants: true })
+        : this.readPlayerOfMatchMatches(),
       this.getPlayersData(),
     ]);
     if (directory.source.status === "error")
@@ -2563,16 +2567,27 @@ export class GoogleSheetsService implements IDataService {
         buildPlayerDirectoryWritableRow(playerDirectoryHeaders, player),
       ),
     ]);
+    const availablePlayers = new Set(directory.players.map(({ id }) => id));
     return {
-      matches: matches.map((match) => ({
-        ...match,
-        participantPlayerIds: match.players
-          .map((name) => matchesCodec.resolvePlayerId(name, playerRecords))
-          .filter((id): id is string => Boolean(id)),
-      })),
+      matches: matches.map((match) => {
+        const recorded =
+          match.participants ??
+          match.players.map((playerName) => ({ playerName, playerId: undefined }));
+        const participants = recorded.map(({ playerName, playerId }) => ({
+          playerName,
+          playerId: playerId ?? matchesCodec.resolvePlayerId(playerName, playerRecords),
+        }));
+        return {
+          ...match,
+          participants,
+          participantPlayerIds: participants
+            .map(({ playerId }) => playerId)
+            .filter((id): id is string => Boolean(id && availablePlayers.has(id))),
+        };
+      }),
       players: directory.players,
       source: {
-        provider: matchesDatabaseEnabled() ? "postgresql" : "google-sheets",
+        provider: usesDatabase ? "postgresql" : "google-sheets",
         status: matches.length ? "ready" : "empty",
         message: "Partidos y asistencias.",
         cachedAt: new Date().toISOString(),
@@ -13476,6 +13491,7 @@ function normalizeNotificationKind(
   const kind = normalizeText(value);
 
   if (
+    kind === "annual-mvp" ||
     kind === "birthday" ||
     kind === "fee-defined" ||
     kind === "fee-reminder" ||
@@ -13496,6 +13512,10 @@ function normalizeNotificationKind(
 
   if (referenceId.startsWith("fee-reminder")) {
     return "fee-reminder";
+  }
+
+  if (referenceId.startsWith("annual-mvp:")) {
+    return "annual-mvp";
   }
 
   if (referenceId.startsWith("mvp") || url === "/player-of-match") {

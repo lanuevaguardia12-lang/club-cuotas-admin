@@ -11,6 +11,7 @@ export interface AttendanceMatch {
   sourceType?: LeagueCompetitionKind;
   players: string[];
   participantPlayerIds?: string[];
+  participants?: { playerName: string; playerId?: string }[];
   venue: string;
   coachAttended: boolean;
   loadedAt: string;

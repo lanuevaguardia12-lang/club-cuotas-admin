@@ -17,7 +17,13 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition, type CSSProperties } from "react";
+import {
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 
 import { updatePlayerOfMatchMatch } from "@/app/(dashboard)/player-of-match/actions";
@@ -48,6 +54,8 @@ import type {
 import type { TeamProfile } from "@/types/teams";
 
 interface PlayerOfMatchContentProps {
+  annualMvp: ReactNode;
+  initialTab: "mvp" | "annual";
   canManage: boolean;
   canVote: boolean;
   data: PlayerOfMatchData;
@@ -55,16 +63,18 @@ interface PlayerOfMatchContentProps {
   voteMode?: "coach" | "fan" | "player";
 }
 
-type PlayerOfMatchTab = "mvp" | "ranking" | "rachas";
+type PlayerOfMatchTab = "mvp" | "annual" | "ranking" | "rachas";
 
 export function PlayerOfMatchContent({
+  annualMvp,
+  initialTab,
   canManage,
   canVote,
   data,
   teamProfiles = [],
   voteMode = "player",
 }: PlayerOfMatchContentProps) {
-  const [activeTab, setActiveTab] = useState<PlayerOfMatchTab>("mvp");
+  const [activeTab, setActiveTab] = useState<PlayerOfMatchTab>(initialTab);
   const currentMatches = data.matches.filter(isCurrentPlayerOfMatch);
   const currentMatchIds = new Set(currentMatches.map((match) => match.id));
   const historyMatches = data.matches.filter(
@@ -76,28 +86,23 @@ export function PlayerOfMatchContent({
     data.rankings.streaks.length > 0 ||
     data.rankings.attendance.length > 0;
 
-  if (currentMatches.length === 0 && historyMatches.length === 0 && !hasRankingData) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="p-6 text-center">
-          <Trophy className="text-muted-foreground mx-auto size-8" />
-          <h2 className="mt-4 text-lg font-semibold">{data.emptyState.title}</h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {data.emptyState.description}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
+  const hasMatchData =
+    currentMatches.length > 0 || historyMatches.length > 0 || hasRankingData;
+  const tabs: { label: string; value: PlayerOfMatchTab }[] = [
+    { label: "MVP", value: "mvp" },
+    { label: "MVP del año", value: "annual" },
+    ...(hasMatchData
+      ? [
+          { label: "Ranking", value: "ranking" as const },
+          { label: "Rachas", value: "rachas" as const },
+        ]
+      : []),
+  ];
 
   return (
     <section className="grid min-w-0 gap-5 overflow-hidden">
       <nav className="border-border bg-card flex max-w-full min-w-0 gap-1 overflow-x-auto rounded-md border p-1">
-        {[
-          { label: "MVP", value: "mvp" as const },
-          { label: "Ranking", value: "ranking" as const },
-          { label: "Rachas", value: "rachas" as const },
-        ].map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.value}
             type="button"
@@ -115,7 +120,18 @@ export function PlayerOfMatchContent({
         ))}
       </nav>
 
-      {activeTab === "mvp" ? (
+      {activeTab === "mvp" && !hasMatchData ? (
+        <Card className="border-dashed">
+          <CardContent className="p-6 text-center">
+            <Trophy className="text-muted-foreground mx-auto size-8" />
+            <h2 className="mt-4 text-lg font-semibold">{data.emptyState.title}</h2>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {data.emptyState.description}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+      {activeTab === "mvp" && hasMatchData ? (
         <MvpTab
           canManage={canManage}
           canVote={canVote}
@@ -128,6 +144,7 @@ export function PlayerOfMatchContent({
           voteMode={voteMode}
         />
       ) : null}
+      {activeTab === "annual" ? annualMvp : null}
       {activeTab === "ranking" ? <RankingTab data={data} /> : null}
       {activeTab === "rachas" ? <StreaksTab data={data} /> : null}
     </section>

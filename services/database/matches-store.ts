@@ -10,11 +10,29 @@ export class MatchesStore {
     return (financialTransactionContext.getStore() ??
       directoryDatabase()) as unknown as postgres.Sql;
   }
-  async list(): Promise<AttendanceMatch[]> {
+  async list({ includeParticipants = false } = {}): Promise<AttendanceMatch[]> {
     const sql = this.sql();
-    const rows =
-      await sql`select m.data, coalesce(jsonb_agg(a.player_name order by a.position) filter(where a.match_id is not null),'[]'::jsonb) as players from club_matches.matches m left join club_matches.attendances a on a.match_id=m.id group by m.id,m.data,m.sequence order by m.data->>'date', m.sequence`;
-    return rows.map((row) => ({ ...row.data, players: row.players }) as AttendanceMatch);
+    const entry = includeParticipants
+      ? sql`jsonb_strip_nulls(jsonb_build_object('playerName', a.player_name, 'playerId', a.player_id))`
+      : sql`a.player_name`;
+    const rows = await sql`
+      select m.data, coalesce(jsonb_agg(${entry} order by a.position)
+        filter (where a.match_id is not null), '[]'::jsonb) as attendance
+      from club_matches.matches m
+      left join club_matches.attendances a on a.match_id = m.id
+      group by m.id, m.data, m.sequence
+      order by m.data->>'date', m.sequence
+    `;
+    return rows.map((row) => {
+      const data = row.data as Omit<AttendanceMatch, "players">;
+      if (!includeParticipants) return { ...data, players: row.attendance as string[] };
+      const participants = row.attendance as NonNullable<AttendanceMatch["participants"]>;
+      return {
+        ...data,
+        players: participants.map(({ playerName }) => playerName),
+        participants,
+      };
+    });
   }
   async save(
     match: AttendanceMatch,

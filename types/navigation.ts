@@ -18,6 +18,7 @@ export type NavigationIcon =
   | "settings"
   | "audit"
   | "notifications"
+  | "surveys"
   | "payments"
   | "api";
 

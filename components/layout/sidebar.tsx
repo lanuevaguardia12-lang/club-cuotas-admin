@@ -51,6 +51,7 @@ const iconMap = {
   players: UsersRound,
   teams: Shield,
   notifications: Bell,
+  surveys: ClipboardList,
   payments: CreditCard,
   users: UsersRound,
   reports: BarChart3,

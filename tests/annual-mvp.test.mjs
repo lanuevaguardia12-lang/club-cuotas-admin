@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { NextRequest } from "next/server.js";
+
+import { createRuntime } from "./runtime.mjs";
+
+const admin = { id: "admin", name: "Admin", username: "admin", role: "admin" };
+const player = {
+  id: "user-ana",
+  playerId: "p1",
+  name: "Ana Pérez",
+  username: "ana",
+  role: "player",
+};
+
+test("annual candidates come from played matches in the chosen year, with aliases and repeat appearances deduplicated", () => {
+  const { getAnnualMvpCandidates, isAnnualMvpSelfVote } =
+    createRuntime().load("lib/annual-mvp.ts");
+  const candidates = getAnnualMvpCandidates(
+    {
+      players: [
+        { id: "p1", name: "Ana Pérez" },
+        { id: "p2", name: "Sin partidos" },
+      ],
+      matches: [
+        { date: "2025-12-31", players: ["Temporada anterior"] },
+        {
+          date: "2026-01-01",
+          participants: [
+            { playerId: "p1", playerName: "Anita" },
+            { playerName: "Carlos Díaz" },
+          ],
+        },
+        { date: "2026-11-27T10:00", players: ["  carlos diaz  ", "Ana Pérez"] },
+        { date: "2026-11-28", players: ["Partido futuro"] },
+      ],
+    },
+    2026,
+    "2026-11-27",
+  );
+  assert.deepEqual(
+    candidates.map(({ id, name }) => ({ id, name })),
+    [
+      { id: "player:p1", name: "Ana Pérez" },
+      { id: "name:carlos diaz", name: "Carlos Díaz" },
+    ],
+  );
+  assert.equal(isAnnualMvpSelfVote(candidates[0], player), true);
+  assert.equal(isAnnualMvpSelfVote(candidates[0], { ...player, role: "fan" }), false);
+});
+
+test("only admins publish and eligible voters use the annual vote store", async () => {
+  let user = player;
+  const saved = [];
+  const runtime = createRuntime({
+    now: "2026-11-27T12:00:00Z",
+    mocks: {
+      "@/lib/auth/session": { getCurrentUser: async () => user },
+      "@/services/data-service": {
+        getDataService: () => ({
+          getMatchAttendanceData: async () => ({
+            players: [],
+            matches: [{ date: "2026-09-01", players: ["Carlos"] }],
+          }),
+          submitPlayerOfMatchVote: () =>
+            assert.fail("annual votes must not reach the match store"),
+        }),
+      },
+      "@/services/database/annual-mvp-store": {
+        AnnualMvpError: Error,
+        AnnualMvpStore: class {
+          async publish(year, candidates) {
+            saved.push({ year, candidates });
+          }
+          async vote(year, candidateId, voter) {
+            saved.push({ year, candidateId, voter: voter.id });
+          }
+        },
+      },
+    },
+  });
+  const { manageAnnualMvpSurvey } = runtime.load("app/(dashboard)/encuestas/actions.ts");
+  const { submitAnnualMvpVote } = runtime.load(
+    "app/(dashboard)/player-of-match/annual-actions.ts",
+  );
+  const publish = new FormData();
+  publish.set("intent", "publish");
+  publish.set("year", "2026");
+  const ballot = new FormData();
+  ballot.set("year", "2026");
+  ballot.set("candidateId", "name:carlos");
+  assert.equal((await manageAnnualMvpSurvey(null, publish)).ok, false);
+  user = admin;
+  assert.equal((await submitAnnualMvpVote(null, ballot)).ok, false);
+  assert.equal((await manageAnnualMvpSurvey(null, publish)).ok, true);
+  user = player;
+  assert.equal((await submitAnnualMvpVote(null, ballot)).ok, true);
+  assert.deepEqual(saved, [
+    {
+      year: 2026,
+      candidates: [{ id: "name:carlos", name: "Carlos", playerId: undefined }],
+    },
+    { year: 2026, candidateId: "name:carlos", voter: player.id },
+  ]);
+});
+
+test("the annual announcement targets voters, preserves a direct link in the inbox and push, and skips repeat sends", async () => {
+  let open = true;
+  let user = player;
+  const records = [];
+  const pushes = [];
+  const dataService = {
+    getAccountUsers: async () =>
+      [admin, player, { ...player, id: "fan", username: "fan", role: "fan" }].map(
+        (account) => ({ ...account, userId: account.id }),
+      ),
+    getNotifications: async () => records,
+    getPushSubscriptions: async () => [{ userId: player.id, active: true }],
+    createNotifications: async (batch) => {
+      records.push(...batch);
+    },
+    updateNotificationDeliveries: async () => {},
+    recordAuditEvent: async () => {},
+  };
+  class AnnualMvpError extends Error {}
+  const runtime = createRuntime({
+    mocks: {
+      "@/lib/auth/session": { getCurrentUser: async () => user },
+      "@/services/data-service": { getDataService: () => dataService },
+      "@/services/database/annual-mvp-store": {
+        AnnualMvpError,
+        AnnualMvpStore: class {
+          async withNoticeLock(year, create) {
+            assert.equal(year, 2026);
+            if (!open) throw new AnnualMvpError("La votación no está abierta.");
+            return create();
+          }
+        },
+      },
+      "@/lib/push": {
+        isPushConfigured: () => true,
+        sendPushNotification: async (_device, payload) => {
+          assert.equal(records.length, 2);
+          pushes.push(payload);
+        },
+      },
+    },
+  });
+  const { POST } = runtime.load("app/api/notifications/annual-mvp/route.ts");
+  const send = (origin = "https://test") =>
+    POST(
+      new NextRequest("https://test/api/notifications/annual-mvp", {
+        method: "POST",
+        headers: { origin },
+        body: JSON.stringify({ year: 2026 }),
+      }),
+    );
+  assert.equal((await send()).status, 403);
+  user = admin;
+  assert.equal((await send("https://other.test")).status, 403);
+  assert.equal((await (await send()).json()).created, 2);
+  assert.equal((await (await send()).json()).alreadyCreated, 2);
+  assert.deepEqual(
+    records.map((record) => record.targetUserId),
+    [player.id, "fan"],
+  );
+  assert.ok(
+    records.every(
+      (record) =>
+        record.notificationKind === "annual-mvp" && record.url === "/mvp-del-ano/2026",
+    ),
+  );
+  assert.deepEqual(
+    pushes.map((push) => push.url),
+    ["/mvp-del-ano/2026"],
+  );
+  open = false;
+  assert.equal((await send()).status, 409);
+
+  const { GET: followNotice } = runtime.load("app/mvp-del-ano/[year]/route.ts");
+  const openNotice = () =>
+    followNotice(new Request("https://test/mvp-del-ano/2026"), {
+      params: Promise.resolve({ year: "2026" }),
+    });
+  const target = "/player-of-match?tab=mvp-del-ano&anio=2026#mvp-del-ano-2026";
+  await assert.rejects(openNotice(), (error) => error.digest?.includes(target));
+  user = null;
+  await assert.rejects(openNotice(), (error) =>
+    error.digest?.includes(`/login?redirectTo=${encodeURIComponent(target)}`),
+  );
+});

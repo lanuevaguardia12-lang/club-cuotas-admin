@@ -88,6 +88,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "payments:manage",
   },
   {
+    label: "Encuestas",
+    href: "/encuestas",
+    icon: "surveys",
+    permission: "surveys:manage",
+  },
+  {
     label: "Notificaciones",
     href: "/notifications",
     icon: "notifications",
@@ -132,6 +138,7 @@ const adminNavigationHrefs = new Set([
   "/fee-calculator",
   "/coach-records",
   "/payments",
+  "/encuestas",
   "/notifications",
   "/api-docs",
   "/users",

@@ -491,7 +491,17 @@ export function NotificationBell({ hydrateDelayMs = 0, user }: NotificationBellP
                         />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">{notification.title}</p>
+                        {notification.notificationKind === "annual-mvp" &&
+                        notification.url ? (
+                          <a
+                            href={notification.url}
+                            className="hover:text-primary text-sm font-medium hover:underline"
+                          >
+                            {notification.title}
+                          </a>
+                        ) : (
+                          <p className="text-sm font-medium">{notification.title}</p>
+                        )}
                         <p className="text-muted-foreground mt-1 text-xs">
                           {notification.message}
                         </p>
@@ -523,7 +533,9 @@ export function NotificationBell({ hydrateDelayMs = 0, user }: NotificationBellP
                         <Button asChild size="sm" variant="outline">
                           <a href={notification.url}>
                             <ExternalLink />
-                            Abrir
+                            {notification.notificationKind === "annual-mvp"
+                              ? "Ir a votar"
+                              : "Abrir"}
                           </a>
                         </Button>
                       ) : null}

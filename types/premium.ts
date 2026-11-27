@@ -62,6 +62,7 @@ export type NotificationStatus = "unread" | "read" | "archived";
 export type NotificationDeliveryStatus =
   "created" | "failed" | "no_subscription" | "sent" | "skipped";
 export type NotificationKind =
+  | "annual-mvp"
   | "birthday"
   | "fee-defined"
   | "fee-reminder"

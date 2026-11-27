@@ -1,16 +1,23 @@
 import { redirect } from "next/navigation";
 import { Trophy } from "lucide-react";
 
+import { AnnualMvpCard } from "@/components/player-of-match/annual-mvp-card";
 import { PlayerOfMatchContent } from "@/components/player-of-match/player-of-match-content";
 import { Badge } from "@/components/ui/badge";
+import { isAnnualMvpSelfVote } from "@/lib/annual-mvp";
 import { LOGIN_PATH } from "@/lib/auth/constants";
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDataService } from "@/services/data-service";
+import { AnnualMvpStore } from "@/services/database/annual-mvp-store";
 
 export const dynamic = "force-dynamic";
 
-export default async function PlayerOfMatchPage() {
+export default async function PlayerOfMatchPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; anio?: string }>;
+}) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -18,12 +25,23 @@ export default async function PlayerOfMatchPage() {
   }
 
   const dataService = getDataService();
-  const [data, teamsData] = await Promise.all([
+  const [data, teamsData, annualSurveys, params] = await Promise.all([
     dataService.getPlayerOfMatchData(user.id, user.playerId),
     dataService.getTeamsData().catch(() => ({ teams: [] })),
+    new AnnualMvpStore().list(user.id).catch(() => null),
+    searchParams,
   ]);
   const canManage = hasPermission(user, "player-of-match:manage");
   const canVote = user.role !== "admin" && hasPermission(user, "player-of-match:vote");
+  const showAnnualFirst = params.tab === "mvp-del-ano";
+  const requestedYear = showAnnualFirst ? params.anio : undefined;
+  const requestedSurvey = annualSurveys?.find(
+    (survey) => String(survey.year) === requestedYear,
+  );
+  const surveys =
+    annualSurveys && requestedSurvey
+      ? [requestedSurvey, ...annualSurveys.filter((survey) => survey !== requestedSurvey)]
+      : annualSurveys;
 
   return (
     <main className="grid min-w-0 gap-6 overflow-hidden">
@@ -46,6 +64,28 @@ export default async function PlayerOfMatchPage() {
       </header>
 
       <PlayerOfMatchContent
+        key={showAnnualFirst ? `annual-${requestedYear ?? "all"}` : "mvp"}
+        initialTab={showAnnualFirst ? "annual" : "mvp"}
+        annualMvp={
+          surveys?.length ? (
+            surveys.map((survey) => (
+              <AnnualMvpCard
+                key={survey.year}
+                survey={survey}
+                canVote={canVote}
+                excludedIds={survey.candidates
+                  .filter((candidate) => isAnnualMvpSelfVote(candidate, user))
+                  .map((candidate) => candidate.id)}
+              />
+            ))
+          ) : (
+            <p className="text-muted-foreground rounded-md border p-4 text-sm">
+              {surveys
+                ? "Todavía no hay votaciones de MVP del año publicadas."
+                : "No se pudieron cargar las votaciones de MVP del año."}
+            </p>
+          )
+        }
         canManage={canManage}
         canVote={canVote}
         data={data}

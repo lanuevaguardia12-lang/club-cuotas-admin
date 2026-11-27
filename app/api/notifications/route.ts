@@ -110,6 +110,8 @@ export async function PATCH(request: NextRequest) {
 function canUserSeeNotification(notification: AppNotification, user: AuthUser) {
   if (notification.referenceId?.startsWith("manual:"))
     return notification.targetUserId === user.id;
+  if (notification.notificationKind === "annual-mvp")
+    return notification.targetUserId === user.id;
   if (user.role === "admin") return false;
   const userKeys = buildNotificationUserKeys(user);
 

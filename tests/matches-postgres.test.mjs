@@ -58,6 +58,14 @@ test(
             (await store.list()).find((m) => m.id === id),
             original,
           );
+          assert.deepEqual(
+            (await store.list({ includeParticipants: true })).find((m) => m.id === id)
+              .participants,
+            [
+              { playerName: "Test player", playerId: "test-player" },
+              { playerName: "Historic player" },
+            ],
+          );
           await assert.rejects(
             store.save({ ...original, coachAttended: false, players: [""] }, [
               { playerName: "" },

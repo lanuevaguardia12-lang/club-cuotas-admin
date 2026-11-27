@@ -16,6 +16,7 @@ export type Permission =
   | "users:manage"
   | "audit:read"
   | "notifications:manage"
+  | "surveys:manage"
   | "payments:manage"
   | "maintenance:manage"
   | "api:read"
@@ -58,6 +59,7 @@ const rolePermissions: Record<AuthRole, Permission[]> = {
     "users:manage",
     "audit:read",
     "notifications:manage",
+    "surveys:manage",
     "payments:manage",
     "maintenance:manage",
     "api:read",
@@ -192,6 +194,10 @@ export function canAccessRoute(user: AuthUser, href: string) {
 
   if (href.startsWith("/notifications")) {
     return hasPermission(user, "notifications:manage");
+  }
+
+  if (href.startsWith("/encuestas")) {
+    return hasPermission(user, "surveys:manage");
   }
 
   if (href.startsWith("/api-docs")) {

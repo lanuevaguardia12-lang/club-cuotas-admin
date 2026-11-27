@@ -6,7 +6,11 @@ import {
 } from "@/lib/manual-notification-template";
 import { isPushConfigured, sendPushNotification } from "@/lib/push";
 import type { IDataService } from "@/services/IDataService";
-import type { AuditActor, NotificationDeliveryUpdate } from "@/types/premium";
+import type {
+  AuditActor,
+  CreateNotificationInput,
+  NotificationDeliveryUpdate,
+} from "@/types/premium";
 
 export async function sendManualNotifications(
   input: unknown,
@@ -14,11 +18,7 @@ export async function sendManualNotifications(
   actor: AuditActor,
 ) {
   const parsed = manualNotificationSchema.parse(input);
-  const [accounts, notifications, subscriptions] = await Promise.all([
-    dataService.getAccountUsers(),
-    dataService.getNotifications({ fresh: true }),
-    dataService.getPushSubscriptions(),
-  ]);
+  const accounts = await dataService.getAccountUsers();
   const byId = new Map(accounts.map((user) => [user.userId, user]));
   const userIds = [...new Set(parsed.userIds)];
   if (userIds.some((id) => !byId.has(id))) {
@@ -26,45 +26,76 @@ export async function sendManualNotifications(
       "Uno de los usuarios ya no está disponible. Actualizá la página y revisá los destinatarios.",
     );
   }
-  const existing = new Map(
-    notifications.map((notification) => [notification.referenceId, notification]),
-  );
   const recipients = userIds.map((id) => {
     const user = byId.get(id)!;
     return {
-      user,
       referenceId: `manual:${parsed.requestId}:${id}`,
       title: renderNotificationTemplate(parsed.title, user),
       message: renderNotificationTemplate(parsed.message, user),
-    };
-  });
-  const fresh = recipients.filter((item) => !existing.has(item.referenceId));
-  // Store the inbox before attempting push. A retry of this request never sends twice.
-  await dataService.createNotifications(
-    fresh.map(({ user, referenceId, title, message }) => ({
-      title,
-      message,
-      referenceId,
       targetRole: user.role,
       targetUserId: user.userId,
       recipientUserId: user.userId,
       recipientPlayerId: user.playerId,
       recipientName: user.name || user.username,
       notificationKind: "other",
-      deliveryStatus: "created",
       url: "/",
-    })),
-  );
+    } as const;
+  });
+  const result = await sendAccountNotifications(dataService, recipients);
+  await dataService
+    .recordAuditEvent({
+      actor,
+      action: "notification.created",
+      entityType: "notification",
+      entityId: parsed.requestId,
+      summary: `Aviso personalizado creado para ${result.created} usuarios.`,
+      metadata: { recipients: result.created, title: parsed.title },
+    })
+    .catch(() => undefined);
+  return result;
+}
+
+type AccountNotice = CreateNotificationInput & {
+  referenceId: string;
+  targetUserId: string;
+  url: string;
+};
+
+export async function sendAccountNotifications(
+  dataService: IDataService,
+  recipients: AccountNotice[],
+  withCreationLock?: (create: () => Promise<AccountNotice[]>) => Promise<AccountNotice[]>,
+) {
+  const subscriptions = await dataService.getPushSubscriptions();
+  const devicesByUser = new Map<string, typeof subscriptions>();
+  for (const device of subscriptions) {
+    if (!device.active) continue;
+    const devices = devicesByUser.get(device.userId) ?? [];
+    devices.push(device);
+    devicesByUser.set(device.userId, devices);
+  }
+
+  async function createInbox() {
+    const notifications = await dataService.getNotifications({ fresh: true });
+    const existing = new Set(
+      notifications.map((notification) => notification.referenceId),
+    );
+    const fresh = recipients.filter((item) => !existing.has(item.referenceId));
+    // Store the inbox before attempting push. A retry skips notices already saved.
+    await dataService.createNotifications(
+      fresh.map((item) => ({ ...item, deliveryStatus: "created" })),
+    );
+    return fresh;
+  }
+
+  const fresh = await (withCreationLock ? withCreationLock(createInbox) : createInbox());
   const updates: NotificationDeliveryUpdate[] = [];
   const configured = isPushConfigured();
   // Bounded parallelism keeps large recipient lists within the request duration.
   for (let at = 0; at < fresh.length; at += 5) {
     await Promise.all(
       fresh.slice(at, at + 5).map(async (item) => {
-        const devices = subscriptions.filter(
-          (subscription) =>
-            subscription.active && subscription.userId === item.user.userId,
-        );
+        const devices = devicesByUser.get(item.targetUserId) ?? [];
         let sent = 0;
         let attempts = 0;
         if (configured) {
@@ -75,14 +106,14 @@ export async function sendManualNotifications(
                 title: item.title,
                 body: item.message,
                 tag: item.referenceId,
-                url: "/",
+                url: item.url,
               });
               sent += 1;
             } catch (error) {
               const status = (error as { statusCode?: number })?.statusCode;
               if (status === 404 || status === 410) {
                 await dataService
-                  .deletePushSubscription(device.endpoint, item.user.userId)
+                  .deletePushSubscription(device.endpoint, item.targetUserId)
                   .catch(() => undefined);
               }
             }
@@ -107,16 +138,6 @@ export async function sendManualNotifications(
   await dataService.updateNotificationDeliveries(updates).catch(() => {
     deliveryTrackingFailed = true;
   });
-  await dataService
-    .recordAuditEvent({
-      actor,
-      action: "notification.created",
-      entityType: "notification",
-      entityId: parsed.requestId,
-      summary: `Aviso personalizado creado para ${fresh.length} usuarios.`,
-      metadata: { recipients: fresh.length, title: parsed.title },
-    })
-    .catch(() => undefined);
   return {
     created: fresh.length,
     alreadyCreated: recipients.length - fresh.length,

@@ -7,10 +7,18 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/ui/loading-modal";
 
-type NotificationAuditType =
-  "all" | "manual" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
+export type NotificationAuditType =
+  | "all"
+  | "annual-mvp"
+  | "manual"
+  | "birthday"
+  | "fee"
+  | "match-registration"
+  | "mvp"
+  | "upcoming-match";
 
 type ManualRunKind =
+  | "annual-mvp"
   | "birthday"
   | "fee-defined"
   | "fee-reminder"
@@ -19,6 +27,7 @@ type ManualRunKind =
   | "upcoming-match";
 
 interface NotificationManualRunPanelProps {
+  annualMvpYears: number[] | null;
   period: string;
   selectedType: NotificationAuditType;
 }
@@ -32,20 +41,27 @@ interface ManualRunAction {
 }
 
 export function NotificationManualRunPanel({
+  annualMvpYears,
   period,
   selectedType,
 }: NotificationManualRunPanelProps) {
   const router = useRouter();
+  const [chosenYear, setChosenYear] = useState<number>();
+  const year = annualMvpYears?.includes(chosenYear ?? 0)
+    ? chosenYear
+    : annualMvpYears?.[0];
   const actions = useMemo(
-    () => getManualRunActions(selectedType, period),
-    [period, selectedType],
+    () => getManualRunActions(selectedType, period, year),
+    [period, selectedType, year],
   );
   const [loadingKind, setLoadingKind] = useState<ManualRunKind | null>(null);
   const [message, setMessage] = useState("");
   const [tone, setTone] = useState<"error" | "success">("success");
 
   async function runAction(action: ManualRunAction) {
-    const confirmed = window.confirm(`${action.label} ahora?`);
+    const confirmed = window.confirm(
+      `¿${action.label}${action.kind === "annual-mvp" ? ` ${action.body.year}` : ""} ahora?`,
+    );
 
     if (!confirmed) {
       return;
@@ -91,7 +107,11 @@ export function NotificationManualRunPanel({
   if (actions.length === 0) {
     return (
       <p className="text-muted-foreground text-sm">
-        Elegí un tipo para enviar una rutina puntual.
+        {selectedType === "annual-mvp"
+          ? annualMvpYears
+            ? "Publicá una votación en Encuestas para enviar el aviso."
+            : "No se pudieron cargar las votaciones."
+          : "Elegí un tipo para enviar una rutina puntual."}
       </p>
     );
   }
@@ -105,6 +125,21 @@ export function NotificationManualRunPanel({
         description={loadingAction?.loadingLabel}
       />
       <div className="flex flex-wrap gap-2 sm:justify-end">
+        {selectedType === "annual-mvp" && year !== undefined ? (
+          <select
+            aria-label="Año de la votación"
+            value={year}
+            onChange={(event) => setChosenYear(Number(event.target.value))}
+            disabled={Boolean(loadingKind)}
+            className="border-input bg-background h-8 rounded-md border px-2 text-sm"
+          >
+            {annualMvpYears?.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {actions.map((action) => (
           <Button
             key={action.kind}
@@ -136,7 +171,19 @@ export function NotificationManualRunPanel({
 function getManualRunActions(
   selectedType: NotificationAuditType,
   period: string,
+  year?: number,
 ): ManualRunAction[] {
+  if (selectedType === "annual-mvp" && year !== undefined) {
+    return [
+      {
+        body: { year },
+        kind: "annual-mvp",
+        label: "Enviar aviso de MVP del año",
+        loadingLabel: "Enviando aviso de MVP del año...",
+        path: "/api/notifications/annual-mvp",
+      },
+    ];
+  }
   if (selectedType === "upcoming-match") {
     return [
       {
@@ -211,6 +258,20 @@ function buildSuccessMessage(
   kind: ManualRunKind,
   result: Record<string, unknown> | null,
 ) {
+  if (kind === "annual-mvp") {
+    return (
+      [
+        `${numberValue(result?.created)} avisos en la campana`,
+        `${numberValue(result?.pushSent)} push entregados`,
+        `${numberValue(result?.noDevice)} sin dispositivo`,
+        `${numberValue(result?.pushFailed)} push fallidos`,
+        `${numberValue(result?.alreadyCreated)} ya registrados`,
+      ].join(" · ") +
+      (result?.deliveryTrackingFailed
+        ? ". No se pudo guardar el estado de entrega."
+        : ".")
+    );
+  }
   if (kind === "upcoming-match") {
     return `Próximo partido: ${numberValue(result?.sent)} enviadas, ${numberValue(
       result?.skippedNoSubscriptions,

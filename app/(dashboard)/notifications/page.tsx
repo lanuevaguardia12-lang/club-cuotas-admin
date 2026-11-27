@@ -12,21 +12,23 @@ import {
 import { markNotificationReadAction } from "@/app/(dashboard)/notifications/actions";
 import { EmptySection } from "@/components/layout/empty-section";
 import { NotificationComposer } from "@/components/notifications/notification-composer";
-import { NotificationManualRunPanel } from "@/components/notifications/manual-notification-runner";
+import {
+  NotificationManualRunPanel,
+  type NotificationAuditType,
+} from "@/components/notifications/manual-notification-runner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isWhatsAppBotNotification } from "@/lib/whatsapp-bot";
 import { getDataService } from "@/services/data-service";
+import { AnnualMvpStore } from "@/services/database/annual-mvp-store";
 import type { AccountUser } from "@/types/account";
 import type { AppNotification, NotificationDeliveryStatus } from "@/types/premium";
 import type { PlayerDirectoryItem } from "@/types/players";
 
 export const dynamic = "force-dynamic";
 
-type NotificationAuditType =
-  "all" | "manual" | "birthday" | "fee" | "match-registration" | "mvp" | "upcoming-match";
 type NotificationAuditStatus =
   "all" | "created" | "failed" | "no_subscription" | "sent" | "skipped";
 
@@ -60,6 +62,7 @@ const typeFilters: Array<{ label: string; value: NotificationAuditType }> = [
   { label: "Próximo partido", value: "upcoming-match" },
   { label: "Cuotas", value: "fee" },
   { label: "MVP", value: "mvp" },
+  { label: "MVP del año", value: "annual-mvp" },
   { label: "Registros DT", value: "match-registration" },
   { label: "Cumpleaños", value: "birthday" },
 ];
@@ -96,7 +99,7 @@ export default async function NotificationsPage({
   const selectedType = parseTypeFilter(params.tipo);
   const selectedStatus = parseStatusFilter(params.estado);
   const dataService = getDataService();
-  const [notifications, playersData, accounts] = await Promise.all([
+  const [notifications, playersData, accounts, annualMvpYears] = await Promise.all([
     dataService
       .getNotifications()
       .then((items) =>
@@ -105,6 +108,14 @@ export default async function NotificationsPage({
       .catch(() => []),
     dataService.getPlayersData().catch(() => null),
     dataService.getAccountUsers().catch(() => [] as AccountUser[]),
+    selectedType === "annual-mvp"
+      ? new AnnualMvpStore()
+          .list()
+          .then((surveys) =>
+            surveys.filter((survey) => !survey.closed).map((survey) => survey.year),
+          )
+          .catch(() => null)
+      : null,
   ]);
   const rows = buildNotificationAuditRows(
     notifications,
@@ -184,6 +195,7 @@ export default async function NotificationsPage({
                 Mostrando {filteredRows.length} de {rows.length}
               </p>
               <NotificationManualRunPanel
+                annualMvpYears={annualMvpYears}
                 period={currentPeriod}
                 selectedType={selectedType}
               />
@@ -446,6 +458,10 @@ function parseNotificationReference(notification: AppNotification) {
     };
   }
 
+  if (parts[0] === "annual-mvp") {
+    return { detail: `MVP del año ${parts[1]}`, playerId: undefined, userId: parts[2] };
+  }
+
   if (parts[0] === "match-registration") {
     return {
       detail: parts[2] ? `Partido ${parts[2]}` : "Carga de jugadores",
@@ -488,6 +504,7 @@ function buildNotificationDetail(
 
 function getAuditTypeGroup(notification: AppNotification): NotificationAuditType {
   if (notification.referenceId?.startsWith("manual:")) return "manual";
+  if (isNotificationKind(notification, "annual-mvp")) return "annual-mvp";
   if (isNotificationKind(notification, "birthday")) {
     return "birthday";
   }
@@ -516,6 +533,7 @@ function getAuditTypeGroup(notification: AppNotification): NotificationAuditType
 
 function getNotificationTypeLabel(notification: AppNotification) {
   if (notification.referenceId?.startsWith("manual:")) return "Personalizada";
+  if (isNotificationKind(notification, "annual-mvp")) return "MVP del año";
   if (isNotificationKind(notification, "birthday")) {
     return "Cumpleaños";
   }
@@ -555,6 +573,7 @@ function isNotificationKind(
 
 function parseTypeFilter(value: string | undefined): NotificationAuditType {
   if (
+    value === "annual-mvp" ||
     value === "manual" ||
     value === "fee" ||
     value === "birthday" ||
