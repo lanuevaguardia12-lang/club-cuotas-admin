@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { hasPermission } from "@/lib/auth/roles";
 import { attendanceToday } from "@/lib/match-attendance";
 import type { AuthUser } from "@/types/auth";
 import type { MatchAttendanceData } from "@/types/match-attendance";
@@ -41,6 +42,42 @@ export interface AnnualMvpSurvey {
   closed: boolean;
   candidates: (AnnualMvpCandidate & { votes: number })[];
   userVoteId?: string;
+}
+
+type AnnualMvpChoice = Pick<AnnualMvpCandidate, "id" | "name">;
+
+export interface AnnualMvpBallot {
+  year: number;
+  closed: boolean;
+  choices: AnnualMvpChoice[];
+  votedFor?: string;
+  results?: (AnnualMvpChoice & { votes: number })[];
+}
+
+export function getAnnualMvpBallot(
+  survey: AnnualMvpSurvey,
+  user: AuthUser,
+): AnnualMvpBallot {
+  const votedFor = survey.candidates.find(
+    (candidate) => candidate.id === survey.userVoteId,
+  )?.name;
+  const canChoose =
+    !survey.closed && !votedFor && hasPermission(user, "player-of-match:vote");
+  return {
+    year: survey.year,
+    closed: survey.closed,
+    votedFor,
+    choices: canChoose
+      ? survey.candidates
+          .filter((candidate) => !isAnnualMvpSelfVote(candidate, user))
+          .map(({ id, name }) => ({ id, name }))
+      : [],
+    ...(hasPermission(user, "surveys:manage")
+      ? {
+          results: survey.candidates.map(({ id, name, votes }) => ({ id, name, votes })),
+        }
+      : {}),
+  };
 }
 
 export function annualMvpHref(year?: number) {

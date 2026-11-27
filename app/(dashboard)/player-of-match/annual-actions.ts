@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { AnnualMvpError, AnnualMvpStore } from "@/services/database/annual-mvp-store";
 
 export async function submitAnnualMvpVote(
-  _previous: { ok: boolean; message: string } | null,
+  _previous: { ok: boolean; message: string; votedFor?: string } | null,
   formData: FormData,
 ) {
   const user = await getCurrentUser();
@@ -30,9 +30,9 @@ export async function submitAnnualMvpVote(
   }
 
   try {
-    await new AnnualMvpStore().vote(year.data, candidateId, user);
+    const votedFor = await new AnnualMvpStore().vote(year.data, candidateId, user);
     revalidatePath("/player-of-match");
-    return { ok: true, message: "Voto registrado correctamente." };
+    return { ok: true, message: "Voto registrado correctamente.", votedFor };
   } catch (error) {
     return {
       ok: false,

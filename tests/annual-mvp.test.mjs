@@ -49,6 +49,33 @@ test("annual candidates come from played matches in the chosen year, with aliase
   assert.equal(isAnnualMvpSelfVote(candidates[0], { ...player, role: "fan" }), false);
 });
 
+test("the annual ballot exposes only the user's own vote and reserves the count for administrators", () => {
+  const { getAnnualMvpBallot } = createRuntime().load("lib/annual-mvp.ts");
+  const survey = {
+    year: 2026,
+    closed: false,
+    candidates: [
+      { id: "player:p1", name: "Ana Pérez", playerId: "p1", votes: 9 },
+      { id: "player:p2", name: "Diego Díaz", playerId: "p2", votes: 5 },
+    ],
+  };
+  const ballot = getAnnualMvpBallot(survey, player);
+  assert.deepEqual(ballot.choices, [{ id: "player:p2", name: "Diego Díaz" }]);
+  assert.equal("results" in ballot, false);
+  for (const closed of [false, true]) {
+    assert.deepEqual(
+      getAnnualMvpBallot({ ...survey, closed, userVoteId: "player:p2" }, player),
+      { year: 2026, closed, votedFor: "Diego Díaz", choices: [] },
+    );
+  }
+  const adminBallot = getAnnualMvpBallot(survey, admin);
+  assert.deepEqual(adminBallot.choices, []);
+  assert.deepEqual(
+    adminBallot.results?.map(({ votes }) => votes),
+    [9, 5],
+  );
+});
+
 test("only admins publish and eligible voters use the annual vote store", async () => {
   let user = player;
   const saved = [];
@@ -74,6 +101,7 @@ test("only admins publish and eligible voters use the annual vote store", async 
           }
           async vote(year, candidateId, voter) {
             saved.push({ year, candidateId, voter: voter.id });
+            return "Carlos";
           }
         },
       },
@@ -94,7 +122,12 @@ test("only admins publish and eligible voters use the annual vote store", async 
   assert.equal((await submitAnnualMvpVote(null, ballot)).ok, false);
   assert.equal((await manageAnnualMvpSurvey(null, publish)).ok, true);
   user = player;
-  assert.equal((await submitAnnualMvpVote(null, ballot)).ok, true);
+  const receipt = await submitAnnualMvpVote(null, ballot);
+  assert.deepEqual(receipt, {
+    ok: true,
+    message: "Voto registrado correctamente.",
+    votedFor: "Carlos",
+  });
   assert.deepEqual(saved, [
     {
       year: 2026,

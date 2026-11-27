@@ -4,7 +4,7 @@ import { Trophy } from "lucide-react";
 import { AnnualMvpCard } from "@/components/player-of-match/annual-mvp-card";
 import { PlayerOfMatchContent } from "@/components/player-of-match/player-of-match-content";
 import { Badge } from "@/components/ui/badge";
-import { isAnnualMvpSelfVote, type AnnualMvpSurvey } from "@/lib/annual-mvp";
+import { getAnnualMvpBallot, type AnnualMvpSurvey } from "@/lib/annual-mvp";
 import { LOGIN_PATH } from "@/lib/auth/constants";
 import { hasPermission } from "@/lib/auth/roles";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -25,14 +25,17 @@ export default async function PlayerOfMatchPage({
   }
 
   const dataService = getDataService();
+  const canManage = hasPermission(user, "player-of-match:manage");
+  const canVote = user.role !== "admin" && hasPermission(user, "player-of-match:vote");
+  const canSeeAnnualResults = hasPermission(user, "surveys:manage");
   const [data, teamsData, annualSurveys, params] = await Promise.all([
     dataService.getPlayerOfMatchData(user.id, user.playerId),
     dataService.getTeamsData().catch(() => ({ teams: [] })),
-    new AnnualMvpStore().list(user.id).catch(() => null),
+    new AnnualMvpStore()
+      .list(canSeeAnnualResults ? {} : { voterUserId: user.id })
+      .catch(() => null),
     searchParams,
   ]);
-  const canManage = hasPermission(user, "player-of-match:manage");
-  const canVote = user.role !== "admin" && hasPermission(user, "player-of-match:vote");
   const showAnnualFirst = params.tab === "mvp-del-ano";
   const requestedYear = showAnnualFirst ? params.anio : undefined;
   const requestedSurvey = annualSurveys?.find(
@@ -45,11 +48,8 @@ export default async function PlayerOfMatchPage({
   const renderSurvey = (survey: AnnualMvpSurvey) => (
     <AnnualMvpCard
       key={survey.year}
-      survey={survey}
+      ballot={getAnnualMvpBallot(survey, user)}
       canVote={canVote}
-      excludedIds={survey.candidates
-        .filter((candidate) => isAnnualMvpSelfVote(candidate, user))
-        .map((candidate) => candidate.id)}
     />
   );
 

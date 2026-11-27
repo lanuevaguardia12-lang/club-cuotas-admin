@@ -11,8 +11,10 @@ import type { AuthUser } from "@/types/auth";
 export class AnnualMvpError extends Error {}
 
 export class AnnualMvpStore {
-  async list(userId?: string): Promise<AnnualMvpSurvey[]> {
+  async list({ voterUserId }: { voterUserId?: string } = {}): Promise<AnnualMvpSurvey[]> {
     const sql = directoryDatabase();
+    const privateBallot = voterUserId !== undefined;
+    const voterFilter = privateBallot ? sql`and vote.user_id = ${voterUserId}` : sql``;
     const rows = await sql<
       {
         year: number;
@@ -21,16 +23,15 @@ export class AnnualMvpStore {
         name: string;
         player_id: string | null;
         votes: number;
-        user_voted: boolean | null;
       }[]
     >`
       select poll.year, poll.closed_at is not null as closed,
         candidate.candidate_id, candidate.name, candidate.player_id,
-        count(vote.user_id)::integer as votes,
-        bool_or(vote.user_id = ${userId ?? null}) as user_voted
+        count(vote.user_id)::integer as votes
       from club_surveys.annual_mvp poll
       join club_surveys.annual_mvp_candidates candidate using (year)
-      left join club_surveys.annual_mvp_votes vote using (year, candidate_id)
+      left join club_surveys.annual_mvp_votes vote
+        on vote.year = candidate.year and vote.candidate_id = candidate.candidate_id ${voterFilter}
       group by poll.year, candidate.year, candidate.candidate_id
       order by poll.year desc, candidate.name, candidate.candidate_id
     `;
@@ -47,7 +48,7 @@ export class AnnualMvpStore {
         playerId: row.player_id ?? undefined,
         votes: row.votes,
       });
-      if (row.user_voted) survey.userVoteId = row.candidate_id;
+      if (privateBallot && row.votes > 0) survey.userVoteId = row.candidate_id;
     }
     for (const survey of surveys.values()) {
       survey.candidates.sort((left, right) => left.name.localeCompare(right.name, "es"));
@@ -87,7 +88,7 @@ export class AnnualMvpStore {
   }
 
   async vote(year: number, candidateId: string, user: AuthUser) {
-    await directoryDatabase().begin(async (tx) => {
+    return directoryDatabase().begin(async (tx) => {
       const [poll] = await tx`
         select year from club_surveys.annual_mvp
         where year = ${year} and closed_at is null for share
@@ -116,6 +117,7 @@ export class AnnualMvpStore {
         on conflict (year, user_id) do nothing returning year
       `;
       if (!vote) throw new AnnualMvpError("Ya registraste tu voto al MVP de este año.");
+      return candidate.name;
     });
   }
 
